@@ -236,15 +236,11 @@ class TestRegistryCompleteness:
     """Test registry completeness against DaemonType enum."""
 
     def test_all_daemon_types_covered_or_known_exception(self):
-        """Test that all DaemonType values are either in registry or documented.
-
-        HEALTH_SERVER is intentionally excluded because it requires self access.
-        """
+        """Test that all DaemonType values are represented in the registry."""
         all_types = set(dt for dt in DaemonType)
         registered = set(DAEMON_REGISTRY.keys())
-        known_exclusions = {DaemonType.HEALTH_SERVER, *get_deprecated_types()}
 
-        missing = all_types - registered - known_exclusions
+        missing = all_types - registered
 
         assert missing == set(), (
             f"DaemonTypes missing from registry: {[dt.name for dt in missing]}"
@@ -451,10 +447,23 @@ class TestDeprecatedTypes:
             DaemonType.SYNC_COORDINATOR,
             DaemonType.HEALTH_CHECK,
             DaemonType.LAMBDA_IDLE,
+            DaemonType.UNIFIED_BACKUP,
+            DaemonType.SELFPLAY_SCHEDULER,
+            DaemonType.TRAINING_COORDINATOR,
+            DaemonType.DATA_AVAILABILITY,
         ]
         for dt in known_deprecated:
             if dt in DAEMON_REGISTRY and DAEMON_REGISTRY[dt].deprecated:
                 assert dt in deprecated
+
+    def test_deprecation_warning_map_matches_registry(self):
+        """Daemon lifecycle warnings should cover every deprecated registry entry."""
+        from app.coordination.daemon_types import _DEPRECATED_DAEMON_TYPES
+
+        registry_deprecated = {dt.value for dt in get_deprecated_types()}
+        warning_deprecated = set(_DEPRECATED_DAEMON_TYPES)
+
+        assert warning_deprecated == registry_deprecated
 
     def test_is_daemon_deprecated_true(self):
         """Test is_daemon_deprecated returns True for deprecated types."""
@@ -491,15 +500,12 @@ class TestMissingDaemonTypeDetection:
         """Test that all DaemonType enum values are in the registry."""
         all_types = set(DaemonType)
         registered = set(DAEMON_REGISTRY.keys())
-        deprecated = get_deprecated_types()
 
         missing = all_types - registered
-        # Allow deprecated types to be missing from registry
-        missing_non_deprecated = missing - deprecated
 
-        assert len(missing_non_deprecated) == 0, (
+        assert len(missing) == 0, (
             f"DaemonTypes missing from DAEMON_REGISTRY: "
-            f"{[dt.name for dt in missing_non_deprecated]}"
+            f"{[dt.name for dt in missing]}"
         )
 
     def test_validate_registry_catches_missing_types(self):

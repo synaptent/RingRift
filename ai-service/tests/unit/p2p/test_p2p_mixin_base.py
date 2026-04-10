@@ -9,11 +9,13 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
+import scripts.p2p.p2p_mixin_base as p2p_mixin_base
 from scripts.p2p.p2p_mixin_base import (
     P2PMixinBase,
     EventSubscriptionMixin,
@@ -605,7 +607,11 @@ class TestSubscribeToEventsWithRetry:
 
         mixin = TestMixin()
 
-        with patch.object(time, "sleep"):  # Skip actual delays
+        with patch.object(
+            p2p_mixin_base,
+            "time",
+            SimpleNamespace(sleep=lambda delay: None),
+        ):  # Skip target retry delays without patching global time.sleep.
             mixin.subscribe_to_events_with_retry(None)
 
         # Should use default max_attempts=3
@@ -633,13 +639,14 @@ class TestSubscribeToEventsWithRetry:
             backoff_multiplier=10.0,  # Would exceed cap quickly
         )
 
-        # Capture delays
-        original_sleep = time.sleep
-
         def capture_sleep(delay: float) -> None:
             delays.append(delay)
 
-        with patch.object(time, "sleep", side_effect=capture_sleep):
+        with patch.object(
+            p2p_mixin_base,
+            "time",
+            SimpleNamespace(sleep=capture_sleep),
+        ):
             mixin.subscribe_to_events_with_retry(config)
 
         # All delays should be capped at 0.02

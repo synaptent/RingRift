@@ -1681,13 +1681,18 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
 
         def _execute() -> Any:
             # Open connection (read-only mode if specified)
+            connect_kwargs = {
+                "timeout": 30.0,
+                "factory": sqlite3.Connection,
+            }
             if readonly:
                 uri = f"file:{db_path}?mode=ro"
-                conn = sqlite3.connect(uri, uri=True)
+                conn = sqlite3.connect(uri, uri=True, **connect_kwargs)
             else:
-                conn = sqlite3.connect(db_path)
+                conn = sqlite3.connect(db_path, **connect_kwargs)
 
             try:
+                conn.execute("PRAGMA busy_timeout = 30000")
                 result = func(conn)
                 if not readonly:
                     conn.commit()

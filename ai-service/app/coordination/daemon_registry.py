@@ -949,23 +949,35 @@ DAEMON_REGISTRY.update(
             category="sync",
             message="Use S3_SYNC instead of S3_CONSOLIDATION.",
         ),
-        # Active compatibility aliases
-        DaemonType.SELFPLAY_SCHEDULER: DaemonSpec(
-            runner_name="create_selfplay_scheduler",
-            depends_on=(DaemonType.EVENT_ROUTER,),
-            category="pipeline",
+        DaemonType.UNIFIED_BACKUP: _deprecated_spec(
+            runner_name="create_unified_backup",
+            category="distribution",
+            message="Use OWC_SYNC_MANAGER plus S3_SYNC instead of UNIFIED_BACKUP.",
         ),
-        DaemonType.DATA_AVAILABILITY: DaemonSpec(
-            runner_name="create_data_availability",
-            depends_on=(DaemonType.EVENT_ROUTER,),
+        DaemonType.DUAL_BACKUP: _deprecated_spec(
+            runner_name="create_dual_backup",
             category="sync",
-            health_check_interval=300.0,
+            message="Use OWC_SYNC_MANAGER plus S3_SYNC instead of DUAL_BACKUP.",
         ),
-        DaemonType.TRAINING_COORDINATOR: DaemonSpec(
-            runner_name="create_training_coordinator",
-            depends_on=(DaemonType.EVENT_ROUTER,),
+        DaemonType.OWC_PUSH: _deprecated_spec(
+            runner_name="create_owc_push",
+            category="sync",
+            message="Use OWC_SYNC_MANAGER instead of OWC_PUSH.",
+        ),
+        DaemonType.SELFPLAY_SCHEDULER: _deprecated_spec(
+            runner_name="create_selfplay_scheduler",
             category="pipeline",
-            health_check_interval=300.0,
+            message="Use SELFPLAY_COORDINATOR instead of SELFPLAY_SCHEDULER.",
+        ),
+        DaemonType.DATA_AVAILABILITY: _deprecated_spec(
+            runner_name="create_data_availability",
+            category="sync",
+            message="Use DATA_PIPELINE and AUTO_SYNC instead of DATA_AVAILABILITY.",
+        ),
+        DaemonType.TRAINING_COORDINATOR: _deprecated_spec(
+            runner_name="create_training_coordinator",
+            category="pipeline",
+            message="Use TRAINING_TRIGGER instead of TRAINING_COORDINATOR.",
         ),
         # Enum placeholders awaiting concrete implementations
         DaemonType.CANONICAL_MODEL_WATCHDOG: DaemonSpec(

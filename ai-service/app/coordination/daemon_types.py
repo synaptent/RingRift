@@ -47,8 +47,29 @@ __all__ = [
 # Deprecated Daemon Type Tracking (December 2025)
 # =============================================================================
 
-# Daemon types scheduled for removal in Q2 2026
+# Compatibility daemon types scheduled for removal. Keep this warning map in sync
+# with daemon_registry.get_deprecated_types(); DaemonLifecycle uses it before
+# attempting to start a deprecated daemon.
 _DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
+    "sync_coordinator": ("AUTO_SYNC", "Q2 2026"),
+    "ephemeral_sync": ("AUTO_SYNC", "Q2 2026"),
+    "cluster_data_sync": ("AUTO_SYNC", "Q2 2026"),
+    "health_check": ("COORDINATOR_HEALTH_MONITOR", "Q2 2026"),
+    "node_health_monitor": ("CLUSTER_MONITOR", "Q2 2026"),
+    "system_health_monitor": ("COORDINATOR_HEALTH_MONITOR", "Q2 2026"),
+    "npz_distribution": ("MODEL_DISTRIBUTION", "Q2 2026"),
+    "replication_monitor": ("S3_SYNC", "Q2 2026"),
+    "replication_repair": ("S3_SYNC", "Q2 2026"),
+    "lambda_idle": ("IDLE_RESOURCE", "Q2 2026"),
+    "vast_idle": ("IDLE_RESOURCE", "Q2 2026"),
+    "continuous_training_loop": ("TRAINING_TRIGGER", "Q2 2026"),
+    "distillation": ("TRAINING_TRIGGER", "Q2 2026"),
+    "external_drive_sync": ("OWC_SYNC_MANAGER", "Q2 2026"),
+    "unified_data_catalog": ("UNIFIED_DATA_PLANE", "Q2 2026"),
+    "node_data_agent": ("UNIFIED_DATA_PLANE", "Q2 2026"),
+    "selfplay_scheduler": ("SELFPLAY_COORDINATOR", "Q2 2026"),
+    "training_coordinator": ("TRAINING_TRIGGER", "Q2 2026"),
+    "data_availability": ("DATA_PIPELINE", "Q2 2026"),
     # January 2026: Consolidated backup/sync daemons (Session 17.41)
     "s3_backup": ("S3_SYNC", "Q2 2026"),
     "s3_node_sync": ("S3_SYNC", "Q2 2026"),
@@ -77,9 +98,9 @@ class DaemonType(Enum):
     """Types of daemons that can be managed."""
 
     # =========================================================================
-    # DEPRECATED STUBS — kept for backward compatibility with references in
-    # daemon_manager.py, daemon_adapters.py, daemon_factory.py, runners/*.py.
-    # These are removed from the DAEMON_REGISTRY so they cannot be started.
+    # DEPRECATED COMPATIBILITY NAMES — kept so older configs can be parsed.
+    # daemon_registry.py marks these as deprecated with replacement guidance, and
+    # master_loop's full profile excludes them.
     # =========================================================================
     SYNC_COORDINATOR = "sync_coordinator"
     EPHEMERAL_SYNC = "ephemeral_sync"
@@ -700,10 +721,10 @@ class DaemonManagerConfig:
     default_startup_grace_period: float = 300.0  # seconds
 
 
-# P11-HIGH-2: Daemons critical for cluster health that need faster failure detection
-# NOTE (Dec 2025): Only include daemons that are ACTUALLY used in standard profile.
-# Optional daemons like GOSSIP_SYNC, DATA_SERVER should not be marked
-# critical since they're not started by default.
+# P11-HIGH-2: Daemons critical for cluster health that need faster failure detection.
+# Only include daemons used in supported profiles. Optional daemons like
+# GOSSIP_SYNC and DATA_SERVER should not be marked critical since they are not
+# started by default.
 CRITICAL_DAEMONS: set[DaemonType] = {
     DaemonType.EVENT_ROUTER,  # Core event bus - all coordination depends on this
     DaemonType.DAEMON_WATCHDOG,  # Self-healing for daemon crashes (Dec 2025 fix)
@@ -856,7 +877,9 @@ def get_daemon_category(daemon_type: DaemonType) -> DaemonCategory:
     return DAEMON_CATEGORY_MAP.get(daemon_type, DaemonCategory.MISC)
 
 
-# P0 Critical Fix (Dec 2025): Daemon startup order to prevent race conditions
+# Canonical startup order for common daemons. Profile-specific startup performs
+# a dependency-aware ordering pass, using this list as the stable priority for
+# daemons present here.
 # DATA_PIPELINE and FEEDBACK_LOOP must start BEFORE AUTO_SYNC to avoid event loss.
 # Events emitted by AUTO_SYNC (DATA_SYNC_COMPLETED) need handlers ready.
 DAEMON_STARTUP_ORDER: list[DaemonType] = [

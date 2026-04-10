@@ -1561,9 +1561,8 @@ class MasterLoopController:
             # January 4, 2026: Fast failure detection (Phase 4 P2P Resilience)
             # Tiered detection: 5 min warning, 10 min alert+boost, 30 min recovery
             DaemonType.FAST_FAILURE_DETECTOR,
-            # January 3, 2026: Unified backup to OWC and S3
-            # Backs up all selfplay games to both destinations for disaster recovery
-            DaemonType.UNIFIED_BACKUP,
+            # Consolidated backup is handled by coordinator-only OWC_SYNC_MANAGER
+            # and optional S3_SYNC when AWS credentials are configured.
             # January 5, 2026: Training watchdog for stuck process detection
             # Monitors training jobs and kills stuck processes after 2h threshold
             DaemonType.TRAINING_WATCHDOG,
@@ -1624,12 +1623,11 @@ class MasterLoopController:
 
         daemons = profiles.get(self.daemon_profile, standard)
 
-        # December 2025: Add S3 backup daemons if AWS credentials are configured
-        # These enable automatic backup to S3 after model promotion and periodic sync
+        # Add S3 sync daemons if AWS credentials are configured.
         if s3_daemons and self.daemon_profile != "minimal":
             daemons = daemons + s3_daemons
             logger.info(
-                f"[MasterLoop] S3 backup enabled: adding {len(s3_daemons)} S3 daemons "
+                f"[MasterLoop] S3 sync enabled: adding {len(s3_daemons)} S3 daemons "
                 f"(AWS_ACCESS_KEY_ID set)"
             )
 
@@ -1716,10 +1714,6 @@ class MasterLoopController:
                     "[MasterLoop] Node has npx available: added PARITY_VALIDATION daemon"
                 )
 
-        # Ensure event router starts first when present
-        if DaemonType.EVENT_ROUTER in daemons:
-            daemons = [DaemonType.EVENT_ROUTER] + [d for d in daemons if d != DaemonType.EVENT_ROUTER]
-
         # De-dupe while preserving order
         seen: set[DaemonType] = set()
         ordered: list[DaemonType] = []
@@ -1727,7 +1721,55 @@ class MasterLoopController:
             if daemon not in seen:
                 ordered.append(daemon)
                 seen.add(daemon)
-        return ordered
+        return self._order_daemons_for_startup(ordered)
+
+    @staticmethod
+    def _order_daemons_for_startup(daemons: list["DaemonType"]) -> list["DaemonType"]:
+        """Order selected daemons so hard dependencies start before dependents."""
+        from app.coordination.daemon_registry import DAEMON_REGISTRY
+        from app.coordination.daemon_types import DAEMON_STARTUP_ORDER
+
+        selected = set(daemons)
+        original_index = {daemon: index for index, daemon in enumerate(daemons)}
+        startup_index = {
+            daemon: index for index, daemon in enumerate(DAEMON_STARTUP_ORDER)
+        }
+        fallback_rank = len(startup_index)
+
+        def rank(daemon: "DaemonType") -> tuple[int, int]:
+            return (
+                startup_index.get(daemon, fallback_rank),
+                original_index.get(daemon, len(original_index)),
+            )
+
+        ordered_daemons: list["DaemonType"] = []
+        visiting: set["DaemonType"] = set()
+        visited: set["DaemonType"] = set()
+
+        def visit(daemon: "DaemonType") -> None:
+            if daemon in visited:
+                return
+            if daemon in visiting:
+                logger.warning(
+                    "[MasterLoop] Cyclic daemon dependency while ordering profile: %s",
+                    daemon.value,
+                )
+                return
+
+            visiting.add(daemon)
+            spec = DAEMON_REGISTRY.get(daemon)
+            if spec is not None:
+                for dependency in sorted(spec.depends_on, key=rank):
+                    if dependency in selected:
+                        visit(dependency)
+            visiting.remove(daemon)
+            visited.add(daemon)
+            ordered_daemons.append(daemon)
+
+        for daemon in sorted(daemons, key=rank):
+            visit(daemon)
+
+        return ordered_daemons
 
     async def _start_daemons(self) -> None:
         """Start daemons for the selected profile."""

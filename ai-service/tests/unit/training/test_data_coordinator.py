@@ -754,15 +754,11 @@ class TestEventSubscription:
 
     def test_subscribe_to_promotion_events_no_router(self, coordinator):
         """Test subscription when router is unavailable."""
-        # Mock both imports to raise ImportError
+        # Mock imports to raise ImportError without forcing a duplicate
+        # event_router module object into sys.modules for later tests.
         with patch.dict("sys.modules", {
             "app.coordination.event_router": None  # Force ImportError
         }):
-            # Clear the import cache to force re-import
-            import sys
-            if "app.coordination.event_router" in sys.modules:
-                del sys.modules["app.coordination.event_router"]
-
             # Since the module uses try/except ImportError internally,
             # we test that it handles the case gracefully
             result = coordinator.subscribe_to_promotion_events()

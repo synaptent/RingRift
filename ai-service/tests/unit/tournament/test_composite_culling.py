@@ -1,5 +1,7 @@
 """Tests for composite culling system."""
 
+from unittest.mock import patch
+
 import pytest
 
 from app.tournament.composite_culling import (
@@ -98,12 +100,14 @@ class TestHierarchicalCullingController:
 
     def test_dry_run_returns_report(self):
         """Test that dry run returns a valid report."""
-        controller = HierarchicalCullingController(
-            board_type="square8",
-            num_players=2,
-        )
+        with patch("app.tournament.composite_culling.get_elo_service") as mock_get_elo:
+            mock_get_elo.return_value.get_composite_leaderboard.return_value = []
+            controller = HierarchicalCullingController(
+                board_type="square8",
+                num_players=2,
+            )
 
-        report = controller.run_culling(dry_run=True)
+            report = controller.run_culling(dry_run=True)
 
         assert isinstance(report, CullingReport)
         assert report.dry_run is True

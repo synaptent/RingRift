@@ -50,22 +50,13 @@ class TestHealthCheckCompliance:
         from app.coordination.daemon_registry import DAEMON_REGISTRY
         from app.coordination.daemon_types import DaemonType
 
-        # Get all daemon types except deprecated ones
         all_types = set(DaemonType)
         registered_types = set(DAEMON_REGISTRY.keys())
 
-        # These are known deprecated or special types
-        deprecated_types = {
-            DaemonType.SYNC_COORDINATOR,  # Use AUTO_SYNC
-            DaemonType.HEALTH_CHECK,  # Use NODE_HEALTH_MONITOR
-        }
+        missing = all_types - registered_types
 
-        expected_types = all_types - deprecated_types
-        missing = expected_types - registered_types
-
-        # Allow some tolerance for new types not yet registered
-        assert len(missing) <= 5, (
-            f"Too many daemon types missing from DAEMON_REGISTRY: {[t.name for t in missing]}"
+        assert missing == set(), (
+            f"DaemonTypes missing from DAEMON_REGISTRY: {[t.name for t in missing]}"
         )
 
     def test_daemon_specs_have_valid_runner_names(self):

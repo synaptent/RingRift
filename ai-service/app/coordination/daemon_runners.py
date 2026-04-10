@@ -184,6 +184,24 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         factory_func="get_training_data_sync_daemon",
         wait=WaitStyle.CUSTOM,  # Special: uses _running attribute check
     ),
+    "training_data_recovery": RunnerSpec(
+        module="app.coordination.training_data_recovery_daemon",
+        class_name="TrainingDataRecoveryDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_training_data_recovery_daemon",
+    ),
+    "training_watchdog": RunnerSpec(
+        module="app.coordination.training_watchdog_daemon",
+        class_name="TrainingWatchdogDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_training_watchdog_daemon",
+    ),
+    "export_watchdog": RunnerSpec(
+        module="app.coordination.export_watchdog_daemon",
+        class_name="ExportWatchdogDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_export_watchdog_daemon",
+    ),
     "owc_import": RunnerSpec(
         module="app.coordination.owc_import_daemon",
         class_name="OWCImportDaemon",
@@ -222,6 +240,22 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         style=InstantiationStyle.ASYNC_FACTORY,
         factory_func="start_watchdog",
         start_method=StartMethod.NONE,  # start_watchdog() handles start
+    ),
+    "canonical_model_watchdog": RunnerSpec(
+        module="app.coordination.daemon_runners",
+        class_name="",
+        style=InstantiationStyle.CUSTOM,
+        start_method=StartMethod.NONE,
+        wait=WaitStyle.NONE,
+        notes="Placeholder runner; create_canonical_model_watchdog is a no-op.",
+    ),
+    "pipeline_health_watchdog": RunnerSpec(
+        module="app.coordination.daemon_runners",
+        class_name="",
+        style=InstantiationStyle.CUSTOM,
+        start_method=StartMethod.NONE,
+        wait=WaitStyle.NONE,
+        notes="Placeholder runner; create_pipeline_health_watchdog is a no-op.",
     ),
     "health_server": RunnerSpec(
         module="app.coordination.daemon_manager",
@@ -323,6 +357,12 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         style=InstantiationStyle.FACTORY,
         factory_func="get_stale_evaluation_daemon",
     ),
+    "comprehensive_model_scan": RunnerSpec(
+        module="app.coordination.comprehensive_model_scan_daemon",
+        class_name="ComprehensiveModelScanDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_comprehensive_model_scan_daemon",
+    ),
     "auto_promotion": RunnerSpec(
         module="app.coordination.auto_promotion_daemon",
         class_name="AutoPromotionDaemon",
@@ -339,6 +379,12 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
     "gauntlet_feedback": RunnerSpec(
         module="app.coordination.gauntlet_feedback_controller",
         class_name="GauntletFeedbackController",
+    ),
+    "backlog_evaluation": RunnerSpec(
+        module="app.coordination.backlog_evaluation_daemon",
+        class_name="BacklogEvaluationDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_backlog_evaluation_daemon",
     ),
     # --- Distribution Daemons ---
     "model_sync": RunnerSpec(
@@ -629,6 +675,12 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         factory_func="get_parity_validation_daemon",
         notes="Dec 30, 2025: Validates pending_gate databases and stores TS hashes",
     ),
+    "elo_progress": RunnerSpec(
+        module="app.coordination.elo_progress_daemon",
+        class_name="EloProgressDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_elo_progress_daemon",
+    ),
     # --- Comprehensive Data Consolidation System (January 2026) ---
     # These daemons provide unified data management across all storage locations.
     "owc_push": RunnerSpec(
@@ -649,6 +701,48 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         class_name="DualBackupDaemon",
         style=InstantiationStyle.SINGLETON,
         notes="Jan 2026: Ensures data is backed up to BOTH S3 AND OWC",
+    ),
+    "comprehensive_consolidation": RunnerSpec(
+        module="app.coordination.comprehensive_consolidation_daemon",
+        class_name="ComprehensiveConsolidationDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_comprehensive_consolidation_daemon",
+    ),
+    "unified_data_sync_orchestrator": RunnerSpec(
+        module="app.coordination.unified_data_sync_orchestrator",
+        class_name="UnifiedDataSyncOrchestrator",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_unified_data_sync_orchestrator",
+    ),
+    "socket_leak_recovery": RunnerSpec(
+        module="app.coordination.socket_leak_recovery_daemon",
+        class_name="SocketLeakRecoveryDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_socket_leak_recovery_daemon",
+    ),
+    "online_merge": RunnerSpec(
+        module="app.coordination.online_merge_daemon",
+        class_name="OnlineMergeDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_online_merge_daemon",
+    ),
+    "owc_sync_manager": RunnerSpec(
+        module="app.coordination.owc_sync_manager",
+        class_name="OWCSyncManager",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_owc_sync_manager",
+    ),
+    "s3_sync": RunnerSpec(
+        module="app.coordination.s3_sync_daemon",
+        class_name="S3SyncDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_s3_sync_daemon",
+    ),
+    "production_game_import": RunnerSpec(
+        module="app.coordination.production_game_import_daemon",
+        class_name="ProductionGameImportDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_production_game_import_daemon",
     ),
     # --- Pipeline Completeness Monitor (February 2026) ---
     "pipeline_completeness_monitor": RunnerSpec(

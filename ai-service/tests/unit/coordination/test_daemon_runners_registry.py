@@ -296,57 +296,33 @@ class TestRegistryDaemonTypeCoverage:
     """Test registry covers all DaemonType values."""
 
     def test_registry_covers_daemon_types(self):
-        """RUNNER_SPECS intentionally omits legacy-only runner shims."""
+        """RUNNER_SPECS covers every active DaemonType value."""
         from app.coordination.daemon_types import DaemonType
+        from app.coordination.daemon_registry import get_deprecated_types
 
-        # Get all daemon type names
-        daemon_names = {dt.name.lower() for dt in DaemonType}
-
-        # Get all registry names
-        registry_names = set(RUNNER_SPECS.keys())
-
-        # Check coverage
-        missing = daemon_names - registry_names
-
-        expected_legacy_only = {
-            "backlog_evaluation",
-            "canonical_model_watchdog",
-            "cluster_data_sync",
-            "comprehensive_consolidation",
-            "comprehensive_model_scan",
-            "continuous_training_loop",
-            "data_availability",
-            "distillation",
-            "elo_progress",
-            "ephemeral_sync",
-            "export_watchdog",
-            "external_drive_sync",
-            "health_check",
-            "lambda_idle",
-            "node_data_agent",
-            "node_health_monitor",
-            "npz_distribution",
-            "online_merge",
-            "owc_sync_manager",
-            "pipeline_health_watchdog",
-            "production_game_import",
-            "replication_monitor",
-            "replication_repair",
-            "s3_push",
-            "s3_sync",
-            "selfplay_scheduler",
-            "socket_leak_recovery",
-            "sync_coordinator",
-            "system_health_monitor",
-            "training_coordinator",
-            "training_data_recovery",
-            "training_watchdog",
-            "unified_backup",
-            "unified_data_catalog",
-            "unified_data_sync_orchestrator",
-            "vast_idle",
+        active_daemon_names = {
+            dt.value for dt in DaemonType
+            if dt not in get_deprecated_types()
         }
-        assert missing == expected_legacy_only
+
+        missing = active_daemon_names - set(RUNNER_SPECS.keys())
+
+        assert missing == set()
+
+    def test_deprecated_runner_specs_stay_documented(self):
+        """Deprecated specs may exist only as explicit compatibility shims."""
+        from app.coordination.daemon_registry import get_deprecated_types
+
+        deprecated_names = {dt.value for dt in get_deprecated_types()}
+        deprecated_spec_names = deprecated_names & set(RUNNER_SPECS.keys())
+
+        assert deprecated_spec_names <= {
+            "dual_backup",
+            "owc_push",
+            "s3_backup",
+            "s3_consolidation",
+            "s3_node_sync",
+        }
 
 
 class TestSpecCategorization:
