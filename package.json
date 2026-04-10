@@ -11,6 +11,8 @@
     "dev:free-port": "kill-port 3000",
     "dev:free-all": "kill-port 3000 3001 5173",
     "dev:app": "npm run dev:free-port && npm run dev",
+    "training:status": "cd ai-service && PYTHONPATH=. python3 scripts/training_status.py",
+    "training:dashboard": "cd ai-service && PYTHONPATH=. python3 scripts/training_dashboard.py",
     "soak:orchestrator": "npx ts-node scripts/run-orchestrator-soak.ts",
     "soak:orchestrator:smoke": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/run-orchestrator-soak.ts --boardTypes=square8 --gamesPerBoard=1 --maxTurns=20 --mode=backend --outputPath=results/orchestrator_soak_smoke.json --failOnViolation",
     "soak:orchestrator:short": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/run-orchestrator-soak.ts --profile=ci-short --failOnViolation=true",
