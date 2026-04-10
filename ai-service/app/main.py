@@ -1234,23 +1234,28 @@ async def get_ai_move(request: MoveRequest):
             else profile["think_time_ms"]
         )
 
-        # Enable GPU tree acceleration for Gumbel MCTS (177x speedup)
+        # Enable GPU tree acceleration for Gumbel MCTS
         use_gpu_tree = ai_type == AIType.GUMBEL_MCTS
 
-        # Map think_time_ms to Gumbel simulation budget so the search depth
-        # scales with the allowed thinking time.  Without this, GumbelMCTSAI
-        # falls back to its default budget (100) regardless of the ladder
-        # config's think_time_ms.
+        # Map think_time_ms to Gumbel simulation budget and eval mode.
+        # Lower difficulties use "hybrid" mode (heuristic rollouts + NN rerank)
+        # for fast responses. Higher difficulties use "nn" mode for full neural
+        # MCTS search — slower but much stronger play.
         gumbel_budget: int | None = None
+        eval_mode = "hybrid"
         if ai_type == AIType.GUMBEL_MCTS:
             if think_time_ms <= 5000:
                 gumbel_budget = 64
+                eval_mode = "hybrid"
             elif think_time_ms <= 10000:
                 gumbel_budget = 128
+                eval_mode = "hybrid"
             elif think_time_ms <= 20000:
-                gumbel_budget = 200
+                gumbel_budget = 128
+                eval_mode = "nn"  # Full neural search
             else:
-                gumbel_budget = 400
+                gumbel_budget = 200
+                eval_mode = "nn"  # Full neural search
 
         config = AIConfig(
             difficulty=request.difficulty,
@@ -1261,7 +1266,7 @@ async def get_ai_move(request: MoveRequest):
             nn_model_id=nn_model_id,
             use_neural_net=use_neural_net,
             use_gpu_tree=use_gpu_tree,
-            gpu_tree_eval_mode="hybrid",  # Balance speed and accuracy
+            gpu_tree_eval_mode=eval_mode,
             **({"gumbel_simulation_budget": gumbel_budget} if gumbel_budget is not None else {}),
         )
         ai = None
