@@ -29,6 +29,11 @@ RUFF_NO_TEST_F401_IGNORE_CONFIG = (
 
 def test_infrastructure_quality_tests_have_no_unused_imports() -> None:
     """Keep active infrastructure tests clean despite the historical test-suite baseline."""
+    pytest.importorskip(
+        "ruff",
+        reason="ruff is optional; skip this lint contract when it is not installed",
+    )
+
     result = subprocess.run(
         [
             sys.executable,
