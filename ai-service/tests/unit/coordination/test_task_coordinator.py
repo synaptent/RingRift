@@ -1154,6 +1154,7 @@ class TestTaskCoordinator:
             check_resources=True,
             check_health=False,
         )
+        assert coordinator.get_state() == CoordinatorState.PAUSED
         assert allowed is False
         assert "paused" in reason.lower()  # Auto-pause takes precedence
 
@@ -1614,7 +1615,12 @@ class TestTaskCoordinatorIntegration:
             check_health=False,
         )
         assert allowed is False
-        assert "disk" in reason.lower()
+        assert coordinator.get_state() == CoordinatorState.PAUSED
+        assert "paused" in reason.lower()
+
+        denied, resource_reason = coordinator._check_resources("node-1")
+        assert denied is True
+        assert "disk" in resource_reason.lower()
 
     def test_rate_limiting(self, coordinator):
         """Should rate limit task spawning."""

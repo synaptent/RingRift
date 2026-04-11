@@ -1048,6 +1048,32 @@ class TaskCoordinator(SingletonMixin):
         disk_recovery = self.limits.halt_on_disk_percent * self._resource_recovery_threshold
         memory_recovery = self.limits.halt_on_memory_percent * self._resource_recovery_threshold
 
+        # Prefer cached per-node resource reports over local psutil state.
+        # The pause may have been triggered by a remote node that is still
+        # reporting critical disk or memory usage, so resuming solely based on
+        # this process host's resources can flap the coordinator incorrectly.
+        now = time.time()
+        recent_cache_found = False
+        for resources in self._resource_cache.values():
+            updated_at = float(resources.get("updated_at", 0.0) or 0.0)
+            if updated_at <= 0.0:
+                continue
+            if now - updated_at > max(self._resource_recovery_interval * 2.0, 60.0):
+                continue
+
+            recent_cache_found = True
+            if resources.get("disk_percent", 0.0) >= disk_recovery:
+                return
+            if resources.get("memory_percent", 0.0) >= memory_recovery:
+                return
+
+        if recent_cache_found:
+            logger.info(
+                "Cached node resources recovered below thresholds. Auto-resuming."
+            )
+            self.resume()
+            return
+
         # Check if both resources are below recovery threshold
         if disk_percent < disk_recovery and memory_percent < memory_recovery:
             logger.info(

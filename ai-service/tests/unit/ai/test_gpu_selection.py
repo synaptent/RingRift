@@ -12,6 +12,23 @@ import torch
 from app.ai.gpu_game_types import MoveType
 from app.ai.gpu_selection import select_moves_heuristic, select_moves_vectorized
 
+
+def _assert_selected_indices_in_range(
+    selected: torch.Tensor,
+    *,
+    minimum: int,
+    exclusive_maximum: int,
+) -> None:
+    """Assert selected indices stay within bounds using CPU scalars.
+
+    Apple MPS has shown occasional flakiness on large boolean reductions in
+    this test module. Moving the final min/max comparison to CPU preserves the
+    contract while avoiding backend-specific false negatives.
+    """
+    selected_cpu = selected.detach().cpu()
+    assert int(selected_cpu.min().item()) >= minimum
+    assert int(selected_cpu.max().item()) < exclusive_maximum
+
 # =============================================================================
 # Mock Classes
 # =============================================================================
@@ -361,8 +378,11 @@ class TestSelectMovesVectorized:
         selected = select_moves_vectorized(moves, active_mask, board_size)
 
         assert selected.shape == (batch_size,)
-        assert (selected >= 0).all()
-        assert (selected < 10).all()
+        _assert_selected_indices_in_range(
+            selected,
+            minimum=0,
+            exclusive_maximum=10,
+        )
 
     def test_many_moves_per_game(self, device, board_size):
         """Should handle games with many moves."""
@@ -374,8 +394,11 @@ class TestSelectMovesVectorized:
         selected = select_moves_vectorized(moves, active_mask, board_size)
 
         assert selected.shape == (batch_size,)
-        assert (selected >= 0).all()
-        assert (selected < 100).all()
+        _assert_selected_indices_in_range(
+            selected,
+            minimum=0,
+            exclusive_maximum=100,
+        )
 
 
 # =============================================================================
@@ -616,8 +639,11 @@ class TestSelectMovesHeuristic:
         selected = select_moves_heuristic(moves, state, active_mask)
 
         assert selected.shape == (batch_size,)
-        assert (selected >= 0).all()
-        assert (selected < 10).all()
+        _assert_selected_indices_in_range(
+            selected,
+            minimum=0,
+            exclusive_maximum=10,
+        )
 
     def test_line_potential_scoring(self, device, board_size):
         """Moves that extend lines should be preferred."""
@@ -676,8 +702,11 @@ class TestSelectMovesHeuristic:
         selected = select_moves_heuristic(moves, state, active_mask, weights_list=None)
 
         assert selected.shape == (batch_size,)
-        assert (selected >= 0).all()
-        assert (selected < 5).all()
+        _assert_selected_indices_in_range(
+            selected,
+            minimum=0,
+            exclusive_maximum=5,
+        )
 
 
 # =============================================================================

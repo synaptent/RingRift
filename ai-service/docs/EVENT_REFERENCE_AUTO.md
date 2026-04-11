@@ -104,7 +104,7 @@ These events are emitted but have no subscribers:
 - `QUALITY_SIGNAL` - emitted in: tests/unit/coordination/test_feedback_signals.py
 - `QUALITY_THRESHOLD_MET` - emitted in: tests/integration/coordination/test_quality_gate_flow.py
 - `QUALITY_UPDATED` - emitted in: tests/unit/coordination/test_event_emitters.py
-- `REGISTRY_UPDATED` - emitted in: archive/lambda_scripts/lambda_watchdog.py
+- `REGISTRY_UPDATED` - emitted in: archive/deprecated_lambda/lambda_scripts/lambda_watchdog.py
 - `REGRESSION_SIGNAL` - emitted in: tests/unit/coordination/test_feedback_signals.py
 - `REPAIR_COMPLETED` - emitted in: tests/unit/coordination/test_event_emitters.py, app/coordination/unified_replication_daemon.py
 - `REPAIR_FAILED` - emitted in: tests/unit/coordination/test_event_emitters.py, app/coordination/unified_replication_daemon.py
@@ -3130,7 +3130,7 @@ These events have subscribers but are never emitted:
 
 **Emitters**:
 
-- `archive/lambda_scripts/lambda_watchdog.py:280`
+- `archive/deprecated_lambda/lambda_scripts/lambda_watchdog.py:280`
 
 ### REGRESSION_CLEARED
 
