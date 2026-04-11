@@ -57,17 +57,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run ESLint
         run: npm run lint -- --format stylish
@@ -99,17 +93,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run tests with coverage report
         run: |
@@ -149,17 +137,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run TS rules-engine Jest suites
         run: npm run test:ts-rules-engine
@@ -180,17 +162,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run TS orchestrator parity bundle (adapter-ON)
         run: npm run test:orchestrator-parity
@@ -211,17 +187,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run TS parity / trace suites
         run: npm run test:ts-parity
@@ -242,17 +212,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run TS integration suites
         run: npm run test:ts-integration
@@ -273,17 +237,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run P0 robustness profile
         run: npm run test:p0-robustness
@@ -303,17 +261,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run orchestrator invariant smoke soak
         run: npm run soak:orchestrator:smoke
@@ -333,17 +285,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run orchestrator invariant short soak
         run: npm run soak:orchestrator:short
@@ -359,17 +305,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run SSoT enforcement checks
         run: npm run ssot-check
@@ -388,17 +328,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Build server and client
         run: npm run build
@@ -420,14 +354,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        run: npm ci --ignore-scripts
+          install-command: 'npm ci --ignore-scripts'
 
       - name: Audit Node dependencies (prod, fail on high)
         run: npm audit --omit=dev --audit-level=high
@@ -518,31 +449,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run orchestrator parity TS suites
         run: npm run test:orchestrator-parity:ts
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run Python contract vector tests
         run: ./scripts/run-python-contract-tests.sh --verbose
@@ -558,31 +477,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js (for TS fixtures)
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Generate TS→Python rules parity fixtures
         run: npx ts-node tests/scripts/generate_rules_parity_fixtures.ts
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run Python rules-parity tests (fixture-based)
         working-directory: ai-service
@@ -599,17 +506,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-          python -m pip install ruff
+          extra-packages: 'ruff'
 
       - name: Lint Python (scoped)
         working-directory: ai-service
@@ -639,16 +540,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run AI self-play healthcheck profile
         working-directory: ai-service
@@ -679,16 +574,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run Python parity healthcheck
         working-directory: ai-service
@@ -718,28 +607,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js (for TS parity harness)
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
+          run-prisma-generate: 'true'
 
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run canonical selfplay parity gate (2-player)
         working-directory: ai-service
@@ -818,18 +695,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          # Use PyTorch CPU index to avoid CUDA-only C extension build failures
-          # for torch-scatter, torch-sparse, and torch-geometric.
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Install pip-audit (pinned CLI supporting --severity)
         run: python -m pip install 'pip-audit>=2.7.0,<3.0.0'
@@ -868,16 +737,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run baseline vs random AI evaluation
         working-directory: ai-service
@@ -911,16 +774,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run strength regression gate (CI preset)
         working-directory: ai-service
@@ -988,17 +845,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Run database migrations
         run: npx prisma migrate deploy
@@ -1080,16 +931,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Check Python import integrity
         working-directory: ai-service

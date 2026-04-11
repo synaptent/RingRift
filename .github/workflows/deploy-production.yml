@@ -20,17 +20,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
+          run-prisma-generate: 'true'
 
       - name: Type check
         run: npx tsc --noEmit

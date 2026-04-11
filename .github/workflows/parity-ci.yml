@@ -65,26 +65,17 @@ jobs:
         uses: actions/checkout@v6
 
       # TS replay requires Node.js and npm dependencies
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        run: npm ci
 
       # Python for the parity checker
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          extra-index-url: ''
 
       # Generate canonical DB on-the-fly (gitignored, not stored in repo)
       # This ensures fresh games are tested and avoids stale DB issues
@@ -138,25 +129,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          extra-index-url: ''
 
       # Generate canonical 3P DB on-the-fly
       - name: Generate canonical 3P games
@@ -206,25 +188,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          extra-index-url: ''
 
       # Generate canonical 4P DB on-the-fly
       - name: Generate canonical 4P games
@@ -278,25 +251,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Python AI toolchain
+        uses: ./.github/actions/setup-python-ai
         with:
           python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: ai-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          extra-index-url: ''
 
       # Run parity check on all available DBs (scan mode)
       - name: Run extended parity check

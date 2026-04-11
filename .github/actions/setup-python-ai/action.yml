@@ -1,0 +1,50 @@
+name: Setup Python AI
+description: Set up Python and install ai-service dependencies.
+
+inputs:
+  python-version:
+    description: Python version to install.
+    required: false
+    default: '3.11'
+  working-directory:
+    description: Directory containing the ai-service requirements file.
+    required: false
+    default: 'ai-service'
+  requirements-file:
+    description: Requirements file to install.
+    required: false
+    default: 'requirements.txt'
+  extra-index-url:
+    description: Optional extra Python package index URL.
+    required: false
+    default: 'https://download.pytorch.org/whl/cpu'
+  extra-packages:
+    description: Optional extra pip packages to install after requirements.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.requirements-file }}
+
+    - name: Install Python dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        python -m pip install --upgrade pip
+
+        if [ -n "${{ inputs.extra-index-url }}" ]; then
+          pip install -r "${{ inputs.requirements-file }}" --extra-index-url "${{ inputs.extra-index-url }}"
+        else
+          pip install -r "${{ inputs.requirements-file }}"
+        fi
+
+        if [ -n "${{ inputs.extra-packages }}" ]; then
+          python -m pip install ${{ inputs.extra-packages }}
+        fi

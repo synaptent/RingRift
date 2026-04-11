@@ -22,14 +22,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node toolchain
+        uses: ./.github/actions/setup-node
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Run nightly orchestrator invariant soak
         run: npm run soak:orchestrator:nightly
@@ -41,4 +37,3 @@ jobs:
           name: orchestrator_soak_nightly_summary
           path: results/orchestrator_soak_nightly.json
           retention-days: 14
-
