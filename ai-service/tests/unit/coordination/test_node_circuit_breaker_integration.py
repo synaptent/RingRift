@@ -18,6 +18,20 @@ from app.coordination.node_circuit_breaker import (
 )
 
 
+def _wait_for_half_open(
+    breaker: NodeCircuitBreaker,
+    node_id: str,
+    timeout_s: float = 0.5,
+) -> None:
+    """Wait until the breaker transitions into HALF_OPEN for a node."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if breaker.get_state(node_id) == NodeCircuitState.HALF_OPEN:
+            return
+        time.sleep(0.005)
+    raise AssertionError(f"{node_id} did not transition to HALF_OPEN within {timeout_s}s")
+
+
 class TestNodeCircuitBreaker:
     """Tests for NodeCircuitBreaker class."""
 
@@ -70,7 +84,7 @@ class TestNodeCircuitBreaker:
         assert breaker.can_check("test-node") is False
 
         # Wait for recovery timeout
-        time.sleep(0.02)
+        _wait_for_half_open(breaker, "test-node")
         assert breaker.can_check("test-node") is True
         assert breaker.get_state("test-node") == NodeCircuitState.HALF_OPEN
 
@@ -80,7 +94,7 @@ class TestNodeCircuitBreaker:
         breaker = NodeCircuitBreaker(config=config)
 
         breaker.record_failure("test-node")
-        time.sleep(0.02)  # Enter half-open
+        _wait_for_half_open(breaker, "test-node")
 
         assert breaker.get_state("test-node") == NodeCircuitState.HALF_OPEN
         breaker.record_success("test-node")
@@ -92,7 +106,7 @@ class TestNodeCircuitBreaker:
         breaker = NodeCircuitBreaker(config=config)
 
         breaker.record_failure("test-node")
-        time.sleep(0.02)  # Enter half-open
+        _wait_for_half_open(breaker, "test-node")
 
         assert breaker.get_state("test-node") == NodeCircuitState.HALF_OPEN
         breaker.record_failure("test-node")

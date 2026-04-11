@@ -143,14 +143,14 @@ def test_gauntlet_eval_budget_matches_threshold_source_of_truth() -> None:
 def test_minimal_loop_staged_promotion_contract_is_explicit() -> None:
     """The minimal loop's staged seat-fair promotion thresholds are stable."""
     tree = ast.parse(_minimal_loop_source())
-    stages = None
+    stages_2p = None
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "_EVAL_STAGES":
-                    stages = ast.literal_eval(node.value)
+                if isinstance(target, ast.Name) and target.id == "_EVAL_STAGES_2P":
+                    stages_2p = ast.literal_eval(node.value)
 
-    assert stages == [
+    assert stages_2p == [
         (50, 0.60, 0.42),
         (100, 0.56, 0.46),
         (200, 0.53, 0.48),
@@ -158,6 +158,7 @@ def test_minimal_loop_staged_promotion_contract_is_explicit() -> None:
     ]
 
     source = _minimal_loop_source()
+    assert "eval_stages = _get_eval_stages()" in source
     assert "--promote-threshold" in source
     assert 'promoted = ev.get("decision") == "promote"' in source
 

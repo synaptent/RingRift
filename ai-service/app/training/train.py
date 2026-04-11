@@ -1,66 +1,13 @@
-"""Training script for RingRift Neural Network AI.
-
-Includes validation split, checkpointing, early stopping, LR warmup,
-and distributed training support via PyTorch DDP.
-
-Recommended Usage (December 2025):
-    For unified data management and training coordination, consider using:
-    - TrainingDataCoordinator: app.training.data_coordinator
-    - UnifiedTrainingOrchestrator: app.training.unified_orchestrator
-
-    For modular training step/epoch logic (December 2025 extraction):
-    - train_step: Core batch-level training (forward, loss, backward, step)
-    - train_epoch: Epoch-level training loop with validation and early stopping
-
-    Example using data coordinator and orchestrator:
-        from app.training.data_coordinator import get_data_coordinator
-        from app.training.unified_orchestrator import UnifiedTrainingOrchestrator
-
-        # Use data coordinator for quality-aware data loading
-        coordinator = get_data_coordinator()
-        await coordinator.prepare_for_training(board_type="square8", num_players=2)
-
-        # Use unified training orchestrator for lifecycle management
-        orchestrator = UnifiedTrainingOrchestrator.from_config(config)
-        await orchestrator.initialize()
-        # Run training with orchestrator...
-
-    Example using modular train_step/train_epoch:
-        from app.training.train_step import TrainStepContext, TrainStepConfig, run_training_step
-        from app.training.train_epoch import EpochContext, EpochConfig, run_all_epochs
-
-        # Create contexts
-        step_config = TrainStepConfig(use_mixed_precision=True)
-        epoch_config = EpochConfig(epochs=20, patience=10)
-        epoch_context = EpochContext(
-            model=model, optimizer=optimizer, train_loader=train_loader,
-            val_loader=val_loader, device=device, config=epoch_config,
-        )
-
-        # Run all epochs with early stopping
-        results = run_all_epochs(epoch_context)
-"""
+"""Training CLI for RingRift neural networks."""
 from __future__ import annotations
 
-# Maintenance note (April 2026): this file remains the supported training CLI,
-# but the next safe decomposition should split along these seams without
-# changing behavior:
-# - data loading and NPZ validation -> app.training.data_pipeline
-# - model construction and init-weight compatibility -> app.training.model_factory
-# - checkpoint naming, atomic save, and version metadata -> app.training.checkpoint_manager
-# - train/validation loop orchestration stays here, with batch math in train_step/train_epoch
-# - evaluation or promotion decisions stay outside this CLI and should remain explicit callers
+# Maintenance note: the supported CLI remains here; non-loop helpers have been
+# extracted into dedicated training modules.
 
-import contextlib
-import glob
 import logging
-import math
 import os
-import random
-import sys
 import time
 import warnings
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import (
     Any,
@@ -71,10 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
-
-from app.utils.numpy_utils import safe_load_npz
-from app.utils.torch_utils import safe_load_checkpoint
+from torch.utils.data import DataLoader
 
 # Training control thresholds (December 2025)
 from app.config.thresholds import (
@@ -127,48 +71,35 @@ from app.ai.neural_net import (
 )
 from app.models import BoardType
 from app.utils.canonical_naming import normalize_board_type
+from app.training.checkpoint_manager import (
+    finalize_training_checkpoints,
+    initialize_checkpoint_services,
+    save_best_model_artifacts,
+    save_early_stop_artifacts,
+    save_periodic_checkpoint,
+)
+from app.training.checkpoint_inspection import detect_tier_from_checkpoint
 from app.training.config import TrainConfig
-# December 2025: Structured config objects for train_model() parameter reduction
-from app.training.train_config import (
-    FullTrainingConfig,
-    TrainingDataConfig,
-    DistributedConfig,
-    CheckpointConfig,
-    EnhancementConfig,
-    config_from_legacy_params,
+from app.training.data_pipeline import (
+    prepare_dataset_metadata_context,
+    prepare_training_data_pipeline,
+    validate_training_data,
 )
-from app.training.data_loader import (
-    StreamingDataLoader,
-    WeightedStreamingDataLoader,
-    get_sample_count,
-    prefetch_loader,
-)
-from app.training.datasets import RingRiftDataset, WeightedRingRiftDataset
 from app.training.distributed import (
-    DistributedMetrics,
     cleanup_distributed,
-    get_distributed_sampler,
     get_rank,
     get_world_size,
     is_main_process,
     scale_learning_rate,
     seed_everything,
     setup_distributed,
-    wrap_model_ddp,
 )
-from app.training.fault_tolerance import HeartbeatMonitor
 from app.training.gradient_surgery import GradientSurgeon, GradientSurgeryConfig
-from app.training.model_versioning import (
-    save_model_checkpoint,
+from app.training.loss_monitor import LossMonitor
+from app.training.model_factory import (
+    prepare_training_model_artifacts,
 )
 from app.training.seed_utils import seed_all
-from app.training.train_setup import (
-    FaultToleranceConfig,
-    TrainingState,
-    setup_fault_tolerance,
-)
-from app.training.value_calibration import CalibrationTracker
-
 # December 2025: Modular training step/epoch logic
 # These modules extract core training logic for testability and reuse
 from app.training.train_step import (
@@ -196,11 +127,18 @@ from app.training.train_components import (
 
 # February 2026: Extracted modules from train_model() for maintainability
 from app.training.train_pre_validation import run_pre_training_validation
-from app.training.train_dataset_inference import (
-    DatasetInferenceResult,
-    infer_dataset_metadata,
+from app.training.training_epoch_reporting import (
+    handle_epoch_reporting_and_feedback,
 )
-from app.training.train_model_factory import create_training_model
+from app.training.training_entrypoints import train_from_file, train_with_config
+from app.training.training_run_support import (
+    initialize_training_run_support,
+    maybe_run_lr_finder,
+)
+from app.training.training_runtime_setup import initialize_training_runtime_setup
+from app.training.parameter_validation import (
+    validate_training_compatibility as _validate_training_compatibility,
+)
 
 # Data validation (2025-12) - use unified module
 try:
@@ -433,211 +371,14 @@ AUTO_STREAMING_THRESHOLD_BYTES = int(os.environ.get(
     "RINGRIFT_AUTO_STREAMING_THRESHOLD_GB", "5"
 )) * 1024 * 1024 * 1024
 
-from app.ai.heuristic_weights import (
-    HEURISTIC_WEIGHT_KEYS,
-    HEURISTIC_WEIGHT_PROFILES,
-)
-from app.training.eval_pools import run_heuristic_tier_eval
-from app.training.tier_eval_config import (
-    HEURISTIC_TIER_SPECS,
-    HeuristicTierSpec,
-)
-
-# Heuristic tuning utilities (extracted Dec 2025)
-# NOTE: Some helper functions are re-exported for backwards compatibility with
-# integration tests and older tooling.
-#
-# IMPORTANT: Unit tests monkeypatch
-# [`app.training.train.evaluate_heuristic_candidate`](ai-service/app/training/train.py:1)
-# to avoid running the expensive eval-pool harness. To keep that patching
-# surface stable after the refactor to `heuristic_tuning.py`, we expose thin
-# wrappers here and pass the wrapper into the underlying implementation.
 from app.training.heuristic_tuning import (
+    HEURISTIC_WEIGHT_KEYS,
     _flatten_heuristic_weights,
     _reconstruct_heuristic_profile,
-    evaluate_heuristic_candidate as _evaluate_heuristic_candidate,
-    run_cmaes_heuristic_optimization as _run_cmaes_heuristic_optimization,
+    evaluate_heuristic_candidate,
+    run_cmaes_heuristic_optimization,
     temporary_heuristic_profile,
 )
-
-
-# =============================================================================
-# LossMonitor - Detect learning stalls during training (Jan 2026 fix)
-# =============================================================================
-
-class LossMonitor:
-    """Track loss curves and detect learning failures during training.
-
-    This class monitors training progress and emits events when the model
-    stops learning (loss not decreasing for consecutive epochs).
-
-    Usage:
-        monitor = LossMonitor(patience=5, config_key="hex8_2p")
-        for epoch in range(epochs):
-            train_loss = train_epoch(...)
-            val_loss = validate(...)
-
-            if not monitor.record(epoch, train_loss, val_loss):
-                logger.error("Training stalled - stopping early")
-                break
-    """
-
-    def __init__(self, patience: int = 5, config_key: str = "unknown"):
-        """Initialize the loss monitor.
-
-        Args:
-            patience: Number of epochs without improvement before signaling stall.
-            config_key: Configuration key for event emission (e.g., "hex8_2p").
-        """
-        self.patience = patience
-        self.config_key = config_key
-        self.history: list[dict[str, float]] = []
-        self.best_loss = float('inf')
-        self.stale_epochs = 0
-        self._logger = logging.getLogger(__name__)
-
-    def record(self, epoch: int, train_loss: float, val_loss: float) -> bool:
-        """Record epoch losses and check for learning stall.
-
-        Args:
-            epoch: Current epoch number.
-            train_loss: Training loss for this epoch.
-            val_loss: Validation loss for this epoch.
-
-        Returns:
-            True if training should continue, False if stalled.
-        """
-        self.history.append({
-            'epoch': epoch,
-            'train_loss': train_loss,
-            'val_loss': val_loss,
-        })
-
-        # Check for improvement (1% threshold)
-        if val_loss < self.best_loss * 0.99:
-            self.best_loss = val_loss
-            self.stale_epochs = 0
-        else:
-            self.stale_epochs += 1
-
-        # Emit warning if approaching stall
-        if self.stale_epochs >= self.patience:
-            self._logger.warning(
-                f"[LossMonitor] Loss not decreasing for {self.patience} epochs! "
-                f"Best: {self.best_loss:.4f}, Current: {val_loss:.4f}"
-            )
-
-            # Emit anomaly event if available
-            if HAS_TRAINING_EVENTS and emit_training_loss_anomaly is not None:
-                try:
-                    emit_training_loss_anomaly(
-                        config_key=self.config_key,
-                        anomaly_type="learning_stall",
-                        epochs_stale=self.stale_epochs,
-                        best_loss=self.best_loss,
-                        current_loss=val_loss,
-                    )
-                except (RuntimeError, TypeError) as e:
-                    self._logger.debug(f"Failed to emit anomaly event: {e}")
-
-            return False  # Signal to stop
-
-        # Emit trend info periodically
-        if epoch % 5 == 0 and HAS_TRAINING_EVENTS and emit_training_loss_trend is not None:
-            try:
-                emit_training_loss_trend(
-                    config_key=self.config_key,
-                    epoch=epoch,
-                    train_loss=train_loss,
-                    val_loss=val_loss,
-                )
-            except (RuntimeError, TypeError):
-                pass  # Non-critical, don't log
-
-        return True  # Continue training
-
-    def get_summary(self) -> dict[str, Any]:
-        """Get summary of loss monitoring.
-
-        Returns:
-            Dictionary with monitoring summary.
-        """
-        return {
-            'config_key': self.config_key,
-            'epochs_recorded': len(self.history),
-            'best_loss': self.best_loss,
-            'stale_epochs': self.stale_epochs,
-            'is_stalled': self.stale_epochs >= self.patience,
-        }
-
-
-def evaluate_heuristic_candidate(
-    tier_spec: HeuristicTierSpec,
-    base_profile_id: str,
-    keys: Sequence[str],
-    candidate_vector: Sequence[float],
-    rng_seed: int,
-    games_per_candidate: int | None = None,
-) -> tuple[float, dict[str, Any]]:
-    """Evaluate a single heuristic weight candidate for CMA-ES optimization.
-
-    Wrapper that runs selfplay games with a modified heuristic profile
-    and returns the win rate as fitness score.
-
-    Args:
-        tier_spec: Heuristic tier specification for evaluation
-        base_profile_id: Base heuristic profile to modify
-        keys: Weight parameter names to optimize
-        candidate_vector: Weight values for this candidate
-        rng_seed: Random seed for reproducibility
-        games_per_candidate: Number of games per evaluation (default from tier_spec)
-
-    Returns:
-        Tuple of (win_rate, detailed_stats)
-    """
-    return _evaluate_heuristic_candidate(
-        tier_spec=tier_spec,
-        base_profile_id=base_profile_id,
-        keys=keys,
-        candidate_vector=candidate_vector,
-        rng_seed=rng_seed,
-        games_per_candidate=games_per_candidate,
-    )
-
-
-def run_cmaes_heuristic_optimization(
-    tier_id: str,
-    base_profile_id: str,
-    generations: int = 5,
-    population_size: int = 8,
-    rng_seed: int = 1,
-    games_per_candidate: int | None = None,
-) -> dict[str, Any]:
-    """Run CMA-ES optimization to tune heuristic evaluation weights.
-
-    Uses evolutionary strategy to find optimal weight configurations
-    by running selfplay tournaments and selecting winning candidates.
-
-    Args:
-        tier_id: Heuristic tier to optimize (e.g., 'basic', 'advanced')
-        base_profile_id: Starting profile for weight initialization
-        generations: Number of CMA-ES generations
-        population_size: Candidates per generation
-        rng_seed: Random seed for reproducibility
-        games_per_candidate: Games per candidate evaluation
-
-    Returns:
-        Dict with optimized weights and optimization history
-    """
-    return _run_cmaes_heuristic_optimization(
-        tier_id=tier_id,
-        base_profile_id=base_profile_id,
-        generations=generations,
-        population_size=population_size,
-        rng_seed=rng_seed,
-        games_per_candidate=games_per_candidate,
-        evaluate_fn=evaluate_heuristic_candidate,
-    )
 
 # Configure logging
 logging.basicConfig(
@@ -647,18 +388,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Backwards-compatible alias that forwards to the shared training
-# seeding utility so that existing callers importing seed_all from this
-# module continue to work.
 def seed_all_legacy(seed: int = 42) -> None:
-    """Seed all random number generators for reproducibility.
-
-    Backward-compatible alias for seed_all() from training_enhancements.
-    Sets seeds for Python random, NumPy, and PyTorch (CPU/CUDA).
-
-    Args:
-        seed: Random seed value (default: 42)
-    """
+    """Backwards-compatible seeding wrapper kept for older callers/tests."""
     seed_all(seed)
 
 
@@ -677,272 +408,7 @@ from app.training.checkpoint_unified import (
     load_checkpoint,
     save_checkpoint,
 )
-
-# LR scheduler utilities extracted to dedicated module (2025-12)
-from app.training.schedulers import create_lr_scheduler
-
-# Dataset classes extracted to dedicated module (2025-12)
-# RingRiftDataset and WeightedRingRiftDataset are imported from app.training.datasets
-
-
-def _validate_training_compatibility(
-    model: nn.Module,
-    dataset: Any,
-    config: "TrainConfig",
-) -> None:
-    """Phase 6: Validate model and dataset are compatible before training.
-
-    This function catches common issues early to prevent wasted GPU hours:
-    - Policy size mismatches between model and data
-    - Board type incompatibility
-    - Invalid sample data
-
-    Parameters
-    ----------
-    model : nn.Module
-        The neural network model to train.
-    dataset : Any
-        The training dataset (RingRiftDataset or similar).
-    config : TrainConfig
-        Training configuration.
-
-    Raises
-    ------
-    ValueError
-        If model/dataset are incompatible or data validation fails.
-    """
-    logger.info("Running training compatibility validation...")
-
-    # 1. Policy size compatibility
-    model_policy_size = getattr(model, 'policy_size', None)
-    dataset_policy_size = getattr(dataset, 'policy_size', None)
-
-    if model_policy_size is not None and dataset_policy_size is not None:
-        if dataset_policy_size > model_policy_size:
-            raise ValueError(
-                f"Dataset policy_size ({dataset_policy_size}) > model policy_size ({model_policy_size}). "
-                f"Dataset contains indices the model cannot predict. "
-                f"Check board type settings and encoder version."
-            )
-        elif dataset_policy_size < model_policy_size:
-            logger.info(
-                f"Dataset policy_size ({dataset_policy_size}) < model policy_size ({model_policy_size}). "
-                f"Policy targets will be zero-padded (this is normal)."
-            )
-
-    # 2. Board type compatibility (if available)
-    model_board_type = getattr(model, 'board_type', None)
-    dataset_board_type = getattr(dataset, 'board_type', None)
-
-    if model_board_type is not None and dataset_board_type is not None:
-        if model_board_type != dataset_board_type:
-            # Dec 28, 2025: Changed from warning to error to prevent cross-config contamination
-            # Training hex8 model with square8 data (or vice versa) produces garbage models
-            raise ValueError(
-                f"[CROSS-CONFIG CONTAMINATION] Board type mismatch: "
-                f"model expects '{model_board_type}', dataset contains '{dataset_board_type}'. "
-                f"This would produce a garbage model. "
-                f"Use --board-type to specify the correct board type, or regenerate training data."
-            )
-
-    # 3. Sample validation - check first few samples
-    num_samples_to_check = min(10, len(dataset))
-    policy_size = model_policy_size or dataset_policy_size or 4500
-
-    invalid_samples = []
-    for i in range(num_samples_to_check):
-        try:
-            sample = dataset[i]
-            # Handle different return formats
-            if isinstance(sample, tuple) and len(sample) >= 4:
-                _, _, _, policy = sample[:4]
-            else:
-                continue
-
-            # Check policy vector
-            if hasattr(policy, 'sum'):
-                policy_sum = policy.sum().item()
-                if policy_sum > 0 and not (0.5 < policy_sum < 1.5):
-                    invalid_samples.append((i, f"policy_sum={policy_sum:.4f}"))
-
-                # Check for NaN
-                if hasattr(policy, 'isnan') and policy.isnan().any():
-                    invalid_samples.append((i, "contains NaN"))
-
-        except (KeyError, IndexError, ValueError, AttributeError) as e:
-            # KeyError: missing data keys, IndexError: array access,
-            # ValueError: data validation, AttributeError: missing methods
-            invalid_samples.append((i, f"error: {str(e)[:50]}"))
-
-    if invalid_samples:
-        logger.warning(
-            f"Found {len(invalid_samples)} potentially invalid samples in first {num_samples_to_check}: "
-            f"{invalid_samples[:5]}"
-        )
-        if len(invalid_samples) > num_samples_to_check // 2:
-            raise ValueError(
-                f"More than half of checked samples are invalid. "
-                f"Dataset may be corrupted or incompatible. "
-                f"Issues: {invalid_samples[:5]}"
-            )
-
-    logger.info("Training compatibility validation passed")
-
-
-def detect_tier_from_checkpoint(
-    checkpoint_path: str | Path,
-    device: str = "cpu",
-) -> tuple[str, str, int, int] | None:
-    """Detect memory tier and architecture from a checkpoint.
-
-    This function inspects a checkpoint file to extract the memory tier
-    and architecture parameters. Used when resuming training to ensure
-    the model architecture matches the checkpoint.
-
-    Parameters
-    ----------
-    checkpoint_path : str or Path
-        Path to the checkpoint file.
-    device : str
-        Device to load checkpoint onto (default: cpu).
-
-    Returns
-    -------
-    tuple[str, str, int, int] or None
-        (memory_tier, model_version, num_filters, num_res_blocks) if detected,
-        None if checkpoint doesn't exist or can't be analyzed.
-    """
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.exists():
-        return None
-
-    try:
-        checkpoint = safe_load_checkpoint(str(checkpoint_path), map_location=device)
-    except (OSError, RuntimeError, ValueError) as e:
-        logger.warning(f"Could not load checkpoint for tier detection: {e}")
-        return None
-
-    # Extract versioning metadata
-    metadata = checkpoint.get("_versioning_metadata", {})
-    config = metadata.get("config", {})
-
-    # Check if memory_tier is directly stored
-    memory_tier = metadata.get("memory_tier") or config.get("memory_tier", "")
-
-    # Extract architecture parameters
-    num_filters = config.get("num_filters")
-    num_res_blocks = config.get("num_res_blocks")
-
-    # If no direct tier, infer from config
-    if not memory_tier and num_filters is not None:
-        from app.training.model_versioning import infer_memory_tier_from_config
-        memory_tier = infer_memory_tier_from_config(config)
-
-    if not memory_tier:
-        return None
-
-    # Map tier to model_version
-    tier_to_version = {
-        "v4": "v4",
-        "v3-high": "v3",
-        "v3-low": "v3",
-        "v5": "v5",
-        "v5.1": "v5-heavy",
-        "v5-heavy-large": "v5-heavy",
-        "v5-heavy-xl": "v5-heavy",
-        # Deprecated aliases (use v5-heavy-large, v5-heavy-xl instead)
-        "v6": "v5-heavy",
-        "v6-xl": "v5-heavy",
-        "v2": "v2",
-        "v2-lite": "v2",
-        "gnn": "gnn",
-        "hybrid": "hybrid",
-    }
-    model_version = tier_to_version.get(memory_tier, "v2")
-
-    # Ensure we have architecture parameters
-    if num_filters is None or num_res_blocks is None:
-        # Use tier defaults
-        tier_defaults = {
-            "v4": (128, 13),
-            "v3-high": (192, 12),
-            "v3-low": (96, 6),
-            "v5": (160, 11),
-            "v5.1": (160, 11),
-            "v5-heavy-large": (256, 18),
-            "v5-heavy-xl": (320, 20),
-            # Deprecated aliases
-            "v6": (256, 18),
-            "v6-xl": (320, 20),
-            "v2": (96, 6),
-            "v2-lite": (64, 6),
-        }
-        defaults = tier_defaults.get(memory_tier, (96, 6))
-        num_filters = num_filters or defaults[0]
-        num_res_blocks = num_res_blocks or defaults[1]
-
-    logger.info(
-        f"Detected checkpoint architecture: tier={memory_tier}, "
-        f"version={model_version}, filters={num_filters}, blocks={num_res_blocks}"
-    )
-
-    return (memory_tier, model_version, num_filters, num_res_blocks)
-
-
-def validate_training_data(npz_path: Path, board_type: str, num_players: int) -> None:
-    """Validate NPZ file before training. Raises ValueError on issues.
-
-    Pre-flight check that catches corrupt, empty, or mismatched data files
-    before we spend time creating models and optimizers.
-
-    Args:
-        npz_path: Path to the NPZ training data file.
-        board_type: Expected board type (e.g. "hex8", "square8").
-        num_players: Expected number of players (2, 3, or 4).
-
-    Raises:
-        ValueError: If the NPZ file is invalid or too small.
-        FileNotFoundError: If the NPZ file does not exist.
-    """
-    if not npz_path.exists():
-        raise FileNotFoundError(f"Training data not found: {npz_path}")
-
-    file_size = npz_path.stat().st_size
-    if file_size < 1024:
-        raise ValueError(
-            f"Training data file too small ({file_size} bytes): {npz_path}. "
-            f"Likely corrupt or incomplete transfer."
-        )
-
-    data = np.load(npz_path, allow_pickle=True)
-    required_keys = ["features", "values"]
-    for key in required_keys:
-        if key not in data:
-            raise ValueError(f"NPZ missing required key: '{key}' in {npz_path}")
-
-    sample_count = data["features"].shape[0]
-    if sample_count < 100:
-        raise ValueError(
-            f"Too few samples in {npz_path}: {sample_count} (minimum 100). "
-            f"Collect more selfplay data before training."
-        )
-
-    # Cross-check board_type metadata if present
-    if "board_type" in data:
-        raw_bt = data["board_type"]
-        meta_bt = str(raw_bt.item() if hasattr(raw_bt, "item") else raw_bt).lower().strip()
-        expected_bt = board_type.lower().strip()
-        if meta_bt != expected_bt:
-            raise ValueError(
-                f"Board type mismatch in {npz_path}: "
-                f"file has '{meta_bt}', expected '{expected_bt}'"
-            )
-
-    logger.info(
-        f"Training data validated: {npz_path} "
-        f"({sample_count} samples, board_type={board_type}, num_players={num_players})"
-    )
-
+from app.training.datasets import RingRiftDataset
 
 def train_model(
     config: TrainConfig,
@@ -1263,237 +729,76 @@ def train_model(
             device = torch.device("cpu")
         logger.info(f"Using device: {device}")
 
-    # Log 2024-12 Training Improvements status
-    improvements_enabled = []
-    if spectral_norm:
-        improvements_enabled.append("spectral_norm")
-    if cyclic_lr:
-        improvements_enabled.append(f"cyclic_lr(period={cyclic_lr_period})")
-    if mixed_precision:
-        improvements_enabled.append(f"mixed_precision({amp_dtype})")
-    if value_whitening:
-        improvements_enabled.append("value_whitening")
-    if ema:
-        improvements_enabled.append(f"ema(decay={ema_decay})")
-    if stochastic_depth:
-        improvements_enabled.append(f"stochastic_depth(p={stochastic_depth_prob})")
-    if adaptive_warmup:
-        improvements_enabled.append("adaptive_warmup")
-    if hard_example_mining:
-        improvements_enabled.append(f"hard_example_mining(top_k={hard_example_top_k})")
+    runtime_setup = initialize_training_runtime_setup(
+        config=config,
+        device=device,
+        checkpoint_dir=checkpoint_dir,
+        distributed=distributed,
+        is_main=not distributed or is_main_process(),
+        spectral_norm=spectral_norm,
+        cyclic_lr=cyclic_lr,
+        cyclic_lr_period=cyclic_lr_period,
+        mixed_precision=mixed_precision,
+        amp_dtype=amp_dtype,
+        value_whitening=value_whitening,
+        ema=ema,
+        ema_decay=ema_decay,
+        stochastic_depth=stochastic_depth,
+        stochastic_depth_prob=stochastic_depth_prob,
+        adaptive_warmup=adaptive_warmup,
+        hard_example_mining=hard_example_mining,
+        hard_example_top_k=hard_example_top_k,
+        use_hot_data_buffer=use_hot_data_buffer,
+        hot_buffer_size=hot_buffer_size,
+        hot_buffer_mix_ratio=hot_buffer_mix_ratio,
+        external_hot_buffer=external_hot_buffer,
+        use_integrated_enhancements=use_integrated_enhancements,
+        enable_curriculum=enable_curriculum,
+        enable_augmentation=enable_augmentation,
+        enable_elo_weighting=enable_elo_weighting,
+        enable_auxiliary_tasks=enable_auxiliary_tasks,
+        enable_batch_scheduling=enable_batch_scheduling,
+        enable_background_eval=enable_background_eval,
+        enable_checkpoint_averaging=enable_checkpoint_averaging,
+        num_checkpoints_to_average=num_checkpoints_to_average,
+        enable_quality_weighting=enable_quality_weighting,
+        quality_weight_blend=quality_weight_blend,
+        quality_ranking_weight=quality_ranking_weight,
+        has_hot_data_buffer=HAS_HOT_DATA_BUFFER,
+        hot_data_buffer_cls=HotDataBuffer,
+        has_quality_bridge=HAS_QUALITY_BRIDGE,
+        get_quality_bridge=get_quality_bridge,
+        has_integrated_enhancements=HAS_INTEGRATED_ENHANCEMENTS,
+        integrated_enhancements_config_cls=IntegratedEnhancementsConfig,
+        integrated_training_manager_cls=IntegratedTrainingManager,
+        checkpoint_averager_cls=CheckpointAverager,
+        has_hard_example_mining=HAS_HARD_EXAMPLE_MINING,
+        hard_example_miner_cls=HardExampleMiner,
+        has_training_facade=HAS_TRAINING_FACADE,
+        training_facade_cls=TrainingEnhancementsFacade,
+        facade_config_cls=FacadeConfig,
+        has_quality_weighting=HAS_QUALITY_WEIGHTING,
+        quality_weighted_trainer_cls=QualityWeightedTrainer,
+        gradient_surgeon_cls=GradientSurgeon,
+        gradient_surgery_config_cls=GradientSurgeryConfig,
+        has_metrics_collector=HAS_METRICS_COLLECTOR,
+        metrics_collector_cls=MetricsCollector,
+    )
+    hot_buffer = runtime_setup.hot_buffer
+    enhancements_manager = runtime_setup.enhancements_manager
+    checkpoint_averager = runtime_setup.checkpoint_averager
+    hard_example_miner = runtime_setup.hard_example_miner
+    training_facade = runtime_setup.training_facade
+    quality_trainer = runtime_setup.quality_trainer
+    amp_enabled = runtime_setup.amp_enabled
+    amp_torch_dtype = runtime_setup.amp_torch_dtype
+    use_grad_scaler = runtime_setup.use_grad_scaler
+    scaler = runtime_setup.scaler
+    gradient_surgeon = runtime_setup.gradient_surgeon
+    use_gradient_surgery = runtime_setup.use_gradient_surgery
+    metrics_collector = runtime_setup.metrics_collector
 
-    if improvements_enabled:
-        logger.info(f"2024-12 Training Improvements enabled: {', '.join(improvements_enabled)}")
-
-    # Initialize hot data buffer if requested
-    # NOTE (2025-12): HotDataBuffer enables mixing fresh selfplay games with static
-    # training data for online/streaming training. For the buffer to receive games:
-    # 1. Pass external_hot_buffer (pre-populated buffer from unified_orchestrator), OR
-    # 2. Subscribe to EventBus NEW_GAME_AVAILABLE events and call hot_buffer.add_game()
-    hot_buffer = None
-    if external_hot_buffer is not None:
-        # Use externally-provided buffer (e.g., from unified_orchestrator)
-        hot_buffer = external_hot_buffer
-        current_samples = getattr(hot_buffer, 'total_samples', 0)
-        logger.info(
-            f"Using external hot data buffer with {current_samples} samples "
-            f"(mix_ratio={hot_buffer_mix_ratio})"
-        )
-    elif use_hot_data_buffer and HAS_HOT_DATA_BUFFER:
-        hot_buffer = HotDataBuffer(
-            max_size=hot_buffer_size,
-            training_threshold=config.batch_size * 5,
-        )
-        logger.info(f"Hot data buffer enabled (size={hot_buffer_size}, mix_ratio={hot_buffer_mix_ratio})")
-        logger.info(
-            "Note: Hot buffer requires external game population via add_game() "
-            "or event bus subscription to receive selfplay games"
-        )
-    elif use_hot_data_buffer and not HAS_HOT_DATA_BUFFER:
-        logger.warning("Hot data buffer requested but not available (import failed)")
-
-    # Configure quality bridge for quality-aware data selection (2025-12)
-    # This integrates quality scores from the sync system with training data loading
-    if HAS_QUALITY_BRIDGE:
-        try:
-            quality_bridge = get_quality_bridge()
-            num_refreshed = quality_bridge.refresh(force=True)
-            logger.info(f"Quality bridge initialized with {num_refreshed} game quality scores")
-
-            # Configure hot buffer with quality lookups if available
-            if hot_buffer is not None:
-                configured = quality_bridge.configure_hot_data_buffer(hot_buffer)
-                if configured > 0:
-                    logger.info(f"Hot buffer configured with {configured} quality scores")
-        except (ImportError, AttributeError, RuntimeError, ValueError) as e:
-            # ImportError: quality bridge module dependencies missing
-            # AttributeError: API changes or missing methods
-            # RuntimeError: quality bridge initialization errors
-            # ValueError: invalid quality score data
-            logger.warning(f"Failed to initialize quality bridge: {e}")
-
-    # Initialize integrated enhancements if requested
-    enhancements_manager = None
-    if use_integrated_enhancements and HAS_INTEGRATED_ENHANCEMENTS:
-        enh_config = IntegratedEnhancementsConfig(
-            curriculum_enabled=enable_curriculum,
-            augmentation_enabled=enable_augmentation,
-            elo_weighting_enabled=enable_elo_weighting,
-            auxiliary_tasks_enabled=enable_auxiliary_tasks,
-            batch_scheduling_enabled=enable_batch_scheduling,
-            background_eval_enabled=enable_background_eval,
-            # December 2025: Enable real game evaluation for accurate Elo tracking
-            eval_use_real_games=enable_background_eval,  # Use real games when bg eval is on
-            eval_board_type=config.board_type,
-        )
-        enhancements_manager = IntegratedTrainingManager(
-            config=enh_config,
-            model=None,  # Will be set after model creation
-            board_type=config.board_type.value,
-        )
-        logger.info(
-            f"Integrated enhancements enabled: "
-            f"curriculum={enable_curriculum}, augmentation={enable_augmentation}, "
-            f"elo_weighting={enable_elo_weighting}, auxiliary_tasks={enable_auxiliary_tasks}, "
-            f"batch_scheduling={enable_batch_scheduling}, background_eval={enable_background_eval}"
-        )
-    elif use_integrated_enhancements and not HAS_INTEGRATED_ENHANCEMENTS:
-        logger.warning("Integrated enhancements requested but not available (import failed)")
-
-    # Initialize checkpoint averager for end-of-training averaging (2025-12)
-    # Averages last N checkpoints for +10-20 Elo improvement with reduced variance
-    checkpoint_averager = None
-    if enable_checkpoint_averaging and CheckpointAverager is not None:
-        checkpoint_averager = CheckpointAverager(
-            num_checkpoints=num_checkpoints_to_average,
-            checkpoint_dir=Path(checkpoint_dir),
-            keep_on_disk=True,  # Save memory by keeping checkpoints on disk
-        )
-        logger.info(
-            f"[Checkpoint Averaging] Enabled: will average last {num_checkpoints_to_average} checkpoints at end of training"
-        )
-    elif enable_checkpoint_averaging and CheckpointAverager is None:
-        logger.warning("[Checkpoint Averaging] Requested but CheckpointAverager not available (import failed)")
-
-    # Initialize hard example miner for curriculum learning (2025-12)
-    # Tracks per-sample losses to focus training on difficult examples
-    hard_example_miner: HardExampleMiner | None = None
-    if hard_example_mining and HAS_HARD_EXAMPLE_MINING:
-        hard_example_miner = HardExampleMiner(
-            buffer_size=50000,  # Track up to 50K examples
-            hard_fraction=hard_example_top_k,  # Fraction of batch that should be hard examples
-            loss_threshold_percentile=80.0,  # Top 20% by loss are "hard"
-            uncertainty_weight=0.3,  # 30% weight on policy uncertainty
-            decay_rate=0.99,  # Decay old hardness scores
-            min_samples_before_mining=5000,  # Need 5K samples before mining starts
-            max_times_sampled=10,  # Cap oversampling of any single example
-        )
-        logger.info(
-            f"[Hard Example Mining] Enabled: hard_fraction={hard_example_top_k}, "
-            f"buffer_size=50000, min_samples_before_mining=5000"
-        )
-    elif hard_example_mining and not HAS_HARD_EXAMPLE_MINING:
-        logger.warning("[Hard Example Mining] Requested but HardExampleMiner not available (import failed)")
-
-    # Initialize unified training enhancements facade (2025-12)
-    # Consolidates hard example mining, per-sample loss, curriculum LR, freshness weighting
-    # This is the recommended way to use all training enhancements together (+80-165 Elo)
-    training_facade: TrainingEnhancementsFacade | None = None
-    if HAS_TRAINING_FACADE and TrainingEnhancementsFacade is not None:
-        facade_config = FacadeConfig(
-            enable_hard_mining=hard_example_mining,
-            hard_fraction=hard_example_top_k,
-            hard_buffer_size=50000,
-            hard_min_samples_before_mining=5000,
-            track_per_sample_loss=True,
-            enable_curriculum_lr=enable_curriculum,
-            curriculum_lr_min_scale=0.8,
-            curriculum_lr_max_scale=1.2,
-            enable_freshness_weighting=enable_elo_weighting,
-            freshness_decay_hours=24.0,
-            policy_weight=config.policy_weight,
-        )
-        training_facade = TrainingEnhancementsFacade(config=facade_config)
-        training_facade.set_total_epochs(config.epochs_per_iter)
-        logger.info(
-            f"[Training Facade] Enabled: hard_mining={hard_example_mining}, "
-            f"curriculum_lr={enable_curriculum}, freshness={enable_elo_weighting}"
-        )
-    elif hard_example_mining and not HAS_TRAINING_FACADE:
-        logger.info("[Training Facade] Not available, falling back to standalone HardExampleMiner")
-
-    # Quality-weighted training (2025-12) - resurrected from ebmo_network.py
-    # Weights samples by MCTS visit counts for better learning signal
-    quality_trainer: QualityWeightedTrainer | None = None
-    if enable_quality_weighting and HAS_QUALITY_WEIGHTING:
-        quality_trainer = QualityWeightedTrainer(
-            quality_weight=quality_weight_blend,
-            ranking_weight=quality_ranking_weight,
-            ranking_margin=0.5,  # Default margin for ranking loss
-            min_quality_weight=0.1,
-            temperature=1.0,
-        )
-        logger.info(
-            f"[Quality Weighting] Enabled: blend={quality_weight_blend:.2f}, "
-            f"ranking_weight={quality_ranking_weight:.2f}"
-        )
-    elif enable_quality_weighting and not HAS_QUALITY_WEIGHTING:
-        logger.warning("[Quality Weighting] Requested but module not available")
-
-    # Mixed precision setup (CUDA-only for now)
-    amp_enabled = bool(mixed_precision and device.type == 'cuda')
-    dtype_map = {'float16': torch.float16, 'bfloat16': torch.bfloat16}
-    amp_torch_dtype = dtype_map.get(amp_dtype, torch.bfloat16)
-    use_grad_scaler = bool(amp_enabled and amp_torch_dtype == torch.float16)
-    # GradScaler API changed in PyTorch 2.4+: torch.amp.GradScaler vs torch.cuda.amp.GradScaler
-    if hasattr(torch.amp, 'GradScaler'):
-        scaler = torch.amp.GradScaler('cuda', enabled=use_grad_scaler)
-    else:
-        scaler = torch.cuda.amp.GradScaler(enabled=use_grad_scaler)
-    if amp_enabled:
-        logger.info(f"Mixed precision training enabled with {amp_dtype}")
-
-    # Gradient surgery for multi-task learning (2025-12)
-    # Projects conflicting gradients between value/policy heads to prevent oscillation
-    gradient_surgeon: GradientSurgeon | None = None
-    use_gradient_surgery = getattr(config, 'enable_gradient_surgery', False)
-    if use_gradient_surgery:
-        if use_grad_scaler:
-            logger.warning(
-                "Gradient surgery disabled: incompatible with FP16 GradScaler. "
-                "Use bfloat16 mixed precision or disable mixed precision."
-            )
-            use_gradient_surgery = False
-        elif getattr(config, 'gradient_accumulation_steps', 1) > 1:
-            logger.warning(
-                "Gradient surgery disabled: incompatible with gradient accumulation. "
-                "Set gradient_accumulation_steps=1 to use gradient surgery."
-            )
-            use_gradient_surgery = False
-        else:
-            gradient_surgeon = GradientSurgeon(GradientSurgeryConfig(
-                enabled=True,
-                method="pcgrad",
-                conflict_threshold=0.0,
-            ))
-            logger.info("Gradient surgery (PCGrad) enabled for multi-task learning")
-
-    # Initialize dashboard metrics collector for persistent metric storage (2025-12)
-    metrics_collector = None
-    if HAS_METRICS_COLLECTOR and (not distributed or is_main_process()):
-        try:
-            metrics_collector = MetricsCollector()
-            logger.info("Dashboard metrics collector initialized")
-        except (ImportError, RuntimeError, OSError) as e:
-            # ImportError: metrics collector dependencies missing
-            # RuntimeError: initialization failures
-            # OSError: file/database access errors
-            logger.warning(f"Could not initialize metrics collector: {e}")
-
-    # ==========================================================================
-    # Dataset Metadata Inference (extracted to train_dataset_inference.py)
-    # ==========================================================================
-    _ds_result = infer_dataset_metadata(
+    metadata_context = prepare_dataset_metadata_context(
         data_path=data_path,
         config=config,
         num_players=num_players,
@@ -1506,6 +811,7 @@ def train_model(
         num_filters=num_filters,
         num_res_blocks=num_res_blocks,
         device=device,
+        data_path_str=data_path_str,
         BoardType=BoardType,
         HEX_BOARD_SIZE=HEX_BOARD_SIZE,
         HEX8_BOARD_SIZE=HEX8_BOARD_SIZE,
@@ -1515,149 +821,18 @@ def train_model(
         validate_hex_policy_indices=validate_hex_policy_indices,
         detect_tier_from_checkpoint=detect_tier_from_checkpoint,
     )
-    # April 2026: Early contract validation — catches encoding mismatches
-    # BEFORE model creation or data loading. This prevents the bug class
-    # that wasted 200+ GPU-hours across 5 manifestations.
-    try:
-        from app.training.board_encoding_contract import get_expected_channels, is_valid_channel_count
-        _contract_channels = get_expected_channels(config.board_type, model_version)
-        if _ds_result.encoding_channels > 0 and not is_valid_channel_count(_ds_result.encoding_channels):
-            raise ValueError(
-                f"[ContractViolation] NPZ has {_ds_result.encoding_channels} channels which is "
-                f"not a known encoding. Expected {_contract_channels} for "
-                f"{config.board_type.name}/{model_version}. Known: 40 (hex v2), "
-                f"56 (square families), 64 (hex v3/v4/v5-heavy families)."
-            )
-        elif _ds_result.encoding_channels > 0 and _ds_result.encoding_channels != _contract_channels:
-            # Valid channel count but doesn't match this board/version — log and continue
-            logger.info(
-                "[ContractInfo] NPZ has %d channels, contract expects %d for %s/%s — "
-                "using NPZ value (cross-board encoding)",
-                _ds_result.encoding_channels, _contract_channels, config.board_type.name, model_version,
-            )
-    except ValueError:
-        raise  # Re-raise contract violations
-    except (ImportError, AttributeError, TypeError) as _contract_err:
-        logger.debug("[ContractCheck] Skipped: %s", _contract_err)
-
-    board_size = _ds_result.board_size
-    policy_size = _ds_result.policy_size
-    encoding_channels = _ds_result.encoding_channels
-    hex_num_players = _ds_result.hex_num_players
-    use_hex_model = _ds_result.use_hex_model
-    use_hex_v3 = _ds_result.use_hex_v3
-    use_hex_v4 = _ds_result.use_hex_v4
-    use_hex_v5 = _ds_result.use_hex_v5
-    use_hex_v5_large = _ds_result.use_hex_v5_large
-    detected_num_heuristics = _ds_result.detected_num_heuristics
-    config_feature_version = _ds_result.config_feature_version
-    hex_radius = _ds_result.hex_radius
-
-    # (Dataset metadata inference handled above by infer_dataset_metadata)
-
-    # ===================================================================
-    # Architecture-Data Compatibility Validation (December 2025)
-    # Validates that the training data is compatible with the selected
-    # model architecture, especially for heuristic-dependent models.
-    # ===================================================================
-    def _validate_architecture_data_compatibility() -> None:
-        """Validate training data is compatible with selected architecture.
-
-        This catches errors early before expensive model initialization:
-        - V5-heavy requires at least 21 heuristic features (fast heuristics)
-        - V5-heavy-large/xl require all 49 heuristic features (full heuristics)
-
-        Raises:
-            ValueError: If data is incompatible with selected architecture
-        """
-        nonlocal detected_num_heuristics
-
-        # Only validate for architectures that require heuristics
-        v5_heavy_versions = ('v5', 'v5-gnn', 'v5-heavy', 'v5-heavy-large', 'v5-heavy-xl', 'v6', 'v6-xl')
-        if not (use_hex_v5 or model_version in v5_heavy_versions):
-            return
-
-        # Import encoder registry to get requirements
-        try:
-            from app.training.encoder_registry import get_encoder_config
-            board_type_name = config.board_type.name if hasattr(config.board_type, 'name') else str(config.board_type)
-            # Map to encoder registry key
-            if model_version in ('v5-heavy-large', 'v6'):
-                version_key = "v5-heavy"  # Uses same encoder as v5-heavy
-            else:
-                version_key = "v5-heavy"
-            encoder_config = get_encoder_config(board_type_name, version_key)
-        except (ValueError, ImportError):
-            # Registry doesn't have this config, skip validation
-            return
-
-        # Check if architecture requires heuristics
-        if not encoder_config.requires_heuristics:
-            return
-
-        min_required = encoder_config.min_heuristic_features
-        actual_heuristics = detected_num_heuristics or 0
-
-        if actual_heuristics < min_required:
-            # Map model version to human-readable name
-            version_names = {
-                "v6": "V5-Heavy-Large (deprecated alias)",
-                "v6-xl": "V5-Heavy-XL (deprecated alias)",
-                "v5-heavy-large": "V5-Heavy-Large",
-                "v5-heavy-xl": "V5-Heavy-XL",
-            }
-            version_name = version_names.get(model_version, "V5-Heavy")
-            raise ValueError(
-                f"\n{'='*70}\n"
-                f"ARCHITECTURE-DATA COMPATIBILITY ERROR\n"
-                f"{'='*70}\n\n"
-                f"Model: {version_name} (--model-version {model_version})\n"
-                f"  - Requires at least {min_required} heuristic features\n\n"
-                f"Dataset: {data_path_str if isinstance(data_path, str) else data_path[0] if data_path else 'unknown'}\n"
-                f"  - Has {actual_heuristics} heuristic features\n\n"
-                f"SOLUTIONS:\n"
-                f"  1. Re-export data with --full-heuristics flag:\n"
-                f"     python scripts/export_replay_dataset.py --full-heuristics ...\n"
-                f"  2. Use a different architecture that doesn't require heuristics:\n"
-                f"     --model-version v2 or --model-version v4\n"
-                f"{'='*70}"
-            )
-
-        if not distributed or is_main_process():
-            logger.info(
-                f"Architecture validation passed: {model_version} requires {min_required} "
-                f"heuristics, dataset has {actual_heuristics}"
-            )
-
-    # Run architecture-data compatibility check
-    if use_hex_model or use_hex_v5 or model_version in ('v5', 'v5-gnn', 'v5-heavy', 'v5-heavy-large', 'v5-heavy-xl', 'v6', 'v6-xl'):
-        _validate_architecture_data_compatibility()
-
-    if not distributed or is_main_process():
-        if use_hex_model or use_hex_v5_large:
-            if use_hex_v5_large:
-                hex_model_name = "HexNeuralNet_v5_Heavy (large)"
-            elif use_hex_v5:
-                hex_model_name = "HexNeuralNet_v5_Heavy"
-            elif use_hex_v4:
-                hex_model_name = "HexNeuralNet_v4"
-            elif use_hex_v3:
-                if model_version == 'v3-flat':
-                    hex_model_name = "HexNeuralNet_v3_Flat"
-                else:
-                    hex_model_name = "HexNeuralNet_v3 (spatial policy)"
-            else:
-                hex_model_name = "HexNeuralNet_v2"
-            logger.info(
-                f"Initializing {hex_model_name} with board_size={board_size}, "
-                f"policy_size={policy_size}, in_channels={encoding_channels}, "
-                f"num_players={hex_num_players}"
-            )
-        else:
-            logger.info(
-                f"Initializing RingRiftCNN with board_size={board_size}, "
-                f"policy_size={policy_size}"
-            )
+    board_size = metadata_context.board_size
+    policy_size = metadata_context.policy_size
+    encoding_channels = metadata_context.encoding_channels
+    hex_num_players = metadata_context.hex_num_players
+    use_hex_model = metadata_context.use_hex_model
+    use_hex_v3 = metadata_context.use_hex_v3
+    use_hex_v4 = metadata_context.use_hex_v4
+    use_hex_v5 = metadata_context.use_hex_v5
+    use_hex_v5_large = metadata_context.use_hex_v5_large
+    detected_num_heuristics = metadata_context.detected_num_heuristics
+    config_feature_version = metadata_context.config_feature_version
+    hex_radius = metadata_context.hex_radius
 
     # Determine model architecture size (allow CLI override for scaling up)
     # Default: 11 blocks / 160 filters for v5, 13 blocks / 128 filters for v4,
@@ -1688,81 +863,7 @@ def train_model(
             f"{effective_filters} filters"
         )
 
-    # Value head dimension validation helper (December 2025)
-    # Prevents training with wrong output dimensions for multiplayer models
-    def _validate_model_value_head(model: nn.Module, expected_players: int, context: str = "") -> None:
-        """Validate model value head matches expected player count.
-
-        This prevents training with mismatched value head dimensions, which was
-        a root cause of cluster model failures (hex8_4p, square19_3p regressions).
-
-        Args:
-            model: Neural network model to validate
-            expected_players: Expected number of players (2, 3, or 4)
-            context: Description of when validation is happening (for error messages)
-
-        Raises:
-            ValueError: If model value head doesn't match expected player count
-        """
-        ctx = f" ({context})" if context else ""
-
-        # Check model's num_players attribute if present
-        if hasattr(model, 'num_players'):
-            model_players = model.num_players
-            if model_players != expected_players:
-                raise ValueError(
-                    f"Model value head mismatch{ctx}: model.num_players={model_players} "
-                    f"but training expects {expected_players} players. "
-                    f"Use transfer_2p_to_4p.py to resize value head."
-                )
-
-        # Check value head output dimension
-        # v4/v5-heavy use 3-layer value head (fc1 → fc2 → fc3), others use 2-layer (fc1 → fc2)
-        # Check the final layer that outputs to num_players
-        final_value_layer = None
-        if hasattr(model, 'value_fc3'):
-            # v4/v5-heavy: value_fc3 is the final output layer
-            final_value_layer = model.value_fc3
-        elif hasattr(model, 'value_fc2'):
-            # v2/v3: value_fc2 is the final output layer
-            final_value_layer = model.value_fc2
-
-        if final_value_layer is not None:
-            out_features = final_value_layer.out_features
-            if out_features != expected_players:
-                layer_name = 'value_fc3' if hasattr(model, 'value_fc3') else 'value_fc2'
-                raise ValueError(
-                    f"{layer_name} output mismatch{ctx}: out_features={out_features} "
-                    f"but training expects {expected_players} players. "
-                    f"Use transfer_2p_to_4p.py to resize value head."
-                )
-
-        # Check value_head output dimension (used in some architectures)
-        if hasattr(model, 'value_head'):
-            # value_head might be a Sequential or Linear
-            value_head = model.value_head
-            if hasattr(value_head, 'out_features'):
-                out_features = value_head.out_features
-                if out_features != expected_players:
-                    raise ValueError(
-                        f"value_head output mismatch{ctx}: out_features={out_features} "
-                        f"but training expects {expected_players} players."
-                    )
-            elif isinstance(value_head, nn.Sequential):
-                # Check last layer of Sequential
-                last_layer = list(value_head.modules())[-1]
-                if hasattr(last_layer, 'out_features'):
-                    out_features = last_layer.out_features
-                    if out_features != expected_players:
-                        raise ValueError(
-                            f"value_head output mismatch{ctx}: last layer out_features={out_features} "
-                            f"but training expects {expected_players} players."
-                        )
-
-    # ==========================================================================
-    # Model Creation (extracted to train_model_factory.py)
-    # ==========================================================================
-    model = create_training_model(
+    model_artifacts = prepare_training_model_artifacts(
         config=config,
         model_version=model_version,
         model_type=model_type,
@@ -1785,1298 +886,95 @@ def train_model(
         config_feature_version=config_feature_version,
         distributed=distributed,
         is_main=not distributed or is_main_process(),
-        HexNeuralNet_v2=HexNeuralNet_v2,
-        HexNeuralNet_v3=HexNeuralNet_v3,
-        HexNeuralNet_v3_Flat=HexNeuralNet_v3_Flat,
-        HexNeuralNet_v4=HexNeuralNet_v4,
-        HexNeuralNet_v5_Heavy=HexNeuralNet_v5_Heavy,
-        RingRiftCNN_v2=RingRiftCNN_v2,
-        RingRiftCNN_v3=RingRiftCNN_v3,
-        RingRiftCNN_v3_Flat=RingRiftCNN_v3_Flat,
-        MAX_PLAYERS=MAX_PLAYERS,
-    )
-    model.to(device)
-
-    # Mar 2026: Encoding channel assertion — the single highest-leverage quality gate.
-    # Verifies NPZ feature channels match model's expected input channels.
-    # Would have prevented the Feb-Mar 2026 regression where 10/12 models trained
-    # on mismatched data for 171 iterations without detection.
-    try:
-        model_channels = None
-        if hasattr(model, 'conv1') and hasattr(model.conv1, 'weight'):
-            model_channels = model.conv1.weight.shape[1]
-        elif hasattr(model, 'in_channels'):
-            model_channels = model.in_channels
-        if model_channels is not None and encoding_channels is not None:
-            if model_channels != encoding_channels:
-                raise ValueError(
-                    f"ENCODING MISMATCH: NPZ has {encoding_channels} feature channels "
-                    f"but model expects {model_channels} channels. "
-                    f"This will produce a garbage model. "
-                    f"Check encoder version (v2=40ch, v3/v4=64ch, v5=56ch)."
-                )
-            logger.info(f"[EncodingContract] Verified: NPZ channels ({encoding_channels}) "
-                        f"match model channels ({model_channels})")
-    except ValueError:
-        raise  # Re-raise our own mismatch error
-    except (AttributeError, IndexError, TypeError) as e:
-        logger.debug(f"[EncodingContract] Could not verify channels: {e}")
-
-    # Enable gradient checkpointing for memory-efficient training (January 2026)
-    # Trades ~20-30% compute overhead for ~40-60% memory savings
-    if gradient_checkpointing:
-        try:
-            from app.training.gradient_checkpointing import GradientCheckpointing
-            gc_manager = GradientCheckpointing(model)
-            gc_manager.enable()
-            if not distributed or is_main_process():
-                logger.info("[GradientCheckpointing] Enabled - trading compute for memory")
-        except ImportError as e:
-            logger.warning(f"[GradientCheckpointing] Failed to enable: {e}")
-
-    # Validate value head dimension after model creation (December 2025)
-    # This catches mismatches early before any training starts
-    _validate_model_value_head(model, num_players, "after model creation")
-
-    # Initialize enhancements manager with model reference
-    if enhancements_manager is not None:
-        enhancements_manager.model = model
-        enhancements_manager.initialize_all()
-
-    # Auto-tune batch size if requested (overrides config.batch_size)
-    # January 2026: Use fast GPU memory heuristic by default for optimal batch size
-    # Conservative memory targeting: 50% default, 35% safe mode (was 70%)
-    if auto_tune_batch_size and str(device).startswith('cuda'):
-        try:
-            from app.training.config import (
-                get_optimal_batch_size_from_gpu_memory,
-                get_gpu_scaling_config,
-            )
-            original_batch = config.batch_size
-
-            # Count model parameters for memory estimation
-            model_params = sum(p.numel() for p in model.parameters())
-
-            # Get feature channels from model or use defaults without swallowing
-            # unrelated failures from a blanket exception handler.
-            feature_channels = getattr(model, "in_channels", 56)
-
-            # Determine effective memory fraction
-            gpu_config = get_gpu_scaling_config()
-            effective_memory_fraction = target_memory_fraction
-            if effective_memory_fraction is None:
-                if safe_mode:
-                    effective_memory_fraction = gpu_config.safe_mode_memory_fraction
-                # else: get_optimal_batch_size_from_gpu_memory uses config defaults (50% or 35%)
-
-            mode_str = "[SAFE MODE]" if safe_mode else ""
-            logger.info(f"[AutoBatchSize]{mode_str} Calculating optimal batch size from GPU memory...")
-            logger.info(f"[AutoBatchSize] Model params: {model_params:,}, board_size: {board_size}, num_players: {num_players}")
-            if effective_memory_fraction:
-                logger.info(f"[AutoBatchSize] Memory target: {effective_memory_fraction*100:.0f}%")
-
-            config.batch_size = get_optimal_batch_size_from_gpu_memory(
-                model_params=model_params,
-                feature_channels=feature_channels,
-                board_size=board_size,
-                num_players=num_players,
-                target_memory_fraction=effective_memory_fraction,  # None = use config (50% or 35% safe mode)
-                min_batch=64,
-                max_batch=4096,  # Reduced from 8192 for safety
-                config=gpu_config,
-            )
-            logger.info(f"[AutoBatchSize] Auto-tuned batch size: {config.batch_size} (was {original_batch})")
-        except (RuntimeError, ValueError, ImportError) as e:
-            # RuntimeError: CUDA/GPU errors during tuning
-            # ValueError: invalid batch size values
-            # ImportError: auto-tuning module missing
-            logger.warning(f"[AutoBatchSize] Batch size auto-tuning failed: {e}. Using original batch size.")
-
-    # Auto-detect canonical model for iterative training (January 2026)
-    # If no init_weights specified and not resuming, use the existing canonical model
-    # This enables continuous self-improvement: train on new data, improving existing model
-    # IMPORTANT: Only auto-select if encoder versions are compatible (Jan 2026 fix)
-    if init_weights_path is None and not os.path.exists(save_path):
-        board_type_str = config.board_type.value if hasattr(config.board_type, 'value') else str(config.board_type)
-        canonical_path = f"models/canonical_{board_type_str}_{num_players}p.pth"
-        if os.path.exists(canonical_path):
-            # Check encoder compatibility BEFORE auto-selecting
-            try:
-                from app.ai.neural_net.architecture_registry import get_encoder_version_from_checkpoint
-                canonical_encoder = get_encoder_version_from_checkpoint(canonical_path)
-
-                # Determine data encoder version
-                data_encoder = None
-                if encoding_channels == 40:
-                    data_encoder = "v2"
-                elif encoding_channels == 64:
-                    data_encoder = "v3"
-                elif encoding_channels == 56:
-                    data_encoder = "v2"  # Square encoder family (14×4=56)
-
-                if canonical_encoder and data_encoder and canonical_encoder == data_encoder:
-                    init_weights_path = canonical_path
-                    if not distributed or is_main_process():
-                        logger.info(f"[AutoInitWeights] Using canonical model as starting point: {canonical_path}")
-                else:
-                    if not distributed or is_main_process():
-                        logger.info(
-                            f"[AutoInitWeights] Canonical model {canonical_path} has encoder {canonical_encoder}, "
-                            f"but data uses {data_encoder}. Training from scratch instead."
-                        )
-            except (ImportError, FileNotFoundError, OSError, RuntimeError, ValueError, KeyError, TypeError) as e:
-                if not distributed or is_main_process():
-                    logger.warning(f"[AutoInitWeights] Could not check canonical model compatibility: {e}. Training from scratch.")
-        else:
-            if not distributed or is_main_process():
-                logger.info(f"[AutoInitWeights] No canonical model found at {canonical_path}, training from scratch")
-
-    # January 2026: FAIL-FAST architecture validation for init_weights
-    # Prevents training with incompatible init_weights and dataset
-    if init_weights_path is not None and os.path.exists(init_weights_path):
-        try:
-            from app.ai.neural_net.architecture_registry import (
-                get_encoder_version_from_checkpoint,
-                get_model_version_from_checkpoint,
-            )
-            init_encoder_version = get_encoder_version_from_checkpoint(init_weights_path)
-            init_model_version = get_model_version_from_checkpoint(init_weights_path)
-
-            # Determine what encoder version the training data expects
-            data_encoder = None
-            if encoding_channels == 40:
-                data_encoder = "v2"
-            elif encoding_channels == 64:
-                data_encoder = "v3"
-            elif encoding_channels == 56:
-                data_encoder = "v2"  # Square encoder family (14×4=56)
-
-            # Check encoder compatibility
-            if init_encoder_version and data_encoder and init_encoder_version != data_encoder:
-                error_msg = (
-                    f"\n{'='*70}\n"
-                    f"ENCODER MISMATCH DETECTED (FAIL-FAST)\n"
-                    f"{'='*70}\n\n"
-                    f"Init weights: {init_weights_path}\n"
-                    f"  - Encoder: {init_encoder_version} ({40 if init_encoder_version == 'v2' else 64} channels)\n\n"
-                    f"Training data: {data_path_str}\n"
-                    f"  - Encoder: {data_encoder} ({encoding_channels} channels)\n\n"
-                    f"PROBLEM: Cannot train {data_encoder} data with {init_encoder_version} model weights.\n\n"
-                    f"SOLUTIONS:\n"
-                    f"  1. Re-export training data with --encoder-version {init_encoder_version}\n"
-                    f"  2. Use a different init_weights file matching {data_encoder}\n"
-                    f"  3. Train from scratch without --init-weights\n"
-                    f"{'='*70}"
-                )
-                if not distributed or is_main_process():
-                    logger.error(error_msg)
-                raise ValueError(f"Encoder mismatch: init_weights={init_encoder_version}, data={data_encoder}")
-
-            # Check model version and auto-adapt if needed
-            if init_model_version:
-                if model_version != init_model_version:
-                    if not distributed or is_main_process():
-                        logger.warning(
-                            f"[ArchValidation] Model version mismatch detected!\n"
-                            f"  Init weights uses: {init_model_version}\n"
-                            f"  Training configured for: {model_version}\n"
-                            f"  Auto-adapting to use: {init_model_version}"
-                        )
-                    # Auto-adapt to match init_weights architecture
-                    model_version = init_model_version
-                else:
-                    if not distributed or is_main_process():
-                        logger.info(f"[ArchValidation] Architecture validated: encoder={init_encoder_version}, model={init_model_version}")
-        except ImportError:
-            pass  # architecture_registry not available, skip validation
-        except FileNotFoundError:
-            pass  # init_weights file doesn't exist yet, will be caught later
-
-    # Load initial weights from canonical model (AlphaZero pattern).
-    # Mar 28, 2026: ALWAYS load init_weights when provided, even if save_path
-    # exists. The previous behavior (skip init_weights if save_path exists)
-    # caused the AlphaZero loop to resume from WEAK candidates instead of
-    # the STRONG canonical model, preventing iterative improvement.
-    # The candidate save_path is deleted before each training run anyway
-    # (cleaned by Lambda node prep), so this is defense-in-depth.
-    if init_weights_path is not None and os.path.exists(init_weights_path):
-        if True:  # Always load init_weights (was: not os.path.exists(save_path))
-            try:
-                from app.training.checkpointing import load_weights_only
-                load_result = load_weights_only(
-                    init_weights_path,
-                    model,
-                    device=device,
-                    strict=init_weights_strict,
-                )
-                if not distributed or is_main_process():
-                    logger.info(f"Loaded initial weights from {init_weights_path}")
-                    if load_result.get('missing_keys'):
-                        logger.info(f"  Missing keys (will be randomly initialized): {len(load_result['missing_keys'])}")
-                    if load_result.get('unexpected_keys'):
-                        logger.info(f"  Unexpected keys (ignored): {len(load_result['unexpected_keys'])}")
-                # Validate value head after loading init weights (catches 2p->4p transfer issues)
-                _validate_model_value_head(model, num_players, "after loading init_weights")
-            except (OSError, RuntimeError, ValueError, KeyError) as e:
-                # OSError: file I/O errors reading checkpoint
-                # RuntimeError: PyTorch loading errors, incompatible models
-                # ValueError: invalid checkpoint format
-                # KeyError: missing required checkpoint keys
-                if not distributed or is_main_process():
-                    logger.warning(f"Could not load init weights from {init_weights_path}: {e}. Starting fresh.")
-        else:
-            if not distributed or is_main_process():
-                logger.info(f"Skipping init_weights_path (save_path {save_path} exists, resuming instead)")
-
-    # Load existing weights if available to continue training.
-    # Mar 28, 2026: SKIP resume if init_weights was provided. In AlphaZero,
-    # every training iteration should start from the canonical model, not
-    # resume from a previous candidate. The save_path checkpoint is from
-    # a WEAKER model — loading it overwrites the canonical weights and
-    # defeats the entire purpose of init_weights. This was THE root cause
-    # of Elo degradation: canonical (1595) → init_weights loaded → then
-    # overwritten by save_path candidate (1150) → trained from 1150 again.
-    if os.path.exists(save_path) and init_weights_path is None:
-        try:
-            # Use safe_load_checkpoint for secure loading with fallback
-            checkpoint = safe_load_checkpoint(save_path, map_location=device, warn_on_unsafe=False)
-            # Handle both raw state_dict and checkpoint dict formats
-            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-                model.load_state_dict(checkpoint["model_state_dict"])
-            else:
-                model.load_state_dict(checkpoint)
-            if not distributed or is_main_process():
-                logger.info(f"Loaded existing model weights from {save_path}")
-            # Validate value head after loading checkpoint (catches resumed training with wrong config)
-            _validate_model_value_head(model, num_players, "after loading checkpoint")
-        except (OSError, RuntimeError, ValueError, KeyError) as e:
-            pass  # Will be caught below
-    elif os.path.exists(save_path) and init_weights_path is not None:
-        if not distributed or is_main_process():
-            logger.info(f"Skipping save_path resume ({save_path}) — init_weights takes priority (AlphaZero pattern)")
-    if False:  # Original code preserved for reference
-        try:
-            checkpoint = safe_load_checkpoint(save_path, map_location=device, warn_on_unsafe=False)
-            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-                model.load_state_dict(checkpoint["model_state_dict"])
-            else:
-                model.load_state_dict(checkpoint)
-            _validate_model_value_head(model, num_players, "after loading checkpoint")
-        except (OSError, RuntimeError, ValueError, KeyError) as e:
-            # OSError: file I/O errors reading checkpoint
-            # RuntimeError: PyTorch loading errors, incompatible models
-            # ValueError: invalid checkpoint format
-            # KeyError: missing model_state_dict key
-            if not distributed or is_main_process():
-                logger.warning(
-                    f"Could not load existing weights: {e}. Starting fresh."
-                )
-
-    # Wrap model with DDP if using distributed training
-    if distributed:
-        model = wrap_model_ddp(
-            model, device,
-            find_unused_parameters=find_unused_parameters
-        )
-        if is_main_process():
-            logger.info("Model wrapped with DistributedDataParallel")
-
-    # Loss functions
-    # For multi-player mode, we use multi_player_value_loss instead of MSELoss
-    # which properly masks inactive player slots
-    value_criterion = nn.MSELoss()  # Used for scalar mode; multi-player uses function
-    nn.KLDivLoss(reduction='batchmean')
-    # HexNeuralNet_v2 supports multi-player outputs, so enable multi-player loss for all boards
-    use_multi_player_loss = multi_player
-    # Note: masked_policy_kl and build_rank_targets are imported from app.ai.neural_losses
-
-    # Handle freeze_policy: only train value head when enabled
-    if freeze_policy:
-        # Freeze all parameters first
-        for param in model.parameters():
-            param.requires_grad = False
-
-        # Unfreeze only value head parameters
-        value_head_params = []
-        for name, param in model.named_parameters():
-            # Value head layers are typically named value_fc1, value_fc2, value_head, etc.
-            if any(x in name.lower() for x in ['value_fc', 'value_head', 'value_conv', 'value_bn']):
-                param.requires_grad = True
-                value_head_params.append(param)
-                logger.info(f"[freeze_policy] Unfreezing: {name}")
-
-        if not value_head_params:
-            logger.warning(
-                "[freeze_policy] No value head parameters found! "
-                "Check model architecture. Training all parameters."
-            )
-            for param in model.parameters():
-                param.requires_grad = True
-            optimizer_params = model.parameters()
-        else:
-            logger.info(f"[freeze_policy] Training only {len(value_head_params)} value head parameters")
-            optimizer_params = value_head_params
-    else:
-        optimizer_params = model.parameters()
-
-    optimizer = optim.Adam(
-        optimizer_params,
-        lr=config.learning_rate,
-        weight_decay=config.weight_decay
-    )
-
-    # Learning rate scheduler with optional warmup
-    # Use the new create_lr_scheduler for advanced cosine options
-    epoch_scheduler = create_lr_scheduler(
-        optimizer,
-        scheduler_type=lr_scheduler,
-        total_epochs=config.epochs_per_iter,
+        device=device,
+        enhancements_manager=enhancements_manager,
+        gradient_checkpointing=gradient_checkpointing,
+        auto_tune_batch_size=auto_tune_batch_size,
+        target_memory_fraction=target_memory_fraction,
+        safe_mode=safe_mode,
+        save_path=save_path,
+        init_weights_path=init_weights_path,
+        init_weights_strict=init_weights_strict,
+        resume_path=resume_path,
+        find_unused_parameters=find_unused_parameters,
         warmup_epochs=warmup_epochs,
+        lr_scheduler=lr_scheduler,
         lr_min=lr_min,
         lr_t0=lr_t0,
         lr_t_mult=lr_t_mult,
+        freeze_policy=freeze_policy,
+        early_stopping_patience=early_stopping_patience,
+        elo_early_stopping_patience=elo_early_stopping_patience,
+        elo_min_improvement=elo_min_improvement,
+        checkpoint_dir=checkpoint_dir,
+        data_path_str=data_path_str,
+        has_training_enhancements=HAS_TRAINING_ENHANCEMENTS,
+        evaluation_feedback_handler_cls=EvaluationFeedbackHandler,
     )
+    model = model_artifacts.model
+    optimizer = model_artifacts.optimizer
+    epoch_scheduler = model_artifacts.epoch_scheduler
+    plateau_scheduler = model_artifacts.plateau_scheduler
+    eval_feedback_handler = model_artifacts.eval_feedback_handler
+    early_stopper = model_artifacts.early_stopper
+    start_epoch = model_artifacts.start_epoch
 
-    # ReduceLROnPlateau as fallback if no scheduler configured
-    plateau_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=2
-    ) if epoch_scheduler is None else None
+    value_criterion = nn.MSELoss()
+    nn.KLDivLoss(reduction="batchmean")
+    use_multi_player_loss = multi_player
 
-    # Evaluation feedback handler - adjusts LR based on Elo trends (December 2025)
-    eval_feedback_handler: EvaluationFeedbackHandler | None = None
-    if HAS_TRAINING_ENHANCEMENTS and EvaluationFeedbackHandler is not None:
-        config_key = f"{config.board_type.value}_{num_players}p"
-        eval_feedback_handler = EvaluationFeedbackHandler(
-            optimizer=optimizer,
-            config_key=config_key,
-            min_lr=lr_min or 1e-6,
-            max_lr=config.learning_rate * 2,  # Allow 2x initial LR
-        )
-        if eval_feedback_handler.subscribe():
-            if not distributed or is_main_process():
-                logger.info(
-                    f"[EvaluationFeedbackHandler] Enabled for {config_key} "
-                    "(LR adjusted based on Elo trends)"
-                )
-        else:
-            eval_feedback_handler = None
-
-    # Early stopping (supports both loss-based and Elo-based criteria)
-    # Also emits PLATEAU_DETECTED events for curriculum feedback
-    early_stopper: EarlyStopping | None = None
-    if early_stopping_patience > 0 or elo_early_stopping_patience > 0:
-        early_stopper = EarlyStopping(
-            patience=early_stopping_patience if early_stopping_patience > 0 else 999999,
-            min_delta=0.0001,
-            elo_patience=elo_early_stopping_patience if elo_early_stopping_patience > 0 else None,
-            elo_min_improvement=elo_min_improvement,
-            config_name=config_key,  # For PLATEAU_DETECTED event emission
-        )
-
-    # Track starting epoch for resume
-    start_epoch = 0
-
-    # Resume from checkpoint if specified
-    if resume_path is not None and os.path.exists(resume_path):
-        # For DDP, load into the underlying model
-        model_to_load = cast(
-            nn.Module,
-            model.module if distributed else model,
-        )
-        start_epoch, _ = load_checkpoint(
-            resume_path,
-            model_to_load,
-            optimizer,
-            scheduler=epoch_scheduler,
-            early_stopping=early_stopper,
-            device=device,
-        )
-        start_epoch += 1  # Start from next epoch
-        if not distributed or is_main_process():
-            logger.info(f"Resuming training from epoch {start_epoch}")
-
-    # Ensure checkpoint directory exists
-    os.makedirs(checkpoint_dir, exist_ok=True)
-
-    # Initialize async checkpointer for non-blocking checkpoint I/O (5-10% speedup)
-    use_async_checkpoint = getattr(config, 'use_async_checkpoint', True)
-    async_checkpointer: AsyncCheckpointer | None = None
-    if use_async_checkpoint:
-        async_checkpointer = AsyncCheckpointer(max_pending=2)
-        if not distributed or is_main_process():
-            logger.info("Async checkpointing enabled (non-blocking I/O)")
-
-    # Value calibration tracker for monitoring value head quality
-    calibration_tracker: CalibrationTracker | None = None
-    if track_calibration:
-        calibration_tracker = CalibrationTracker(window_size=5000)
-        if not distributed or is_main_process():
-            logger.info("Value calibration tracking enabled")
+    checkpoint_services = initialize_checkpoint_services(
+        config=config,
+        track_calibration=track_calibration,
+        is_main=not distributed or is_main_process(),
+    )
+    async_checkpointer = checkpoint_services.async_checkpointer
+    calibration_tracker = checkpoint_services.calibration_tracker
 
     # Mixed precision scaler configured above (GradScaler only for float16)
 
-    train_streaming_loader: StreamingDataLoader | None = None
-    val_streaming_loader: StreamingDataLoader | None = None
-    train_loader: DataLoader | None = None
-    val_loader: DataLoader | None = None
-    train_sampler = None
-    val_sampler = None
-    allow_empty_policies = bool(getattr(config, "allow_empty_policies", False))
-    filter_empty_policies = not allow_empty_policies
-    value_only_training = False  # Set True if dataset has no policy data
+    pipeline_context = prepare_training_data_pipeline(
+        config=config,
+        data_path=data_path,
+        data_path_str=data_path_str,
+        data_dir=data_dir,
+        augment_hex_symmetry=augment_hex_symmetry,
+        use_streaming=use_streaming,
+        sampling_weights=sampling_weights,
+        multi_player=multi_player,
+        enable_elo_weighting=enable_elo_weighting,
+        min_quality_score=min_quality_score,
+        discover_synced_data=discover_synced_data,
+        distributed=distributed,
+        is_main=not distributed or is_main_process(),
+        policy_size=policy_size,
+        use_hex_model=use_hex_model,
+        use_hex_v3=use_hex_v3,
+        model_version=model_version,
+        config_feature_version=config_feature_version,
+        auto_streaming_threshold_bytes=AUTO_STREAMING_THRESHOLD_BYTES,
+        has_data_catalog=HAS_DATA_CATALOG,
+        get_data_catalog=get_data_catalog,
+    )
+    if pipeline_context is None:
+        return
 
-    # Auto-detect large datasets and switch to streaming mode to prevent OOM
-    if not use_streaming:
-        # Calculate total data size
-        total_data_size = 0
-        paths_to_check: list[str] = []
-
-        if data_dir is not None:
-            npz_pattern = os.path.join(data_dir, "*.npz")
-            paths_to_check = glob.glob(npz_pattern)
-        elif isinstance(data_path, list):
-            paths_to_check = data_path
-        elif data_path:
-            paths_to_check = [data_path]
-
-        for p in paths_to_check:
-            if os.path.exists(p):
-                total_data_size += os.path.getsize(p)
-
-        if total_data_size > AUTO_STREAMING_THRESHOLD_BYTES:
-            size_gb = total_data_size / (1024 ** 3)
-            threshold_gb = AUTO_STREAMING_THRESHOLD_BYTES / (1024 ** 3)
-            if not distributed or is_main_process():
-                logger.warning(
-                    f"Auto-enabling streaming mode: dataset size {size_gb:.1f}GB "
-                    f"exceeds threshold {threshold_gb:.0f}GB. "
-                    f"Set RINGRIFT_AUTO_STREAMING_THRESHOLD_GB to adjust or "
-                    f"use --use-streaming explicitly."
-                )
-            use_streaming = True
-
-    # Collect data paths for streaming mode
-    data_paths: list[str] = []
-
-    # Quality-aware data discovery from synced sources
-    if discover_synced_data and HAS_DATA_CATALOG:
-        try:
-            catalog = get_data_catalog()
-            discovered_paths = catalog.get_recommended_training_sources(
-                target_games=100000,
-                board_type=config.board_type.value if hasattr(config, 'board_type') else None,
-                num_players=num_players,
-            )
-            if discovered_paths:
-                # Convert discovered .db paths to training data
-                # Note: These are SQLite databases that need to be processed
-                # by the streaming loader or converted to .npz format
-                data_paths.extend([str(p) for p in discovered_paths])
-                if not distributed or is_main_process():
-                    stats = catalog.get_stats()
-                    logger.info(
-                        f"DataCatalog discovered {len(discovered_paths)} sources "
-                        f"with {stats.total_games} total games "
-                        f"(avg quality: {stats.avg_quality_score:.3f})"
-                    )
-        except (ImportError, AttributeError, OSError, ConnectionError) as e:
-            # Module unavailable, missing attributes, file I/O errors, or network issues
-            if not distributed or is_main_process():
-                logger.warning(f"DataCatalog discovery failed: {e}")
-
-    if use_streaming:
-        # Use streaming data loader for large datasets
-        if data_dir is not None:
-            # Collect all .npz files from directory
-            npz_pattern = os.path.join(data_dir, "*.npz")
-            data_paths.extend(sorted(glob.glob(npz_pattern)))
-            if not distributed or is_main_process():
-                logger.info(
-                    f"Found {len(data_paths)} .npz files in {data_dir}"
-                )
-        elif isinstance(data_path, list):
-            data_paths.extend(data_path)
-        elif data_path:
-            data_paths.append(data_path)
-
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_paths = []
-        for p in data_paths:
-            if p not in seen:
-                seen.add(p)
-                unique_paths.append(p)
-        data_paths = unique_paths
-
-        if not data_paths:
-            raise ValueError(
-                "No data files found for streaming training. "
-                "Ensure --data-path or --data-dir points to valid .npz files."
-            )
-
-        # Best-effort metadata check on the first file to validate history_length
-        # and policy_encoding expectations.
-        first_path = data_paths[0]
-        dataset_history_length: int | None = None
-        policy_encoding: str | None = None
-        dataset_feature_version: int | None = None
-        dataset_in_channels: int | None = None
-        dataset_globals_dim: int | None = None
-        # New encoder metadata fields (added 2025-12)
-        dataset_encoder_type: str | None = None
-        dataset_base_channels: int | None = None
-        dataset_board_type_meta: str | None = None
-        # V2.1 encoder metadata (added 2025-12 for V3 encoder fix)
-        dataset_encoder_version: str | None = None
-        dataset_in_channels_meta: int | None = None
-        is_npz = bool(first_path and first_path.endswith(".npz"))
-        try:
-            if first_path and os.path.exists(first_path):
-                with safe_load_npz(first_path, mmap_mode="r") as d:
-                    if "features" in d:
-                        feat_shape = d["features"].shape
-                        if len(feat_shape) >= 2:
-                            dataset_in_channels = int(feat_shape[1])
-                    if "globals" in d:
-                        glob_shape = d["globals"].shape
-                        if len(glob_shape) >= 2:
-                            dataset_globals_dim = int(glob_shape[1])
-                    if "policy_encoding" in d:
-                        try:
-                            policy_encoding = str(np.asarray(d["policy_encoding"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            policy_encoding = None
-                    if "history_length" in d:
-                        try:
-                            dataset_history_length = int(np.asarray(d["history_length"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_history_length = None
-                    if "feature_version" in d:
-                        try:
-                            dataset_feature_version = int(np.asarray(d["feature_version"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_feature_version = None
-                    # Read new encoder metadata fields (added 2025-12)
-                    if "encoder_type" in d:
-                        try:
-                            dataset_encoder_type = str(np.asarray(d["encoder_type"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_encoder_type = None
-                    if "base_channels" in d:
-                        try:
-                            dataset_base_channels = int(np.asarray(d["base_channels"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_base_channels = None
-                    if "board_type" in d:
-                        try:
-                            dataset_board_type_meta = str(np.asarray(d["board_type"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_board_type_meta = None
-                    # Read V2.1 encoder metadata (added 2025-12 for V3 encoder fix)
-                    if "encoder_version" in d:
-                        try:
-                            dataset_encoder_version = str(np.asarray(d["encoder_version"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_encoder_version = None
-                    if "in_channels" in d:
-                        try:
-                            dataset_in_channels_meta = int(np.asarray(d["in_channels"]).item())
-                        except (ValueError, TypeError, AttributeError):
-                            # Metadata field missing, wrong type, or empty array
-                            dataset_in_channels_meta = None
-        except (OSError, KeyError, ValueError) as exc:
-            # File I/O errors, missing keys, or data access failures
-            if not distributed or is_main_process():
-                logger.warning(
-                    "Failed to read dataset metadata from %s: %s",
-                    first_path,
-                    exc,
-                )
-
-        if dataset_history_length is not None and dataset_history_length != config.history_length:
-            raise ValueError(
-                "Training history_length does not match dataset metadata.\n"
-                f"  dataset={first_path}\n"
-                f"  dataset_history_length={dataset_history_length}\n"
-                f"  config.history_length={config.history_length}\n"
-                "Regenerate the dataset with matching --history-length or "
-                "update the training config."
-            )
-        elif (dataset_history_length is None and config.history_length != 3
-              and (not distributed or is_main_process())):
-            logger.warning(
-                "Dataset %s missing history_length metadata; using "
-                "config.history_length=%d. Ensure the dataset was built "
-                "with matching history frames.",
-                first_path,
-                config.history_length,
-            )
-
-        if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
-            raise ValueError(
-                "Training feature_version does not match dataset metadata.\n"
-                f"  dataset={first_path}\n"
-                f"  dataset_feature_version={dataset_feature_version}\n"
-                f"  config_feature_version={config_feature_version}\n"
-                "Regenerate the dataset with matching --feature-version or "
-                "update the training config."
-            )
-        elif dataset_feature_version is None:
-            if config_feature_version != 1:
-                # Check for autonomous mode - fallback to v1 instead of failing
-                autonomous_mode = os.environ.get("RINGRIFT_AUTONOMOUS_MODE", "").lower() in ("1", "true")
-                if autonomous_mode:
-                    if not distributed or is_main_process():
-                        logger.warning(
-                            "[AUTONOMOUS] Dataset %s missing feature_version metadata. "
-                            "Config requested v%d but falling back to v1 for compatibility.",
-                            first_path,
-                            config_feature_version,
-                        )
-                    config_feature_version = 1
-                else:
-                    raise ValueError(
-                        "Dataset is missing feature_version metadata but training "
-                        "was configured for feature_version="
-                        f"{config_feature_version}.\n"
-                        f"  dataset={first_path}\n"
-                        "Regenerate the dataset with --feature-version or "
-                        "set feature_version=1 to use legacy features."
-                    )
-            if not distributed or is_main_process():
-                logger.warning(
-                    "Dataset %s missing feature_version metadata; assuming legacy "
-                    "feature_version=1.",
-                    first_path,
-                )
-
-        if dataset_globals_dim is None:
-            if is_npz:
-                raise ValueError(
-                    "Dataset is missing globals features required for training.\n"
-                    f"  dataset={first_path}\n"
-                    "Regenerate the dataset with scripts/export_replay_dataset.py."
-                )
-        elif dataset_globals_dim != 20:
-            raise ValueError(
-                "Dataset globals feature dimension does not match the CNN encoder.\n"
-                f"  dataset={first_path}\n"
-                f"  dataset_globals_dim={dataset_globals_dim}\n"
-                "Regenerate the dataset with scripts/export_replay_dataset.py "
-                "to produce 20 global features."
-            )
-
-        if dataset_in_channels is not None:
-            if use_hex_model:
-                hex_base = 16 if use_hex_v3 else 10
-                expected_in_channels = hex_base * (config.history_length + 1)
-                expected_encoder = "hex_v3" if use_hex_v3 else "hex_v2"
-            else:
-                expected_in_channels = 14 * (config.history_length + 1)
-                expected_encoder = "square"
-
-            # Log encoder metadata if available
-            if dataset_encoder_type and (not distributed or is_main_process()):
-                logger.info(
-                    "Dataset encoder metadata: type=%s, base_channels=%s, "
-                    "in_channels=%s, board_type=%s",
-                    dataset_encoder_type,
-                    dataset_base_channels,
-                    dataset_in_channels,
-                    dataset_board_type_meta,
-                )
-
-            # Log V2.1 encoder metadata if available (Dec 2025)
-            if dataset_encoder_version and (not distributed or is_main_process()):
-                logger.info(
-                    "Dataset V2.1 metadata: encoder_version=%s, in_channels_meta=%s",
-                    dataset_encoder_version,
-                    dataset_in_channels_meta,
-                )
-
-            # Cross-validate in_channels from metadata against actual feature shape
-            # This catches cases where export script updated metadata but not actual encoder
-            if dataset_in_channels_meta is not None and dataset_in_channels is not None:
-                if dataset_in_channels_meta != dataset_in_channels:
-                    raise ValueError(
-                        "========================================\n"
-                        "DATA INTEGRITY ERROR - METADATA MISMATCH\n"
-                        "========================================\n"
-                        f"Dataset in_channels metadata: {dataset_in_channels_meta}\n"
-                        f"Actual feature shape:         {dataset_in_channels} channels\n"
-                        f"Dataset:                      {first_path}\n"
-                        "\n"
-                        "The export script recorded a channel count that doesn't match\n"
-                        "the actual feature tensor shape. This indicates a bug in the\n"
-                        "export pipeline.\n"
-                        "\n"
-                        "SOLUTION: Re-export the data with a fixed export script.\n"
-                        "========================================"
-                    )
-
-            # HARD ERROR: Encoder type must match model version (Dec 2025)
-            if dataset_encoder_type and dataset_encoder_type != expected_encoder:
-                raise ValueError(
-                    "========================================\n"
-                    "ENCODER TYPE MISMATCH - CANNOT TRAIN\n"
-                    "========================================\n"
-                    f"Dataset encoded with: {dataset_encoder_type}\n"
-                    f"Model expects:        {expected_encoder}\n"
-                    f"Model version:        {model_version}\n"
-                    f"Dataset:              {first_path}\n"
-                    "\n"
-                    "SOLUTION: Re-export data with --encoder-version matching model version\n"
-                    f"  For v3 model: use --encoder-version v3\n"
-                    f"  For v2 model: use --encoder-version v2\n"
-                    "========================================"
-                )
-
-            # HARD ERROR: Board type must match (Dec 2025)
-            if dataset_board_type_meta:
-                dataset_board_upper = dataset_board_type_meta.upper()
-                config_board_name = config.board_type.name
-                if dataset_board_upper != config_board_name:
-                    raise ValueError(
-                        "========================================\n"
-                        "BOARD TYPE MISMATCH - CANNOT TRAIN\n"
-                        "========================================\n"
-                        f"Dataset board type:   {dataset_board_type_meta}\n"
-                        f"Training board type:  {config.board_type.name}\n"
-                        f"Dataset:              {first_path}\n"
-                        "\n"
-                        "Dataset and training board types must match.\n"
-                        "========================================"
-                    )
-
-            if dataset_in_channels != expected_in_channels:
-                # Build enhanced error message with encoder metadata if available
-                encoder_info = ""
-                if dataset_encoder_type:
-                    encoder_info = f"  dataset_encoder_type={dataset_encoder_type}\n"
-                    encoder_info += f"  dataset_base_channels={dataset_base_channels}\n"
-                    if dataset_board_type_meta:
-                        encoder_info += f"  dataset_board_type={dataset_board_type_meta}\n"
-
-                raise ValueError(
-                    "Dataset feature channels do not match the expected encoder.\n"
-                    f"  dataset={first_path}\n"
-                    f"  dataset_in_channels={dataset_in_channels}\n"
-                    f"  expected_in_channels={expected_in_channels} ({expected_encoder})\n"
-                    f"{encoder_info}"
-                    f"Model expects {expected_encoder} encoder ({expected_in_channels} channels).\n"
-                    "Solutions:\n"
-                    "  1. Regenerate dataset with matching encoder version:\n"
-                    f"     --encoder-version {'v3' if use_hex_v3 else 'v2'}\n"
-                    "  2. Or use matching model version for your data:\n"
-                    f"     --model-version {'v2' if dataset_in_channels == 40 else 'v3' if dataset_in_channels == 64 else 'unknown'}"
-                )
-        elif is_npz:
-            raise ValueError(
-                "Dataset is missing features required for training.\n"
-                f"  dataset={first_path}\n"
-                "Regenerate the dataset with scripts/export_replay_dataset.py."
-            )
-
-        if model_version in ('v3', 'v4'):
-            if policy_encoding == "legacy_max_n":
-                raise ValueError(
-                    f"Dataset uses legacy MAX_N policy encoding but --model-version={model_version} "
-                    "requires board-aware policy encoding.\n"
-                    f"  dataset={first_path}\n"
-                    "Regenerate the dataset with --board-aware-encoding."
-                )
-            if policy_encoding is None and (not distributed or is_main_process()):
-                logger.warning(
-                    "Dataset %s missing policy_encoding metadata; assuming board-aware "
-                    "encoding for %s. If this dataset was exported with legacy MAX_N, "
-                    "regenerate with --board-aware-encoding.",
-                    first_path,
-                    model_version,
-                )
-
-        # Get total sample count across all files
-        total_samples = sum(
-            get_sample_count(p) for p in data_paths if os.path.exists(p)
-        )
-        _total_samples = total_samples
-        _num_data_files = len(data_paths)
-
-        if total_samples == 0:
-            if not distributed or is_main_process():
-                logger.warning("No samples found in data files; skipping.")
-            if distributed:
-                cleanup_distributed()
-            return
-
-        if not distributed or is_main_process():
-            logger.info(
-                f"StreamingDataLoader: {total_samples} total samples "
-                f"across {len(data_paths)} files"
-            )
-
-        # Create streaming data loaders (80/20 split approximated by files)
-        # For simplicity, we use all data for training in streaming mode
-        # and compute validation on a subset
-        val_split = 0.2
-        val_samples = int(total_samples * val_split)
-        train_samples = total_samples - val_samples
-
-        # Determine rank/world_size for distributed data sharding
-        if distributed:
-            stream_rank = get_rank()
-            stream_world_size = get_world_size()
-        else:
-            stream_rank = 0
-            stream_world_size = 1
-
-        # Use weighted streaming loader when sampling_weights != 'uniform'
-        if sampling_weights != 'uniform':
-            train_streaming_loader = WeightedStreamingDataLoader(
-                data_paths=data_paths,
-                batch_size=config.batch_size,
-                shuffle=True,
-                seed=config.seed,
-                drop_last=False,
-                policy_size=policy_size,
-                rank=stream_rank,
-                world_size=stream_world_size,
-                filter_empty_policies=filter_empty_policies,
-                sampling_weights=sampling_weights,
-            )
-            if not distributed or is_main_process():
-                logger.info(
-                    f"Using WeightedStreamingDataLoader with "
-                    f"sampling_weights={sampling_weights}"
-                )
-        else:
-            train_streaming_loader = StreamingDataLoader(
-                data_paths=data_paths,
-                batch_size=config.batch_size,
-                shuffle=True,
-                seed=config.seed,
-                drop_last=False,
-                policy_size=policy_size,
-                rank=stream_rank,
-                world_size=stream_world_size,
-                filter_empty_policies=filter_empty_policies,
-            )
-
-        # For validation, always use uniform sampling
-        val_streaming_loader = StreamingDataLoader(
-            data_paths=data_paths,
-            batch_size=config.batch_size,
-            shuffle=False,
-            seed=config.seed + 1000,
-            drop_last=False,
-            policy_size=policy_size,
-            rank=stream_rank,
-            world_size=stream_world_size,
-            filter_empty_policies=filter_empty_policies,
-        )
-
-        # Auto-detect multi-player values from streaming data
-        # If data has multi-player values but --multi-player wasn't specified,
-        # log a suggestion to the user
-        if (train_streaming_loader.has_multi_player_values and not multi_player
-                and (not distributed or is_main_process())):
-            logger.info(
-                "Dataset contains multi-player value vectors (values_mp). "
-                "Consider using --multi-player flag for multi-player training."
-            )
-        # If multi-player training was requested but streaming data does not
-        # include vector value targets, fail fast to avoid silent shape issues.
-        if (multi_player and not train_streaming_loader.has_multi_player_values
-                and (not distributed or is_main_process())):
-            logger.error(
-                "multi_player=True but streaming dataset does not contain "
-                "'values_mp' / 'num_players'. Regenerate data with "
-                "multi-player value targets or disable --multi-player."
-            )
-            if distributed:
-                cleanup_distributed()
-            raise ValueError(
-                "Multi-player training requested but streaming dataset lacks values_mp."
-            )
-
-        # Check for value-only training (no policy data)
-        if not train_streaming_loader.has_policy:
-            if not distributed or is_main_process():
-                logger.info(
-                    "Dataset has no policy data - enabling value-only training mode "
-                    "(policy_weight=0). Policy head will not be trained."
-                )
-            config.policy_weight = 0.0
-            value_only_training = True
-        else:
-            value_only_training = False
-
-        train_sampler = None
-        train_size = train_samples
-        val_size = val_samples
-
-    else:
-        # Legacy single-file loading with RingRiftDataset or WeightedRingRiftDataset
-        if isinstance(data_path, list):
-            data_path_str = data_path[0] if data_path else ""
-        else:
-            data_path_str = data_path
-
-        # V5-heavy models use heuristic features if available in the data
-        use_heuristics = model_version in ('v5', 'v5-gnn', 'v5-heavy')
-        if sampling_weights == 'uniform':
-            full_dataset = RingRiftDataset(
-                data_path_str,
-                board_type=config.board_type,
-                augment_hex=augment_hex_symmetry,
-                use_multi_player_values=multi_player,
-                filter_empty_policies=filter_empty_policies,
-                return_num_players=multi_player,
-                return_heuristics=use_heuristics,
-            )
-            use_weighted_sampling = False
-        else:
-            full_dataset = WeightedRingRiftDataset(
-                data_path_str,
-                board_type=config.board_type,
-                augment_hex=augment_hex_symmetry,
-                weighting=sampling_weights,
-                use_multi_player_values=multi_player,
-                filter_empty_policies=filter_empty_policies,
-                return_num_players=multi_player,
-                return_heuristics=use_heuristics,
-            )
-            use_weighted_sampling = True
-
-        # Phase 5b: Load ELO weights if available (December 2025)
-        # This strengthens the self-improvement loop by weighting samples from
-        # games against stronger opponents more heavily
-        elo_sample_weights: np.ndarray | None = None
-        if enable_elo_weighting and data_path_str and os.path.exists(data_path_str):
-            try:
-                with safe_load_npz(data_path_str, mmap_mode="r") as npz_data:
-                    if "opponent_elo" in npz_data:
-                        from app.training.elo_weighting import compute_elo_weights
-                        opponent_elos = np.array(npz_data["opponent_elo"])
-                        # Use model_elo=1500 as baseline reference
-                        elo_sample_weights = compute_elo_weights(
-                            opponent_elos,
-                            model_elo=1500.0,
-                            elo_scale=400.0,
-                            min_weight=0.2,
-                            max_weight=3.0,
-                        )
-                        if not distributed or is_main_process():
-                            logger.info(
-                                f"ELO weighting enabled: {len(elo_sample_weights)} samples, "
-                                f"weight range [{elo_sample_weights.min():.3f}, {elo_sample_weights.max():.3f}]"
-                            )
-                    else:
-                        if not distributed or is_main_process():
-                            logger.info(
-                                "ELO weighting requested but dataset lacks 'opponent_elo' field. "
-                                "Regenerate with export_replay_dataset.py to include opponent ELO data."
-                            )
-            except (OSError, KeyError, ValueError) as e:
-                # File I/O errors, missing keys, or data type issues
-                if not distributed or is_main_process():
-                    logger.warning(f"Failed to load ELO weights: {e}")
-
-        # Phase 5c: Load quality scores if available (December 2025)
-        # This strengthens the self-improvement loop by weighting samples from
-        # higher-quality games more heavily
-        quality_sample_weights: np.ndarray | None = None
-        if data_path_str and os.path.exists(data_path_str):
-            try:
-                with safe_load_npz(data_path_str, mmap_mode="r") as npz_data:
-                    if "quality_score" in npz_data:
-                        quality_scores = np.array(npz_data["quality_score"])
-                        # Apply min_quality_score filter as a mask
-                        if min_quality_score > 0.0:
-                            quality_mask = quality_scores >= min_quality_score
-                            num_filtered = np.sum(~quality_mask)
-                            if not distributed or is_main_process():
-                                logger.info(
-                                    f"Quality filtering: {num_filtered} samples below threshold "
-                                    f"({min_quality_score:.2f}) will be weighted to 0"
-                                )
-                            # Zero out weights for low-quality samples
-                            quality_sample_weights = np.where(quality_mask, quality_scores, 0.0)
-                        else:
-                            # Use quality scores directly as weights
-                            quality_sample_weights = quality_scores
-                        if not distributed or is_main_process():
-                            nonzero = quality_sample_weights[quality_sample_weights > 0]
-                            if len(nonzero) > 0:
-                                logger.info(
-                                    f"Quality weighting enabled: {len(quality_sample_weights)} samples, "
-                                    f"weight range [{nonzero.min():.3f}, {nonzero.max():.3f}]"
-                                )
-                    else:
-                        if not distributed or is_main_process():
-                            logger.debug(
-                                "Dataset lacks 'quality_score' field - quality weighting disabled. "
-                                "Regenerate with export_replay_dataset.py to include quality data."
-                            )
-            except (OSError, KeyError, ValueError) as e:
-                # File I/O errors, missing keys, or data type issues
-                if not distributed or is_main_process():
-                    logger.warning(f"Failed to load quality scores: {e}")
-
-        # Phase 5d: Load generator Elo weights if available (January 2026)
-        # This implements quality-weighted sampling: games generated by stronger
-        # models (higher Elo) get higher weight during training. This creates a
-        # positive feedback loop where each generation learns more from better data.
-        generator_elo_weights: np.ndarray | None = None
-        if enable_elo_weighting and data_path_str and os.path.exists(data_path_str):
-            try:
-                with safe_load_npz(data_path_str, mmap_mode="r") as npz_data:
-                    if "generator_elo" in npz_data:
-                        from app.training.elo_weighting import compute_generator_elo_weights
-                        generator_elos = np.array(npz_data["generator_elo"])
-                        # Compute weights: higher generator Elo = higher weight
-                        generator_elo_weights = compute_generator_elo_weights(
-                            generator_elos,
-                            baseline_elo=1000.0,  # Center point for sigmoid
-                            elo_scale=200.0,  # Steepness (lower = steeper)
-                            min_weight=0.3,  # Minimum weight for weak generators
-                            max_weight=3.0,  # Maximum weight for strong generators
-                        )
-                        if not distributed or is_main_process():
-                            logger.info(
-                                f"Generator Elo weighting enabled: {len(generator_elo_weights)} samples, "
-                                f"weight range [{generator_elo_weights.min():.3f}, {generator_elo_weights.max():.3f}]"
-                            )
-                    else:
-                        if not distributed or is_main_process():
-                            logger.debug(
-                                "Dataset lacks 'generator_elo' field - generator Elo weighting disabled. "
-                                "Regenerate with export_replay_dataset.py to include generator Elo data."
-                            )
-            except (OSError, KeyError, ValueError) as e:
-                # File I/O errors, missing keys, or data type issues
-                if not distributed or is_main_process():
-                    logger.warning(f"Failed to load generator Elo weights: {e}")
-
-        # Phase 6: Record data quality in ImprovementOptimizer for feedback loop
-        # This enables the self-improvement loop to adapt training parameters
-        # based on data quality metrics
-        if quality_sample_weights is not None and (not distributed or is_main_process()):
-            try:
-                from app.training.improvement_optimizer import get_improvement_optimizer
-                avg_quality = float(np.mean(quality_sample_weights[quality_sample_weights > 0]))
-                optimizer_instance = get_improvement_optimizer()
-                # Parity rate is assumed 1.0 since we passed validation; could be
-                # enhanced to track actual parity test results
-                rec = optimizer_instance.record_data_quality(
-                    parity_success_rate=1.0,  # Assume passed if we got here
-                    data_quality_score=avg_quality,
-                )
-                logger.info(
-                    f"[ImprovementOptimizer] Recorded data quality: {avg_quality:.3f} "
-                    f"(signal: {rec.signal.name}, threshold_adj: {rec.threshold_adjustment:.2f})"
-                )
-            except ImportError:
-                pass  # Improvement optimizer not available
-            except (AttributeError, TypeError) as e:
-                # Missing attributes or type errors
-                logger.debug(f"[ImprovementOptimizer] Failed to record data quality: {e}")
-
-        if len(full_dataset) == 0:
-            if not distributed or is_main_process():
-                logger.warning(
-                    "Training dataset at %s is empty; skipping.",
-                    data_path_str,
-                )
-            if distributed:
-                cleanup_distributed()
-            return
-
-        # If multi-player mode was requested but the dataset does not provide
-        # vector value targets, fail fast to avoid silent shape mismatches.
-        if (
-            multi_player
-            and not getattr(full_dataset, "has_multi_player_values", False)
-        ):
-            if not distributed or is_main_process():
-                logger.error(
-                    "multi_player=True but dataset %s does not contain "
-                    "'values_mp' / 'num_players'. Regenerate data with "
-                    "multi-player value targets or disable --multi-player.",
-                    data_path_str,
-                )
-            if distributed:
-                cleanup_distributed()
-            raise ValueError(
-                "Multi-player training requested but dataset lacks values_mp."
-            )
-
-        # Check for value-only training (no policy data)
-        if not getattr(full_dataset, "has_policy", True):
-            if not distributed or is_main_process():
-                logger.info(
-                    "Dataset has no policy data - enabling value-only training mode "
-                    "(policy_weight=0). Policy head will not be trained."
-                )
-            config.policy_weight = 0.0
-            value_only_training = True
-        else:
-            value_only_training = False
-
-        # Log spatial shape if available
-        shape = getattr(full_dataset, "spatial_shape", None)
-        if shape is not None and (not distributed or is_main_process()):
-            h, w = shape
-            logger.info(
-                "Dataset spatial feature shape inferred as %dx%d.",
-                h,
-                w,
-            )
-
-        # Split into train/val (80/20)
-        train_size = int(0.8 * len(full_dataset))
-        val_size = len(full_dataset) - train_size
-        train_dataset, val_dataset = random_split(
-            full_dataset, [train_size, val_size]
-        )
-
-        # Create data loaders with distributed samplers if needed
-        if distributed:
-            train_sampler = get_distributed_sampler(
-                train_dataset,
-                shuffle=True,
-            )
-            val_sampler = get_distributed_sampler(
-                val_dataset,
-                shuffle=False,
-            )
-            # Note: num_workers=0 required on macOS - memory-mapped NPZ files
-            # contain BufferedReader objects that can't be pickled for multiprocessing.
-            # Also required on Linux with mmap mode to avoid DataLoader hangs.
-            # Platform-aware default: 0 on macOS/mmap, else min(4, cpu_count//2) on Linux
-            env_workers = os.environ.get("RINGRIFT_DATALOADER_WORKERS")
-            if env_workers is not None:
-                num_loader_workers = int(env_workers)
-            elif sys.platform == "darwin":
-                num_loader_workers = 0  # macOS: mmap incompatible with multiprocessing
-            else:
-                # Linux/Windows: use moderate parallelism for non-mmap data loading
-                # Default to 0 for safety (mmap commonly used), allow override via env
-                import multiprocessing
-                num_loader_workers = min(4, multiprocessing.cpu_count() // 2) if not use_streaming else 0
-            train_loader = DataLoader(
-                train_dataset,
-                batch_size=config.batch_size,
-                shuffle=False,  # Sampler handles shuffling
-                sampler=train_sampler,
-                num_workers=num_loader_workers,
-                pin_memory=True,
-            )
-            val_loader = DataLoader(
-                val_dataset,
-                batch_size=config.batch_size,
-                shuffle=False,
-                sampler=val_sampler,
-                num_workers=num_loader_workers,
-                pin_memory=True,
-            )
-        else:
-            # Non-distributed: optionally use weighted sampling for training.
-            # December 2025: Combine position, ELO, and quality weights
-            # January 2026: Added generator Elo weights for quality-weighted sampling
-            use_any_weighting = (
-                use_weighted_sampling
-                or (elo_sample_weights is not None)
-                or (quality_sample_weights is not None)
-                or (generator_elo_weights is not None)
-            )
-
-            if use_any_weighting and isinstance(train_dataset, torch.utils.data.Subset):
-                subset_indices = np.array(train_dataset.indices, dtype=np.int64)
-
-                # Start with position-based weights if available
-                if use_weighted_sampling:
-                    base_dataset = cast(WeightedRingRiftDataset, train_dataset.dataset)
-                    if base_dataset.sample_weights is None:
-                        train_weights_np = np.ones(len(train_dataset), dtype=np.float32)
-                    else:
-                        train_weights_np = base_dataset.sample_weights[subset_indices].astype(np.float32)
-                else:
-                    train_weights_np = np.ones(len(train_dataset), dtype=np.float32)
-
-                # Apply ELO weights multiplicatively if available
-                if elo_sample_weights is not None:
-                    elo_weights_subset = elo_sample_weights[subset_indices].astype(np.float32)
-                    train_weights_np = train_weights_np * elo_weights_subset
-
-                # Apply quality weights multiplicatively if available
-                if quality_sample_weights is not None:
-                    quality_weights_subset = quality_sample_weights[subset_indices].astype(np.float32)
-                    train_weights_np = train_weights_np * quality_weights_subset
-
-                # Apply generator Elo weights multiplicatively if available (January 2026)
-                # Games from stronger generating models get higher weight
-                if generator_elo_weights is not None:
-                    generator_weights_subset = generator_elo_weights[subset_indices].astype(np.float32)
-                    train_weights_np = train_weights_np * generator_weights_subset
-
-                # Log final combined weights
-                if not distributed or is_main_process():
-                    weight_sources = []
-                    if use_weighted_sampling:
-                        weight_sources.append("position")
-                    if elo_sample_weights is not None:
-                        weight_sources.append("ELO")
-                    if quality_sample_weights is not None:
-                        weight_sources.append("quality")
-                    if generator_elo_weights is not None:
-                        weight_sources.append("generator_elo")
-                    nonzero = train_weights_np[train_weights_np > 0]
-                    if len(nonzero) > 0:
-                        logger.info(
-                            f"Combined weights ({' * '.join(weight_sources)}): "
-                            f"{len(nonzero)}/{len(train_weights_np)} samples with weight > 0, "
-                            f"range [{nonzero.min():.3f}, {nonzero.max():.3f}]"
-                        )
-
-                train_weights = torch.from_numpy(train_weights_np)
-                train_sampler = WeightedRandomSampler(
-                    weights=train_weights,
-                    num_samples=len(train_dataset),
-                    replacement=True,
-                )
-                train_loader = DataLoader(
-                    train_dataset,
-                    batch_size=config.batch_size,
-                    shuffle=False,
-                    sampler=train_sampler,
-                )
-                val_loader = DataLoader(
-                    val_dataset,
-                    batch_size=config.batch_size,
-                    shuffle=False,
-                )
-            else:
-                train_sampler = None
-                train_loader = DataLoader(
-                    train_dataset,
-                    batch_size=config.batch_size,
-                    shuffle=True,
-                )
-                val_loader = DataLoader(
-                    val_dataset,
-                    batch_size=config.batch_size,
-                    shuffle=False,
-                )
+    use_streaming = pipeline_context.use_streaming
+    train_streaming_loader = pipeline_context.train_streaming_loader
+    val_streaming_loader = pipeline_context.val_streaming_loader
+    train_loader = pipeline_context.train_loader
+    val_loader = pipeline_context.val_loader
+    train_sampler = pipeline_context.train_sampler
+    val_sampler = pipeline_context.val_sampler
+    full_dataset = pipeline_context.full_dataset
+    train_size = pipeline_context.train_size
+    val_size = pipeline_context.val_size
+    value_only_training = pipeline_context.value_only_training
+    prepared_total_samples = pipeline_context.total_samples
+    prepared_num_data_files = pipeline_context.num_data_files
 
     # Phase 6: Validate training compatibility before starting
-    if not distributed or is_main_process():
+    if full_dataset is not None and (not distributed or is_main_process()):
         try:
             _validate_training_compatibility(model, full_dataset, config)
         except ValueError as e:
@@ -3120,216 +1018,86 @@ def train_model(
                 logger.info(f"  T_0={lr_t0}, T_mult={lr_t_mult}")
         logger.info(f"Checkpoints will be saved to: {checkpoint_dir}")
 
-    # Initialize distributed metrics tracker
-    dist_metrics = DistributedMetrics() if distributed else None
-
-    # Initialize heartbeat monitor for fault tolerance
-    heartbeat_monitor: HeartbeatMonitor | None = None
-    if heartbeat_file and is_main_process():
-        heartbeat_path = Path(heartbeat_file)
-        heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
-        heartbeat_monitor = HeartbeatMonitor(
-            heartbeat_interval=heartbeat_interval,
-            timeout_threshold=heartbeat_interval * 4,  # 4 missed beats = timeout
-        )
-        heartbeat_monitor.start(heartbeat_path)
-        logger.info(f"Heartbeat monitor started: {heartbeat_file} (interval={heartbeat_interval}s)")
-
-    best_val_loss = float('inf')
-    best_train_loss_at_best_val = float('inf')  # Track train loss at best val for overfitting detection
-    avg_val_loss = float('inf')  # Initialize for final checkpoint
-    avg_train_loss = float('inf')  # Track for return value
-    avg_policy_accuracy: float | None = None  # Jan 2026: Initialize for TRAINING_COMPLETED event
-
-    # Track per-epoch losses for downstream analysis
-    epoch_losses: list[dict[str, float]] = []
-    epochs_completed = 0
-
-    # Hardened event emission tracking (December 2025)
-    # These flags ensure TRAINING_COMPLETED or TRAINING_FAILED always fires in finally block
-    _training_completed_normally = False
-    _training_exception: Exception | None = None
-    _training_start_time = time.time()
-    _final_checkpoint_path: str | None = None  # Track for event emission
-    _total_samples: int = 0  # Track for generation tracking
-    _num_data_files: int = 0  # Track for generation tracking
-
-    # Define config_label unconditionally (used for metrics and event logging)
-    config_label = f"{config.board_type.value}_{num_players}p"
-
-    # Initialize LossMonitor for early learning stall detection (Jan 2026 fix)
-    loss_monitor = LossMonitor(patience=5, config_key=config_label)
-
-    # Report batch size metric at start of training
-    if HAS_PROMETHEUS and (not distributed or is_main_process()):
-        BATCH_SIZE.labels(config=config_label).set(config.batch_size)
-
-    # Start integrated enhancements background services (evaluation, etc.)
-    if enhancements_manager is not None:
-        enhancements_manager.start_background_services()
-        logger.info("Integrated enhancements background services started")
-
-    # Initialize fault tolerance components via factory (2025-12, refactored)
-    ft_config = FaultToleranceConfig(
+    run_support = initialize_training_run_support(
+        config=config,
+        num_players=num_players,
+        batch_size_metric=BATCH_SIZE,
+        has_prometheus=HAS_PROMETHEUS,
+        distributed=distributed,
+        is_main=not distributed or is_main_process(),
+        heartbeat_file=heartbeat_file,
+        heartbeat_interval=heartbeat_interval,
+        start_epoch=start_epoch,
+        checkpoint_dir=checkpoint_dir,
+        enable_graceful_shutdown=enable_graceful_shutdown,
         enable_circuit_breaker=enable_circuit_breaker,
         enable_anomaly_detection=enable_anomaly_detection,
-        enable_graceful_shutdown=enable_graceful_shutdown,
         gradient_clip_mode=gradient_clip_mode,
         gradient_clip_max_norm=gradient_clip_max_norm,
         anomaly_spike_threshold=anomaly_spike_threshold,
         anomaly_gradient_threshold=anomaly_gradient_threshold,
+        model=model,
+        optimizer=optimizer,
+        epoch_scheduler=epoch_scheduler,
+        early_stopper=early_stopper,
+        enhancements_manager=enhancements_manager,
+        distributed_metrics_cls=DistributedMetrics,
+        heartbeat_monitor_cls=HeartbeatMonitor,
+        loss_monitor_cls=LossMonitor,
+        fault_tolerance_config_cls=FaultToleranceConfig,
+        setup_fault_tolerance_fn=setup_fault_tolerance,
+        training_state_cls=TrainingState,
+        graceful_shutdown_handler_cls=GracefulShutdownHandler,
+        save_checkpoint_fn=save_checkpoint,
+        has_event_bus=HAS_EVENT_BUS,
+        get_router_fn=get_router,
+        data_event_cls=DataEvent,
+        data_event_type=DataEventType,
+        time_module=time,
     )
-    ft_components = setup_fault_tolerance(
-        ft_config,
+    dist_metrics = run_support.dist_metrics
+    heartbeat_monitor = run_support.heartbeat_monitor
+    best_val_loss = run_support.best_val_loss
+    best_train_loss_at_best_val = run_support.best_train_loss_at_best_val
+    avg_val_loss = run_support.avg_val_loss
+    avg_train_loss = run_support.avg_train_loss
+    avg_policy_accuracy = run_support.avg_policy_accuracy
+    epoch_losses = run_support.epoch_losses
+    epochs_completed = run_support.epochs_completed
+    _training_completed_normally = run_support.training_completed_normally
+    _training_exception = run_support.training_exception
+    _training_start_time = run_support.training_start_time
+    _final_checkpoint_path = run_support.final_checkpoint_path
+    _total_samples = run_support.total_samples
+    _num_data_files = run_support.num_data_files
+    config_label = run_support.config_label
+    loss_monitor = run_support.loss_monitor
+    training_breaker = run_support.training_breaker
+    anomaly_detector = run_support.anomaly_detector
+    adaptive_clipper = run_support.adaptive_clipper
+    fixed_clip_norm = run_support.fixed_clip_norm
+    gradient_clip_mode = run_support.gradient_clip_mode
+    anomaly_step = run_support.anomaly_step
+    training_state = run_support.training_state
+    shutdown_handler = run_support.shutdown_handler
+    rollback_handler = run_support.rollback_handler
+    _last_good_checkpoint_path = run_support.last_good_checkpoint_path
+    _last_good_epoch = run_support.last_good_epoch
+    _circuit_breaker_rollbacks = run_support.circuit_breaker_rollbacks
+    _max_circuit_breaker_rollbacks = run_support.max_circuit_breaker_rollbacks
+
+    maybe_run_lr_finder(
+        find_lr=find_lr,
+        is_main=not distributed or is_main_process(),
         distributed=distributed,
-        is_main_process_fn=is_main_process if distributed else None,
+        model=model,
+        optimizer=optimizer,
+        train_loader=train_loader,
+        device=device,
+        lr_finder_min=lr_finder_min,
+        lr_finder_max=lr_finder_max,
+        lr_finder_iterations=lr_finder_iterations,
     )
-
-    # Extract components for use in training loop
-    training_breaker = ft_components.training_breaker
-    anomaly_detector = ft_components.anomaly_detector
-    adaptive_clipper = ft_components.adaptive_clipper
-    fixed_clip_norm = ft_components.fixed_clip_norm
-    gradient_clip_mode = ft_components.gradient_clip_mode
-    anomaly_step = 0  # Track step for anomaly detection
-
-    # Training state for checkpoint tracking and rollback (2025-12, refactored)
-    training_state = TrainingState(
-        epoch=start_epoch,
-        best_val_loss=float('inf'),
-        avg_val_loss=float('inf'),
-    )
-
-    # Setup graceful shutdown handler for emergency checkpoints (2025-12)
-    shutdown_handler: GracefulShutdownHandler | None = None
-    if enable_graceful_shutdown and (not distributed or is_main_process()):
-        def _emergency_checkpoint_callback():
-            """Save emergency checkpoint on signal."""
-            model_to_save = model.module if distributed else model
-            emergency_path = os.path.join(
-                checkpoint_dir,
-                f"checkpoint_emergency_epoch_{training_state.epoch}.pth",
-            )
-            save_checkpoint(
-                model_to_save,
-                optimizer,
-                training_state.epoch,
-                training_state.avg_val_loss,
-                emergency_path,
-                scheduler=epoch_scheduler,
-                early_stopping=early_stopper,
-            )
-
-        shutdown_handler = GracefulShutdownHandler()
-        shutdown_handler.setup(_emergency_checkpoint_callback)
-
-    # Wire REGRESSION_DETECTED → automatic rollback (December 2025)
-    # This ensures that if model performance regresses during training,
-    # we can automatically roll back to the last good checkpoint.
-    rollback_handler = None
-    try:
-        from app.training.rollback_manager import wire_regression_to_rollback
-        from app.training.model_registry import get_model_registry
-
-        registry = get_model_registry()
-        rollback_handler = wire_regression_to_rollback(
-            registry=registry,
-            auto_rollback_enabled=True,  # Auto-rollback on CRITICAL regressions
-            require_approval_for_severe=True,  # Prompt for SEVERE regressions
-            subscribe_to_events=True,  # Subscribe to event bus
-        )
-        if not distributed or is_main_process():
-            logger.info("[train_model] Regression → rollback wiring activated")
-    except ImportError:
-        pass  # Rollback manager not available
-    except (AttributeError, TypeError, RuntimeError) as e:
-        # Missing attributes, type errors, or initialization failures
-        if not distributed or is_main_process():
-            logger.debug(f"[train_model] Rollback wiring not available: {e}")
-
-    # Aliases for backwards compatibility with existing loop code
-    _last_good_checkpoint_path = training_state.last_good_checkpoint_path
-    _last_good_epoch = training_state.last_good_epoch
-    _circuit_breaker_rollbacks = training_state.circuit_breaker_rollbacks
-    _max_circuit_breaker_rollbacks = training_state.max_circuit_breaker_rollbacks
-
-    # Publish training started event (2025-12)
-    if HAS_EVENT_BUS and get_router is not None and DataEventType is not None and (not distributed or is_main_process()):
-        try:
-            router = get_router()
-            # config.model_dir may be a str or Path, so use Path() for safety
-            model_path = Path(config.model_dir) / f"model_{num_players}p.pth"
-            router.publish_sync(DataEvent(
-                event_type=DataEventType.TRAINING_STARTED,
-                payload={
-                    "total_epochs": config.epochs_per_iter,
-                    "start_epoch": start_epoch,
-                    "config": f"{config.board_type.value}_{num_players}p",
-                    "model_path": str(model_path),
-                },
-                source="train",
-            ))
-        except (RuntimeError, ConnectionError, TimeoutError, TypeError) as e:
-            # Event emission can fail due to async runtime, network issues, or type mismatches
-            logger.debug(f"Failed to publish training started event: {e}")
-
-    # Learning rate finder (2025-12)
-    # Runs a range test to find optimal learning rate before training
-    if find_lr and (not distributed or is_main_process()):
-        try:
-            from app.training.advanced_training import LRFinder
-
-            logger.info(
-                f"[LR Finder] Running learning rate range test "
-                f"(min={lr_finder_min:.1e}, max={lr_finder_max:.1e}, iters={lr_finder_iterations})"
-            )
-
-            # Create a simple combined loss for LR finding
-            def combined_criterion(outputs: Any, targets: Any) -> torch.Tensor:
-                """Combine value and policy losses for LR range test."""
-                if isinstance(outputs, tuple):
-                    value_out, policy_out = outputs[:2]
-                    if isinstance(targets, tuple):
-                        value_target, policy_target = targets[:2]
-                    else:
-                        value_target = targets
-                        policy_target = None
-                    value_loss = nn.functional.mse_loss(value_out.squeeze(), value_target.squeeze())
-                    if policy_target is not None:
-                        policy_loss = nn.functional.cross_entropy(policy_out, policy_target)
-                        return value_loss + policy_loss
-                    return value_loss
-                return nn.functional.mse_loss(outputs, targets)
-
-            lr_finder = LRFinder(
-                model=model.module if distributed else model,
-                optimizer=optimizer,
-                criterion=combined_criterion,
-                device=device,
-            )
-
-            # Use train_loader for LR range test
-            lr_result = lr_finder.range_test(
-                train_loader,
-                min_lr=lr_finder_min,
-                max_lr=lr_finder_max,
-                num_iter=lr_finder_iterations,
-            )
-
-            logger.info(
-                f"[LR Finder] Results: suggested_lr={lr_result.suggested_lr:.2e}, "
-                f"steepest_lr={lr_result.steepest_lr:.2e}, best_lr={lr_result.best_lr:.2e}"
-            )
-
-            # Apply suggested learning rate
-            old_lr = optimizer.param_groups[0]['lr']
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr_result.suggested_lr
-            logger.info(f"[LR Finder] Updated learning rate: {old_lr:.2e} -> {lr_result.suggested_lr:.2e}")
-
-        except (RuntimeError, ValueError, OSError) as e:
-            # CUDA OOM, invalid data, or file I/O errors during LR finding
-            logger.warning(f"[LR Finder] Failed: {e}. Continuing with configured LR.")
 
     try:
         for epoch in range(start_epoch, config.epochs_per_iter):
@@ -4671,348 +2439,42 @@ def train_model(
                         # Event emission can fail due to async runtime or network issues
                         logger.debug(f"Failed to publish training progress event: {e}")
 
-            # LossMonitor: Check for learning stall (Jan 2026 fix)
-            if not loss_monitor.record(epoch, avg_train_loss, avg_val_loss):
-                logger.warning(
-                    f"[LossMonitor] Training stalled - loss not improving. "
-                    f"Consider checking data quality or model architecture. "
-                    f"Summary: {loss_monitor.get_summary()}"
-                )
-                # Don't break early - let existing early stopping handle it
-                # This is just for observability/alerting
-
-            # Overfitting detection: warn if validation diverges significantly from train
-            if avg_train_loss > 0 and epoch >= 3:
-                overfitting_ratio = (avg_val_loss - avg_train_loss) / avg_train_loss
-                if overfitting_ratio > 0.25 and (not distributed or is_main_process()):
-                    logger.warning(
-                        f"Overfitting detected: {overfitting_ratio*100:.1f}% divergence "
-                        f"(train={avg_train_loss:.4f}, val={avg_val_loss:.4f})"
-                    )
-
-            # Regression detection: check if validation loss has regressed (2025-12)
-            # Uses unified RegressionDetector for consistent detection across modules
-            # January 2026: Enhanced to skip checkpoint saving on significant regression
-            skip_checkpoint_on_regression = False
-            if (HAS_REGRESSION_DETECTOR and get_regression_detector is not None
-                    and epoch >= 2 and (not distributed or is_main_process())):
-                try:
-                    from app.training.regression_detector import RegressionSeverity
-                    regression_detector = get_regression_detector(connect_event_bus=True)
-                    model_id = f"{config.board_type.value}_{num_players}p"
-
-                    # Set baseline on first check
-                    if epoch == 2:
-                        regression_detector.set_baseline(
-                            model_id=model_id,
-                            elo=best_val_loss * -1000,  # Convert loss to pseudo-Elo
-                        )
-
-                    # Check for regression (using inverted loss as pseudo-Elo)
-                    regression_event = regression_detector.check_regression(
-                        model_id=model_id,
-                        current_elo=avg_val_loss * -1000,
-                        games_played=epoch + 1,
-                    )
-
-                    if regression_event is not None:
-                        logger.warning(
-                            f"[RegressionDetector] {regression_event.severity.value.upper()} regression: "
-                            f"val_loss {avg_val_loss:.4f} vs best {best_val_loss:.4f} "
-                            f"({regression_event.reason})"
-                        )
-                        # January 2026: Skip checkpoint on MODERATE or worse regression
-                        # This prevents polluting the model pool with regressing checkpoints
-                        if regression_event.severity in (
-                            RegressionSeverity.MODERATE,
-                            RegressionSeverity.SEVERE,
-                            RegressionSeverity.CRITICAL,
-                        ):
-                            skip_checkpoint_on_regression = True
-                            logger.warning(
-                                f"[RegressionDetector] Skipping checkpoint save due to "
-                                f"{regression_event.severity.value} regression"
-                            )
-                except (AttributeError, ValueError, TypeError, ImportError) as e:
-                    # Missing attributes, invalid values, type errors, or import issues
-                    logger.debug(f"Regression detection error: {e}")
-
-            # Record per-epoch losses for downstream analysis
-            epochs_completed = epoch + 1
-            epoch_record = {
-                'epoch': epoch + 1,
-                'train_loss': float(avg_train_loss),
-                'val_loss': float(avg_val_loss),
-                'policy_accuracy': float(avg_policy_accuracy),
-                'lr': float(optimizer.param_groups[0]['lr']),
-            }
-
-            # Compute and log calibration metrics every 5 epochs
-            if calibration_tracker is not None and (epoch + 1) % 5 == 0:
-                calibration_report = calibration_tracker.compute_current_calibration()
-                if calibration_report is not None:
-                    epoch_record['calibration_ece'] = calibration_report.ece
-                    epoch_record['calibration_mce'] = calibration_report.mce
-                    epoch_record['calibration_overconfidence'] = calibration_report.overconfidence
-                    if not distributed or is_main_process():
-                        logger.info(
-                            f"  Calibration: ECE={calibration_report.ece:.4f}, "
-                            f"MCE={calibration_report.mce:.4f}, "
-                            f"Overconfidence={calibration_report.overconfidence:.4f}"
-                        )
-                        if calibration_report.optimal_temperature is not None:
-                            logger.info(
-                                f"  Optimal temperature: {calibration_report.optimal_temperature:.3f}"
-                            )
-
-            epoch_losses.append(epoch_record)
-
-            # Training facade: log statistics and prepare for next epoch (2025-12)
-            # Provides unified stats for hard mining, curriculum LR, and freshness weighting
-            if training_facade is not None and (not distributed or is_main_process()):
-                try:
-                    facade_stats = training_facade.on_epoch_end()
-                    if facade_stats.get('mining_active', False):
-                        logger.info(
-                            f"  [Training Facade] "
-                            f"tracked={facade_stats.get('tracked_samples', 0)}, "
-                            f"hard_frac={facade_stats.get('hard_examples_fraction', 0):.1%}, "
-                            f"mean_loss={facade_stats.get('mean_per_sample_loss', 0):.4f}, "
-                            f"lr_scale={facade_stats.get('curriculum_lr_scale', 1.0):.3f}"
-                        )
-                    # Add to epoch record for analysis
-                    epoch_record['facade_mean_loss'] = facade_stats.get('mean_loss', 0)
-                    epoch_record['facade_hard_fraction'] = facade_stats.get('hard_examples_fraction', 0)
-                    epoch_record['facade_curriculum_lr_scale'] = facade_stats.get('curriculum_lr_scale', 1.0)
-                    epoch_record['facade_mining_active'] = facade_stats.get('mining_active', False)
-                except (AttributeError, ValueError) as e:
-                    logger.debug(f"[Training Facade] on_epoch_end error: {e}")
-
-            # Fallback: Log hard example mining statistics (2025-12)
-            elif hard_example_miner is not None and (not distributed or is_main_process()):
-                mining_stats = hard_example_miner.get_statistics()
-                if mining_stats.get('mining_active', False):
-                    logger.info(
-                        f"  [Hard Example Mining] "
-                        f"tracked={mining_stats.get('tracked_examples', 0)}, "
-                        f"mean_loss={mining_stats.get('mean_loss', 0):.4f}, "
-                        f"loss_p90={mining_stats.get('loss_p90', 0):.4f}"
-                    )
-                    # Add to epoch record for analysis
-                    epoch_record['hard_mining_mean_loss'] = mining_stats.get('mean_loss', 0)
-                    epoch_record['hard_mining_p90_loss'] = mining_stats.get('loss_p90', 0)
-                    epoch_record['hard_mining_tracked'] = mining_stats.get('tracked_examples', 0)
-
-            # Emit epoch completed event for curriculum feedback (December 2025)
-            # This enables mid-training curriculum updates based on epoch progress
-            if HAS_EPOCH_EVENTS and publish_epoch_completed and (not distributed or is_main_process()):
-                try:
-                    import asyncio
-                    config_key = f"{config.board_type.value}_{num_players}p"
-                    try:
-                        # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
-                        loop = asyncio.get_running_loop()
-                        asyncio.ensure_future(publish_epoch_completed(
-                                config_key=config_key,
-                                epoch=epoch + 1,
-                                total_epochs=config.epochs_per_iter,
-                                train_loss=avg_train_loss,
-                                val_loss=avg_val_loss,
-                                learning_rate=optimizer.param_groups[0]['lr'],
-                            ))
-                    except RuntimeError:
-                        # No event loop running - use fire-and-forget
-                        pass
-                except (RuntimeError, ConnectionError, TimeoutError) as e:
-                    # Event emission can fail due to async runtime or network issues
-                    logger.debug(f"Failed to emit epoch completed event: {e}")
-
-            # Emit training loss events for feedback loops (Phase 21.2 - Dec 2025)
-            # Only emit on main process to avoid duplicates in DDP
-            if HAS_TRAINING_EVENTS and (not distributed or is_main_process()):
-                try:
-                    import asyncio
-                    config_key = f"{config.board_type.value}_{num_players}p"
-
-                    # Calculate average loss over recent epochs (last 5 or all available)
-                    recent_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
-                                     for e in epoch_losses[-5:] if e]
-                    if recent_losses:
-                        avg_recent_loss = sum(recent_losses) / len(recent_losses)
-
-                        # Detect anomaly: current loss > 2x average (significant spike)
-                        if avg_val_loss > avg_recent_loss * 2.0 and len(epoch_losses) > 2:
-                            anomaly_ratio = avg_val_loss / avg_recent_loss if avg_recent_loss > 0 else 0.0
-                            logger.warning(
-                                f"[TRAINING ANOMALY] Loss spike detected: {avg_val_loss:.4f} vs avg {avg_recent_loss:.4f} "
-                                f"(ratio: {anomaly_ratio:.2f}x)"
-                            )
-                            # Fire-and-forget async emission
-                            try:
-                                # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
-                                loop = asyncio.get_running_loop()
-                                asyncio.ensure_future(emit_training_loss_anomaly(
-                                    config_key=config_key,
-                                    current_loss=avg_val_loss,
-                                    avg_loss=avg_recent_loss,
-                                    epoch=epoch + 1,
-                                    anomaly_ratio=anomaly_ratio,
-                                    source="train.py",
-                                ))
-                            except RuntimeError:
-                                # No event loop - skip emission (OK in non-async context)
-                                pass
-
-                        # Emit trend every 5 epochs
-                        if (epoch + 1) % 5 == 0 and len(epoch_losses) >= 5:
-                            # Compare last 5 epochs to previous 5 epochs
-                            current_avg = sum(recent_losses) / len(recent_losses)
-                            older_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
-                                            for e in epoch_losses[-10:-5] if e]
-                            if older_losses:
-                                previous_avg = sum(older_losses) / len(older_losses)
-                                improvement_rate = (previous_avg - current_avg) / previous_avg if previous_avg > 0 else 0.0
-
-                                # Classify trend: >5% improvement = improving, <-5% = degrading, else stalled
-                                if improvement_rate > 0.05:
-                                    trend = "improving"
-                                elif improvement_rate < -0.05:
-                                    trend = "degrading"
-                                else:
-                                    trend = "stalled"
-
-                                logger.info(
-                                    f"[TRAINING TREND] {trend} (epoch {epoch+1}): "
-                                    f"current_avg={current_avg:.4f}, previous_avg={previous_avg:.4f}, "
-                                    f"improvement_rate={improvement_rate:.2%}"
-                                )
-                                try:
-                                    # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
-                                    loop = asyncio.get_running_loop()
-                                    asyncio.ensure_future(emit_training_loss_trend(
-                                        config_key=config_key,
-                                        trend=trend,
-                                        epoch=epoch + 1,
-                                        current_loss=current_avg,
-                                        previous_loss=previous_avg,
-                                        improvement_rate=improvement_rate,
-                                        source="train.py",
-                                    ))
-                                except RuntimeError:
-                                    pass
-
-                        # Dec 29, 2025: Stricter plateau detection (0.1% over 10 epochs)
-                        # This catches subtle plateaus that the 5-epoch/5% threshold misses
-                        if (epoch + 1) % 10 == 0 and len(epoch_losses) >= 10:
-                            last_10_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
-                                              for e in epoch_losses[-10:] if e]
-                            prev_10_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
-                                              for e in epoch_losses[-20:-10] if e]
-                            if len(last_10_losses) >= 10 and len(prev_10_losses) >= 5:
-                                last_10_avg = sum(last_10_losses) / len(last_10_losses)
-                                prev_10_avg = sum(prev_10_losses) / len(prev_10_losses)
-                                long_term_improvement = (prev_10_avg - last_10_avg) / prev_10_avg if prev_10_avg > 0 else 0.0
-
-                                # Plateau: < 0.1% improvement over 10 epochs
-                                if abs(long_term_improvement) < 0.001:
-                                    # Dec 29, 2025: Plateau type analysis (overfitting vs data limitation)
-                                    # Train/val gap indicates overfitting, small gap indicates data limitation
-                                    last_10_train = [e.get('avg_train_loss', 0.0) for e in epoch_losses[-10:] if e]
-                                    last_10_train_avg = sum(last_10_train) / len(last_10_train) if last_10_train else 0.0
-                                    train_val_gap = last_10_avg - last_10_train_avg  # val - train
-
-                                    if train_val_gap > 0.05:
-                                        plateau_type = "overfitting"
-                                        recommendation = "reduce_epochs"
-                                        exploration_boost = 1.5  # Higher boost to diversify data
-                                    else:
-                                        plateau_type = "data_limitation"
-                                        recommendation = "more_games"
-                                        exploration_boost = 1.3  # Moderate boost
-
-                                    logger.warning(
-                                        f"[TRAINING PLATEAU] Detected at epoch {epoch+1}: "
-                                        f"<0.1% improvement over 10 epochs "
-                                        f"(last_10={last_10_avg:.5f}, prev_10={prev_10_avg:.5f}, "
-                                        f"type={plateau_type}, gap={train_val_gap:.4f})"
-                                    )
-                                    try:
-                                        loop = asyncio.get_running_loop()
-                                        # Emit TRAINING_LOSS_TREND for backward compatibility
-                                        asyncio.ensure_future(emit_training_loss_trend(
-                                            config_key=config_key,
-                                            trend="plateau",
-                                            epoch=epoch + 1,
-                                            current_loss=last_10_avg,
-                                            previous_loss=prev_10_avg,
-                                            improvement_rate=long_term_improvement,
-                                            source="train.py",
-                                            window_size=10,
-                                        ))
-                                        # Dec 29, 2025: Emit PLATEAU_DETECTED with type analysis
-                                        # January 2026 - migrated to event_router
-                                        from app.coordination.event_emission_helpers import safe_emit_event
-                                        safe_emit_event(
-                                            "PLATEAU_DETECTED",
-                                            {
-                                                "metric_name": "validation_loss",
-                                                "current_value": last_10_avg,
-                                                "best_value": prev_10_avg,
-                                                "epochs_since_improvement": 10,
-                                                "plateau_type": plateau_type,  # "overfitting" or "data_limitation"
-                                                "config_key": config_key,
-                                                "epoch": epoch + 1,
-                                                "recommendation": recommendation,
-                                                "exploration_boost": exploration_boost,
-                                                "train_val_gap": train_val_gap,
-                                                "source": "train.py",
-                                            },
-                                            context="train.py",
-                                        )
-                                    except RuntimeError:
-                                        pass
-
-                except (RuntimeError, ConnectionError, TimeoutError, AttributeError) as e:
-                    # Event emission failures, network issues, or missing attributes
-                    logger.debug(f"Failed to emit training events: {e}")
-
-            # Update Prometheus metrics (only on main process)
-            if HAS_PROMETHEUS and (not distributed or is_main_process()):
-                config_label = f"{config.board_type.value}_{num_players}p"
-                TRAINING_EPOCHS.labels(config=config_label).inc()
-                TRAINING_LOSS.labels(config=config_label, loss_type='train').set(avg_train_loss)
-                TRAINING_LOSS.labels(config=config_label, loss_type='val').set(avg_val_loss)
-                TRAINING_DURATION.labels(config=config_label).observe(
-                    epoch_record.get('epoch_duration', 0.0)
-                )
-                if 'calibration_ece' in epoch_record:
-                    CALIBRATION_ECE.labels(config=config_label).set(epoch_record['calibration_ece'])
-                    CALIBRATION_MCE.labels(config=config_label).set(epoch_record['calibration_mce'])
-
-            # Record to dashboard metrics collector for persistent storage (2025-12)
-            if metrics_collector is not None and (not distributed or is_main_process()):
-                try:
-                    # Get GPU memory usage if available
-                    gpu_memory_mb = 0.0
-                    if device.type == 'cuda':
-                        gpu_memory_mb = torch.cuda.memory_allocated(device) / (1024 * 1024)
-
-                    metrics_collector.record_training_step(
-                        epoch=epoch + 1,
-                        step=epoch_record.get('train_batches', 0),
-                        loss=avg_val_loss,  # Use validation loss as primary
-                        policy_loss=epoch_record.get('avg_policy_loss', 0.0),
-                        value_loss=epoch_record.get('avg_value_loss', 0.0),
-                        accuracy=avg_policy_accuracy,
-                        learning_rate=optimizer.param_groups[0]['lr'],
-                        batch_size=config.batch_size,
-                        samples_per_second=epoch_record.get('samples_per_second', 0.0),
-                        gpu_memory_mb=gpu_memory_mb,
-                        model_id=config.model_id,
-                    )
-                except (OSError, RuntimeError, AttributeError) as e:
-                    # File I/O errors, runtime errors, or missing attributes
-                    logger.debug(f"Failed to record metrics to dashboard: {e}")
+            epoch_reporting = handle_epoch_reporting_and_feedback(
+                epoch=epoch,
+                avg_train_loss=avg_train_loss,
+                avg_val_loss=avg_val_loss,
+                avg_policy_accuracy=avg_policy_accuracy,
+                optimizer=optimizer,
+                best_val_loss=best_val_loss,
+                config=config,
+                num_players=num_players,
+                distributed=distributed,
+                is_main=not distributed or is_main_process(),
+                device=device,
+                calibration_tracker=calibration_tracker,
+                epoch_losses=epoch_losses,
+                loss_monitor=loss_monitor,
+                training_facade=training_facade,
+                hard_example_miner=hard_example_miner,
+                metrics_collector=metrics_collector,
+                has_regression_detector=HAS_REGRESSION_DETECTOR,
+                get_regression_detector=get_regression_detector,
+                regression_severity=RegressionSeverity,
+                has_epoch_events=HAS_EPOCH_EVENTS,
+                publish_epoch_completed=publish_epoch_completed,
+                has_training_events=HAS_TRAINING_EVENTS,
+                emit_training_loss_anomaly=emit_training_loss_anomaly,
+                emit_training_loss_trend=emit_training_loss_trend,
+                has_prometheus=HAS_PROMETHEUS,
+                training_epochs_metric=TRAINING_EPOCHS,
+                training_loss_metric=TRAINING_LOSS,
+                training_duration_metric=TRAINING_DURATION,
+                calibration_ece_metric=CALIBRATION_ECE,
+                calibration_mce_metric=CALIBRATION_MCE,
+            )
+            skip_checkpoint_on_regression = epoch_reporting.skip_checkpoint_on_regression
+            epochs_completed = epoch_reporting.epochs_completed
+            epoch_record = epoch_reporting.epoch_record
 
             # Check early stopping (only on main process for DDP)
             # Get model for checkpointing (unwrap DDP if needed)
@@ -5116,45 +2578,18 @@ def train_model(
                             logger.warning(f"Failed to emit TRAINING_EARLY_STOPPED: {e}")
                         # Restore best weights
                         early_stopper.restore_best_weights(model_to_save)
-                        # Save final checkpoint with best weights
-                        final_checkpoint_path = os.path.join(
-                            checkpoint_dir,
-                            f"checkpoint_early_stop_epoch_{epoch+1}.pth",
-                        )
-                        _final_checkpoint_path = final_checkpoint_path  # Track for event emission
-                        if async_checkpointer is not None:
-                            async_checkpointer.save_async(
-                                model_to_save,
-                                optimizer,
-                                epoch,
-                                early_stopper.best_loss,
-                                final_checkpoint_path,
-                                scheduler=epoch_scheduler,
-                                early_stopping=early_stopper,
-                            )
-                        else:
-                            save_checkpoint(
-                                model_to_save,
-                                optimizer,
-                                epoch,
-                                early_stopper.best_loss,
-                                final_checkpoint_path,
-                                scheduler=epoch_scheduler,
-                                early_stopping=early_stopper,
-                            )
-                        # Save best model with versioning and config validation
-                        save_model_checkpoint(
-                            model_to_save,
-                            save_path,
-                            training_info={
-                                'epoch': epoch,
-                                'loss': float(early_stopper.best_loss),
-                                'early_stopped': True,
-                            },
-                            board_type=config.board_type,
+                        _final_checkpoint_path = save_early_stop_artifacts(
+                            model_to_save=model_to_save,
+                            optimizer=optimizer,
+                            epoch=epoch,
+                            checkpoint_dir=checkpoint_dir,
+                            save_path=save_path,
+                            config=config,
                             num_players=num_players,
+                            early_stopper=early_stopper,
+                            async_checkpointer=async_checkpointer,
+                            epoch_scheduler=epoch_scheduler,
                         )
-                        logger.info("Best model saved to %s", save_path)
                     # Mark early stopping as successful completion (for hardened event emission)
                     _training_completed_normally = True
                     break
@@ -5164,30 +2599,16 @@ def train_model(
                 checkpoint_interval > 0
                 and (epoch + 1) % checkpoint_interval == 0
             ) and (not distributed or is_main_process()):
-                checkpoint_path = os.path.join(
-                    checkpoint_dir,
-                    f"checkpoint_epoch_{epoch+1}.pth",
+                checkpoint_path = save_periodic_checkpoint(
+                    model_to_save=model_to_save,
+                    optimizer=optimizer,
+                    epoch=epoch,
+                    avg_val_loss=avg_val_loss,
+                    checkpoint_dir=checkpoint_dir,
+                    async_checkpointer=async_checkpointer,
+                    epoch_scheduler=epoch_scheduler,
+                    early_stopper=early_stopper,
                 )
-                if async_checkpointer is not None:
-                    async_checkpointer.save_async(
-                        model_to_save,
-                        optimizer,
-                        epoch,
-                        avg_val_loss,
-                        checkpoint_path,
-                        scheduler=epoch_scheduler,
-                        early_stopping=early_stopper,
-                    )
-                else:
-                    save_checkpoint(
-                        model_to_save,
-                        optimizer,
-                        epoch,
-                        avg_val_loss,
-                        checkpoint_path,
-                        scheduler=epoch_scheduler,
-                        early_stopping=early_stopper,
-                    )
                 # Track for circuit breaker rollback (2025-12)
                 _last_good_checkpoint_path = checkpoint_path
                 _last_good_epoch = epoch
@@ -5198,54 +2619,16 @@ def train_model(
                 best_val_loss = avg_val_loss
                 best_train_loss_at_best_val = avg_train_loss  # Track for overfitting detection
                 if not distributed or is_main_process():
-                    # Save with versioning metadata and config validation
-                    save_model_checkpoint(
-                        model_to_save,
-                        save_path,
-                        training_info={
-                            'epoch': epoch + 1,
-                            'samples_seen': train_size * (epoch + 1),
-                            'val_loss': float(avg_val_loss),
-                            'train_loss': float(avg_train_loss),
-                        },
-                        board_type=config.board_type,
+                    save_best_model_artifacts(
+                        model_to_save=model_to_save,
+                        save_path=save_path,
+                        config=config,
                         num_players=num_players,
-                    )
-                    logger.info(
-                        "  New best model saved (Val Loss: %.4f)",
-                        avg_val_loss,
-                    )
-
-                    # Collect checkpoint for averaging (2025-12)
-                    if checkpoint_averager is not None:
-                        checkpoint_averager.add_checkpoint(
-                            model_to_save.state_dict(),
-                            epoch=epoch,
-                        )
-
-                    # Save timestamped checkpoint for history tracking
-                    from datetime import datetime as dt
-                    timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
-                    version_path = save_path.replace(
-                        ".pth",
-                        f"_{timestamp}.pth",
-                    )
-                    save_model_checkpoint(
-                        model_to_save,
-                        version_path,
-                        training_info={
-                            'epoch': epoch + 1,
-                            'samples_seen': train_size * (epoch + 1),
-                            'val_loss': float(avg_val_loss),
-                            'train_loss': float(avg_train_loss),
-                            'timestamp': timestamp,
-                        },
-                        board_type=config.board_type,
-                        num_players=num_players,
-                    )
-                    logger.info(
-                        "  Versioned checkpoint saved: %s",
-                        version_path,
+                        epoch=epoch,
+                        train_size=train_size,
+                        avg_val_loss=avg_val_loss,
+                        avg_train_loss=avg_train_loss,
+                        checkpoint_averager=checkpoint_averager,
                     )
 
             # Knowledge distillation check (2025-12)
@@ -5286,130 +2669,24 @@ def train_model(
                     nn.Module,
                     model.module if distributed else model,
                 )
-                final_checkpoint_path = os.path.join(
-                    checkpoint_dir,
-                    f"checkpoint_final_epoch_{config.epochs_per_iter}.pth",
+                final_checkpoint_path = finalize_training_checkpoints(
+                    model_to_save_final=model_to_save_final,
+                    optimizer=optimizer,
+                    config=config,
+                    checkpoint_dir=checkpoint_dir,
+                    save_path=save_path,
+                    num_players=num_players,
+                    avg_val_loss=avg_val_loss,
+                    best_val_loss=best_val_loss,
+                    best_train_loss_at_best_val=best_train_loss_at_best_val,
+                    overfit_divergence_threshold=overfit_divergence_threshold,
+                    prefer_best_on_overfit=prefer_best_on_overfit,
+                    early_stopper=early_stopper,
+                    checkpoint_averager=checkpoint_averager,
+                    async_checkpointer=async_checkpointer,
+                    epoch_scheduler=epoch_scheduler,
                 )
                 _final_checkpoint_path = final_checkpoint_path  # Track for event emission
-                if async_checkpointer is not None:
-                    async_checkpointer.save_async(
-                        model_to_save_final,
-                        optimizer,
-                        config.epochs_per_iter - 1,
-                        avg_val_loss,
-                        final_checkpoint_path,
-                        scheduler=epoch_scheduler,
-                        early_stopping=early_stopper,
-                    )
-                else:
-                    save_checkpoint(
-                        model_to_save_final,
-                        optimizer,
-                        config.epochs_per_iter - 1,
-                        avg_val_loss,
-                        final_checkpoint_path,
-                        scheduler=epoch_scheduler,
-                        early_stopping=early_stopper,
-                    )
-                logger.info("Training completed. Final checkpoint saved.")
-
-                # Apply checkpoint averaging if enabled (2025-12), with overfitting detection (January 2026)
-                # Check for overfitting: if val_loss diverged significantly from train_loss, keep best checkpoint
-                overfitting_detected = False
-                if best_train_loss_at_best_val > 0 and best_val_loss != float('inf'):
-                    divergence = (best_val_loss - best_train_loss_at_best_val) / best_train_loss_at_best_val
-                    if divergence > overfit_divergence_threshold:
-                        overfitting_detected = True
-                        logger.warning(
-                            f"[Overfitting Detected] Val/Train divergence: {divergence:.1%} > {overfit_divergence_threshold:.0%} threshold "
-                            f"(train={best_train_loss_at_best_val:.4f}, val={best_val_loss:.4f})"
-                        )
-
-                # Skip averaging if overfitting detected and prefer_best_on_overfit is enabled
-                skip_averaging = prefer_best_on_overfit and overfitting_detected
-                if skip_averaging:
-                    logger.info(
-                        "[Best Checkpoint Selection] Keeping best validation loss checkpoint (skipping averaging due to overfitting)"
-                    )
-                    # Jan 12, 2026 FIX: Actually restore best weights when overfitting detected
-                    # Previously we just skipped averaging but still saved final epoch weights
-                    if early_stopper is not None and hasattr(early_stopper, 'restore_best_weights'):
-                        logger.info(
-                            f"[Auto-Restore Best] Restoring weights from best epoch (val_loss={early_stopper.best_loss:.4f})"
-                        )
-                        early_stopper.restore_best_weights(model_to_save_final)
-                    if checkpoint_averager is not None:
-                        checkpoint_averager.cleanup()
-                elif checkpoint_averager is not None and checkpoint_averager.num_stored >= 2:
-                    logger.info(
-                        f"[Checkpoint Averaging] Averaging {checkpoint_averager.num_stored} checkpoints..."
-                    )
-                    try:
-                        averaged_state_dict = checkpoint_averager.get_averaged_state_dict()
-
-                        # Save averaged model separately
-                        averaged_path = save_path.replace(".pth", "_averaged.pth")
-                        model_to_save_final.load_state_dict(averaged_state_dict)
-                        save_model_checkpoint(
-                            model_to_save_final,
-                            averaged_path,
-                            training_info={
-                                'epoch': config.epochs_per_iter,
-                                'averaged_checkpoints': checkpoint_averager.num_stored,
-                                'checkpoint_averaging': True,
-                            },
-                            board_type=config.board_type,
-                            num_players=num_players,
-                        )
-
-                        # Overwrite main save_path with averaged weights (typically better)
-                        save_model_checkpoint(
-                            model_to_save_final,
-                            save_path,
-                            training_info={
-                                'epoch': config.epochs_per_iter,
-                                'averaged_checkpoints': checkpoint_averager.num_stored,
-                                'checkpoint_averaging': True,
-                            },
-                            board_type=config.board_type,
-                            num_players=num_players,
-                        )
-                        logger.info(
-                            f"[Checkpoint Averaging] Saved averaged model ({checkpoint_averager.num_stored} checkpoints) to {save_path}"
-                        )
-                    except (OSError, RuntimeError, ValueError, TypeError, MemoryError) as e:
-                        logger.warning(f"[Checkpoint Averaging] Failed to average checkpoints: {e}")
-                    finally:
-                        checkpoint_averager.cleanup()
-                elif checkpoint_averager is not None:
-                    logger.info(
-                        f"[Checkpoint Averaging] Skipped: only {checkpoint_averager.num_stored} checkpoint(s) available (need >= 2)"
-                    )
-                    checkpoint_averager.cleanup()
-
-                # Jan 12, 2026 FIX: Always ensure best weights are restored before final save
-                # This handles the case where training completes without early stopping or
-                # overfitting detection, but the final epoch is worse than the best epoch.
-                if early_stopper is not None and not skip_averaging:
-                    final_val_loss = avg_val_loss if 'avg_val_loss' in dir() else float('inf')
-                    if final_val_loss > early_stopper.best_loss * 1.05:  # 5% tolerance
-                        logger.info(
-                            f"[Auto-Restore Best] Final loss ({final_val_loss:.4f}) > best loss ({early_stopper.best_loss:.4f}). "
-                            f"Restoring best weights before final save."
-                        )
-                        early_stopper.restore_best_weights(model_to_save_final)
-                        # Re-save with best weights
-                        save_model_checkpoint(
-                            model_to_save_final,
-                            save_path,
-                            training_info={
-                                'epoch': early_stopper.best_epoch if hasattr(early_stopper, 'best_epoch') else config.epochs_per_iter,
-                                'best_val_loss': early_stopper.best_loss,
-                                'auto_restored': True,
-                            },
-                            board_type=config.board_type,
-                            num_players=num_players,
-                        )
 
                 # Log reanalysis summary if enabled (2025-12)
                 if enhancements_manager is not None:
@@ -5679,245 +2956,6 @@ def train_model(
         'epochs_completed': epochs_completed,
         'epoch_losses': epoch_losses,
     }
-
-
-def train_with_config(full_config: FullTrainingConfig) -> dict[str, Any]:
-    """
-    Train using a unified FullTrainingConfig object.
-
-    This is the recommended way to call training - instead of passing 91+
-    individual parameters to train_model(), use this function with a single
-    FullTrainingConfig object that groups related parameters logically.
-
-    Args:
-        full_config: Complete training configuration with all sub-configs.
-
-    Returns:
-        dict: Training results with keys:
-            - best_val_loss: Best validation loss achieved
-            - final_train_loss: Final epoch training loss
-            - final_val_loss: Final epoch validation loss
-            - epochs_completed: Number of epochs completed
-            - epoch_losses: List of per-epoch loss values
-
-    Example:
-        from app.training.train_config import FullTrainingConfig, EnhancementConfig
-
-        config = FullTrainingConfig(
-            board_type="hex8",
-            num_players=2,
-            epochs=50,
-            batch_size=512,
-            enhancements=EnhancementConfig(
-                enable_curriculum=True,
-                enable_elo_weighting=True,
-            ),
-        )
-        config.data.data_path = "data/training/hex8_2p.npz"
-        config.checkpoint.save_path = "models/hex8_2p.pth"
-
-        result = train_with_config(config)
-        print(f"Best validation loss: {result['best_val_loss']:.4f}")
-    """
-    # Create TrainConfig from full_config core settings
-    # Note: TrainConfig uses epochs_per_iter instead of epochs
-    train_cfg = TrainConfig(
-        board_type=full_config.board_type,
-        num_players=full_config.num_players,
-        epochs_per_iter=full_config.epochs,
-        batch_size=full_config.batch_size,
-        learning_rate=full_config.learning_rate,
-    )
-
-    # Call train_model with unpacked parameters from FullTrainingConfig
-    return train_model(
-        config=train_cfg,
-        data_path=full_config.data.data_path,
-        save_path=full_config.checkpoint.save_path,
-        # Early stopping
-        early_stopping_patience=full_config.early_stopping.patience,
-        elo_early_stopping_patience=full_config.early_stopping.elo_patience,
-        elo_min_improvement=full_config.early_stopping.elo_min_improvement,
-        # Checkpointing
-        checkpoint_dir=full_config.checkpoint.checkpoint_dir,
-        checkpoint_interval=full_config.checkpoint.checkpoint_interval,
-        _save_all_epochs=full_config.checkpoint.save_all_epochs,
-        resume_path=full_config.checkpoint.resume_path,
-        init_weights_path=full_config.checkpoint.init_weights_path,
-        init_weights_strict=full_config.checkpoint.init_weights_strict,
-        enable_checkpoint_averaging=full_config.checkpoint.enable_checkpoint_averaging,
-        num_checkpoints_to_average=full_config.checkpoint.num_checkpoints_to_average,
-        # Learning rate scheduling
-        warmup_epochs=full_config.lr.warmup_epochs,
-        lr_scheduler=full_config.lr.lr_scheduler,
-        lr_min=full_config.lr.lr_min,
-        lr_t0=full_config.lr.lr_t0,
-        lr_t_mult=full_config.lr.lr_t_mult,
-        cyclic_lr=full_config.lr.cyclic_lr,
-        cyclic_lr_period=full_config.lr.cyclic_lr_period,
-        find_lr=full_config.lr.find_lr,
-        lr_finder_min=full_config.lr.lr_finder_min,
-        lr_finder_max=full_config.lr.lr_finder_max,
-        lr_finder_iterations=full_config.lr.lr_finder_iterations,
-        # Distributed training
-        distributed=full_config.distributed.distributed,
-        local_rank=full_config.distributed.local_rank,
-        scale_lr=full_config.distributed.scale_lr,
-        lr_scale_mode=full_config.distributed.lr_scale_mode,
-        find_unused_parameters=full_config.distributed.find_unused_parameters,
-        # Data config
-        use_streaming=full_config.data.use_streaming,
-        data_dir=full_config.data.data_dir,
-        sampling_weights=full_config.data.sampling_weights,
-        validate_data=full_config.data.validate_data,
-        fail_on_invalid_data=full_config.data.fail_on_invalid_data,
-        skip_freshness_check=full_config.data.skip_freshness_check,
-        max_data_age_hours=full_config.data.max_data_age_hours,
-        allow_stale_data=full_config.data.allow_stale_data,
-        discover_synced_data=full_config.data.discover_synced_data,
-        min_quality_score=full_config.data.min_quality_score,
-        _include_local_data=full_config.data.include_local_data,
-        _include_nfs_data=full_config.data.include_nfs_data,
-        # Model architecture
-        model_version=full_config.model.model_version,
-        model_type=full_config.model.model_type,
-        num_res_blocks=full_config.model.num_res_blocks,
-        num_filters=full_config.model.num_filters,
-        dropout=full_config.model.dropout,
-        freeze_policy=full_config.model.freeze_policy,
-        spectral_norm=full_config.model.spectral_norm,
-        stochastic_depth=full_config.model.stochastic_depth,
-        stochastic_depth_prob=full_config.model.stochastic_depth_prob,
-        # Multi-player settings
-        multi_player=full_config.multi_player,
-        num_players=full_config.num_players,
-        # Enhancements
-        use_integrated_enhancements=full_config.enhancements.use_integrated_enhancements,
-        enable_curriculum=full_config.enhancements.enable_curriculum,
-        enable_augmentation=full_config.enhancements.enable_augmentation,
-        enable_elo_weighting=full_config.enhancements.enable_elo_weighting,
-        enable_auxiliary_tasks=full_config.enhancements.enable_auxiliary_tasks,
-        enable_batch_scheduling=full_config.enhancements.enable_batch_scheduling,
-        enable_background_eval=full_config.enhancements.enable_background_eval,
-        use_hot_data_buffer=full_config.enhancements.use_hot_data_buffer,
-        hot_buffer_size=full_config.enhancements.hot_buffer_size,
-        hot_buffer_mix_ratio=full_config.enhancements.hot_buffer_mix_ratio,
-        external_hot_buffer=full_config.enhancements.external_hot_buffer,
-        enable_quality_weighting=full_config.enhancements.enable_quality_weighting,
-        quality_weight_blend=full_config.enhancements.quality_weight_blend,
-        quality_ranking_weight=full_config.enhancements.quality_ranking_weight,
-        enable_outcome_weighted_policy=full_config.enhancements.enable_outcome_weighted_policy,
-        outcome_weight_scale=full_config.enhancements.outcome_weight_scale,
-        # Fault tolerance
-        enable_circuit_breaker=full_config.fault_tolerance.enable_circuit_breaker,
-        enable_anomaly_detection=full_config.fault_tolerance.enable_anomaly_detection,
-        gradient_clip_mode=full_config.fault_tolerance.gradient_clip_mode,
-        gradient_clip_max_norm=full_config.fault_tolerance.gradient_clip_max_norm,
-        anomaly_spike_threshold=full_config.fault_tolerance.anomaly_spike_threshold,
-        anomaly_gradient_threshold=full_config.fault_tolerance.anomaly_gradient_threshold,
-        enable_graceful_shutdown=full_config.fault_tolerance.enable_graceful_shutdown,
-        # Mixed precision
-        mixed_precision=full_config.mixed_precision.enabled,
-        amp_dtype=full_config.mixed_precision.amp_dtype,
-        # Augmentation
-        augment_hex_symmetry=full_config.augmentation.augment_hex_symmetry,
-        policy_label_smoothing=full_config.augmentation.policy_label_smoothing,
-        # Heartbeat
-        heartbeat_file=full_config.heartbeat.heartbeat_file,
-        heartbeat_interval=full_config.heartbeat.heartbeat_interval,
-        # Value whitening
-        value_whitening=full_config.value_whitening,
-        value_whitening_momentum=full_config.value_whitening_momentum,
-        # EMA
-        ema=full_config.ema,
-        ema_decay=full_config.ema_decay,
-        # Misc
-        adaptive_warmup=full_config.adaptive_warmup,
-        hard_example_mining=full_config.hard_example_mining,
-        hard_example_top_k=full_config.hard_example_top_k,
-        auto_tune_batch_size=full_config.auto_tune_batch_size,
-        track_calibration=full_config.track_calibration,
-    )
-
-
-def train_from_file(
-    data_path: str,
-    output_path: str,
-    config: TrainConfig | None = None,
-    initial_model_path: str | None = None,
-) -> dict[str, float]:
-    """
-    Simplified training function for curriculum training.
-
-    This is a convenience wrapper around train_model that:
-    - Returns loss values as a dict
-    - Handles initial model loading
-    - Uses sensible defaults
-
-    Parameters
-    ----------
-    data_path : str
-        Path to training data (.npz file).
-    output_path : str
-        Path to save the trained model.
-    config : Optional[TrainConfig]
-        Training configuration. If None, uses defaults.
-    initial_model_path : Optional[str]
-        Path to initial model weights to start from.
-
-    Returns
-    -------
-    Dict[str, float]
-        Dictionary with keys 'total', 'policy', 'value' containing
-        the final training losses.
-    """
-    if config is None:
-        config = TrainConfig()
-
-    # Create checkpoint directory
-    checkpoint_dir = Path(output_path).parent / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        # train_model now extracts scheduler/stopping params from config automatically
-        # Only pass params that need explicit override
-        result = train_model(
-            config=config,
-            data_path=data_path,
-            save_path=output_path,
-            checkpoint_dir=str(checkpoint_dir),
-            checkpoint_interval=config.epochs_per_iter,
-            resume_path=initial_model_path,
-        )
-
-        # Extract losses from training result
-        # Note: train_model returns combined loss; we use val_loss as proxy for total
-        # Policy/value breakdown would require further instrumentation
-        final_loss = result.get('best_val_loss', 0.0) if result else 0.0
-        return {
-            "total": final_loss,
-            "policy": final_loss * config.policy_weight,  # Approximate split
-            "value": final_loss * (1 - config.policy_weight),
-            "epochs_completed": result.get('epochs_completed', 0) if result else 0,
-            "epoch_losses": result.get('epoch_losses', []) if result else [],
-        }
-
-    except (RuntimeError, ValueError, OSError, KeyError, ImportError) as e:
-        # RuntimeError: CUDA/training errors
-        # ValueError: invalid config/parameters
-        # OSError: file I/O failures
-        # KeyError: missing config keys
-        # ImportError: missing dependencies
-        logger.error("Training failed: %s", e)
-        return {
-            "total": float('inf'),
-            "policy": float('inf'),
-            "value": float('inf'),
-            "epochs_completed": 0,
-            "epoch_losses": [],
-        }
-
-
 # Re-export CLI functions for backwards compatibility
 # The actual implementations are in train_cli.py
 from app.training.train_cli import main, parse_args

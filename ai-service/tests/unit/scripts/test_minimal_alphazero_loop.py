@@ -348,7 +348,7 @@ def test_staged_evaluate_rotates_candidate_seat_evenly(monkeypatch):
 
     monkeypatch.setattr(loop, "_make_env", fake_make_env)
     monkeypatch.setattr(loop, "_make_ai", fake_make_ai)
-    monkeypatch.setattr(loop, "_EVAL_STAGES", [(8, 0.99, 0.0)])
+    monkeypatch.setattr(loop, "_get_eval_stages", lambda: [(8, 0.99, 0.0)])
 
     result = loop.staged_evaluate("cand-model", "best-model", budget=64)
 
