@@ -1481,6 +1481,7 @@ class DaemonManagerLifecycleMixin:
 
                 January 2026: Lightweight implementation that doesn't call any blocking methods.
                 """
+                del request
                 return web.json_response({
                     "alive": manager._running,
                     "timestamp": time.time(),
@@ -1489,6 +1490,7 @@ class DaemonManagerLifecycleMixin:
 
             async def handle_ready(request: web.Request) -> web.Response:
                 """Readiness probe - returns 200 if ready to serve."""
+                del request
                 # Simple readiness check - don't block
                 critical_daemons_running = sum(
                     1 for d in list(manager._daemons.values())
@@ -1503,6 +1505,7 @@ class DaemonManagerLifecycleMixin:
 
             async def handle_metrics(request: web.Request) -> web.Response:
                 """Prometheus-style metrics (lightweight version)."""
+                del request
                 # Return basic metrics without blocking
                 metrics = f"""# HELP daemon_manager_running DaemonManager running status
 # TYPE daemon_manager_running gauge
@@ -1518,6 +1521,7 @@ daemon_manager_running_daemons {sum(1 for d in manager._daemons.values() if d.st
 
             async def handle_status(request: web.Request) -> web.Response:
                 """Detailed daemon status (lightweight version)."""
+                del request
                 # Quick snapshot without calling expensive methods
                 daemons = {}
                 for dtype, info in list(manager._daemons.items()):

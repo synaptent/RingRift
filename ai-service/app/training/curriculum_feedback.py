@@ -412,6 +412,7 @@ class CurriculumFeedback:
 
         Thread-safe: Uses self._lock to protect metrics and weights modifications.
         """
+        del promotion_reason
         with self._lock:
             metrics = self._get_or_create_metrics(config_key)
             metrics.model_count += 1 if promoted else 0
@@ -2841,6 +2842,7 @@ class EpochToCurriculumWatcher:
             epoch: Current epoch
             improvement_rate: Training improvement rate
         """
+        del improvement_rate
         # Get current weight
         weights = self.feedback.get_curriculum_weights()
         current_weight = weights.get(config_key, 1.0)

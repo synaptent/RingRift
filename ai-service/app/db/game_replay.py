@@ -423,6 +423,7 @@ class GameReplayDB(ReplayBatchQueriesMixin, ReplayValidationMixin):
         Performs WAL checkpoint before closing to prevent unbounded WAL growth.
         Returns False to propagate any exceptions.
         """
+        del exc_type, exc_val, exc_tb
         self.close()
         return False
 

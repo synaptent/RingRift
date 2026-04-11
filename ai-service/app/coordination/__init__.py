@@ -44,35 +44,49 @@ Usage:
 
 import contextlib
 
+import app.coordination._exports_core as _exports_core
+import app.coordination._exports_daemon as _exports_daemon
+import app.coordination._exports_events as _exports_events
+import app.coordination._exports_orchestrators as _exports_orchestrators
+import app.coordination._exports_sync as _exports_sync
+import app.coordination._exports_utils as _exports_utils
+
 from app.utils.retry import RetryConfig  # Jan 2026: Centralized retry pattern
 
 # =============================================================================
 # Submodule Exports (December 2025 - organized for maintainability)
 # =============================================================================
 
-# Core coordination (task, orchestrator registry, queue, resources, health, P2P)
-from app.coordination._exports_core import *
 from app.coordination._exports_core import __all__ as _core_all
 
-# Sync operations (bandwidth, mutex, WAL, integrity, bloom filter)
-from app.coordination._exports_sync import *
 from app.coordination._exports_sync import __all__ as _sync_all
 
-# Daemon management
-from app.coordination._exports_daemon import *
 from app.coordination._exports_daemon import __all__ as _daemon_all
 
-# Event system (router, emitters, cross-process, stage events)
-from app.coordination._exports_events import *
 from app.coordination._exports_events import __all__ as _events_all
 
-# High-level orchestrators
-from app.coordination._exports_orchestrators import *
 from app.coordination._exports_orchestrators import __all__ as _orchestrators_all
 
-# Utilities and helpers
-from app.coordination._exports_utils import *
 from app.coordination._exports_utils import __all__ as _utils_all
+
+
+def _bind_export_module(module, exported_names: list[str]) -> None:
+    """Bind a module's declared exports into this package namespace.
+
+    This preserves the historical re-export surface without relying on
+    wildcard imports, which makes the package import graph easier to audit.
+    """
+
+    for name in exported_names:
+        globals()[name] = getattr(module, name)
+
+
+_bind_export_module(_exports_core, _core_all)
+_bind_export_module(_exports_sync, _sync_all)
+_bind_export_module(_exports_daemon, _daemon_all)
+_bind_export_module(_exports_events, _events_all)
+_bind_export_module(_exports_orchestrators, _orchestrators_all)
+_bind_export_module(_exports_utils, _utils_all)
 
 # Core Utilities - Consolidated Module (December 2025)
 # This module consolidates: tracing, distributed_lock, optional_imports, yaml_utils

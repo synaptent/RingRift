@@ -182,6 +182,7 @@ async def lifespan(app: FastAPI):
     - On startup: Validate configs, install signal handlers, start daemon manager
     - On shutdown: Gracefully shutdown daemons, then coordinators
     """
+    del app
     # Startup
     run_daemons = _should_run_coordination_daemons()
 

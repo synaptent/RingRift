@@ -1039,6 +1039,7 @@ def generate_dataset(
 
     def _select_engine_for_player(player_num: int, game_engine: str) -> str:
         """Select engine type for a player based on mixing strategy."""
+        del player_num
         if engine_mix == "single":
             return game_engine
         elif engine_mix == "per_player":

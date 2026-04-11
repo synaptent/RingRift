@@ -132,18 +132,22 @@ except ImportError:
     # Stub functions when metrics module not available
     def record_sync_coordinator_op(*args, **kwargs) -> None:
         """Stub: metrics module not available."""
+        del args, kwargs
         return None
 
     def record_nfs_skip(*args, **kwargs) -> None:
         """Stub: metrics module not available."""
+        del args, kwargs
         return None
 
     def update_data_server_status(*args, **kwargs) -> None:
         """Stub: metrics module not available."""
+        del args, kwargs
         return None
 
     def update_sync_sources_count(*args, **kwargs) -> None:
         """Stub: metrics module not available."""
+        del args, kwargs
         return None
 
 # December 2025: Per-node circuit breaker for sync operations

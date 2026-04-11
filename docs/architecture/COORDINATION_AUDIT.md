@@ -62,3 +62,23 @@ The first extraction batch completed two of the largest coordination files while
 | `resource_optimizer.py`          |      2,574 |     2,152 | `resource_optimizer_models.py`     |           444 | Focused resource-optimizer tests passed       |
 
 `daemon_lifecycle.py` remains the existing composition-based lifecycle manager at 1,064 LOC. The new `daemon_manager_lifecycle.py` module was intentionally kept separate so no new coordination file exceeds the 2,500 LOC size contract enforced by `tests/contracts/test_coordination_module_sizes.py`.
+
+## Phase 17 Import Graph Findings
+
+Phase 17 added an explicit import-graph audit pass so the coordination package can be reasoned about without relying on wildcard re-exports or hidden embedded tests.
+
+- Command used for the coordination cycle audit:
+  `cd ai-service && PYTHONPATH=. python scripts/audit_import_graph.py --module-prefix app.coordination --report cycles --max-depth 8`
+- Current audit snapshot: 416 modules, 1,516 dependencies, 326 cycles at `--max-depth 8`.
+- Representative high-severity clusters:
+  - Event routing loop: `dead_letter_queue -> handler_base -> safe_event_emitter/event_emission_helpers -> event_router -> subscription_store -> dead_letter_queue`
+  - Daemon lifecycle loop: `daemon_manager -> daemon_manager_lifecycle -> daemon_watchdog -> daemon_manager`
+  - Bootstrap and selfplay loop: `backpressure -> daemon_manager -> coordination_bootstrap -> selfplay_scheduler -> node_allocator -> backpressure`
+  - Pipeline/feedback loop: `data_pipeline_orchestrator -> pipeline_stages -> selfplay_scheduler -> feedback_loop_controller -> pipeline_actions -> data_pipeline_orchestrator`
+  - Package re-export loop: `app.coordination -> _exports_* -> daemon_manager/training_protocol/... -> app.coordination`
+- Recommended next refactors:
+  - Keep `app.coordination.__init__` as a binding-only facade with no wildcard imports or helper logic that pulls implementation modules back into the package root.
+  - Split event-router protocols/state storage from runtime emitters so `event_router`, `subscription_store`, and `dead_letter_queue` share leaf contracts instead of importing each other.
+  - Continue isolating daemon/bootstrap contracts behind thin protocol modules so `daemon_manager`, `coordination_bootstrap`, and selfplay collaborators stop depending on each other's concrete implementations.
+  - Push scheduler-side collaborators such as `backpressure`, `node_allocator`, and pipeline action helpers behind injected interfaces to collapse the current selfplay/pipeline strongly connected components.
+- Zero-inbound module scan now uses `scripts/audit_import_graph.py` across `app/`, `scripts/`, and `tests/`. The broader `app/` audit currently leaves 57 zero-inbound modules in place because they are public entry points, compatibility shims, or dynamically loaded modules. See `docs/architecture/APP_IMPORT_AUDIT.md` for the retained list and the dead files removed in Phase 17.

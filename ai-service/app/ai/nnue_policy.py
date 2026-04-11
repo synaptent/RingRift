@@ -869,6 +869,7 @@ class NNUEPolicyTrainer:
             val_loss: Validation loss (used by plateau scheduler)
             epoch: Current epoch (used by cosine schedulers)
         """
+        del epoch
         if self.lr_scheduler_type == "plateau":
             self.scheduler.step(val_loss)
         else:
