@@ -102,7 +102,7 @@ class TestNodeCircuitBreaker:
 
     def test_failure_in_half_open_reopens_circuit(self):
         """Test that failure in half-open state reopens circuit."""
-        config = NodeCircuitConfig(failure_threshold=1, recovery_timeout=0.01)
+        config = NodeCircuitConfig(failure_threshold=1, recovery_timeout=0.1)
         breaker = NodeCircuitBreaker(config=config)
 
         breaker.record_failure("test-node")

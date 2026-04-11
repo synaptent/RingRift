@@ -9,6 +9,7 @@ set -u
 RESTART_DELAY_SECONDS=60
 MAX_RESTARTS=10
 FAST_CRASH_SECONDS=60
+HEARTBEAT_INTERVAL_SECONDS="${SUPERVISOR_HEARTBEAT_INTERVAL_SECONDS:-30}"
 CONFIG=""
 
 usage() {
@@ -82,17 +83,25 @@ fi
 SAFE_CONFIG="$(safe_config_name "$CONFIG")"
 HEARTBEAT_FILE="/tmp/supervisor_${SAFE_CONFIG}.heartbeat"
 CONSECUTIVE_FAST_CRASHES=0
+RESTART_COUNT=0
 CHILD_PID=""
 HEARTBEAT_PID=""
 CHILD_TAIL_FILE=""
+SUPERVISOR_PID="$$"
+SUPERVISOR_START_TS="$(date +%s)"
+LAST_RESTART_TIME=""
 
 write_heartbeat() {
   local state="$1"
   local child_pid="${2:-}"
   local now
+  local now_ts
+  local uptime_seconds
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  now_ts="$(date +%s)"
+  uptime_seconds=$((now_ts - SUPERVISOR_START_TS))
   cat >"$HEARTBEAT_FILE" <<EOF
-{"timestamp":"$now","config":"$CONFIG","state":"$state","child_pid":"$child_pid","consecutive_fast_crashes":$CONSECUTIVE_FAST_CRASHES,"max_restarts":$MAX_RESTARTS}
+{"timestamp":"$now","config":"$CONFIG","state":"$state","supervisor_pid":"$SUPERVISOR_PID","child_pid":"$child_pid","restart_count":$RESTART_COUNT,"last_restart_time":"$LAST_RESTART_TIME","uptime_seconds":$uptime_seconds,"consecutive_fast_crashes":$CONSECUTIVE_FAST_CRASHES,"max_restarts":$MAX_RESTARTS}
 EOF
 }
 
@@ -122,13 +131,14 @@ while true; do
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) supervisor: starting"
   CHILD_TAIL_FILE="$(mktemp "/tmp/minimal_loop_${SAFE_CONFIG}.tail.XXXXXX")"
   start_ts="$(date +%s)"
+  LAST_RESTART_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   "$@" > >(tee -a "$CHILD_TAIL_FILE") 2> >(tee -a "$CHILD_TAIL_FILE" >&2) &
   CHILD_PID="$!"
 
   (
     while kill -0 "$CHILD_PID" 2>/dev/null; do
       write_heartbeat "running" "$CHILD_PID"
-      sleep 30
+      sleep "$HEARTBEAT_INTERVAL_SECONDS"
     done
   ) &
   HEARTBEAT_PID="$!"
@@ -155,6 +165,7 @@ while true; do
   fi
   rm -f "$CHILD_TAIL_FILE"
   CHILD_TAIL_FILE=""
+  RESTART_COUNT=$((RESTART_COUNT + 1))
   write_heartbeat "restarting" ""
   sleep "$RESTART_DELAY_SECONDS"
 done

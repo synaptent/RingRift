@@ -149,16 +149,77 @@ def parse_json_lines(text):
             pass
     return rows
 
+def read_json(path):
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
 def file_age(path):
     p = Path(path)
     if not p.exists():
         return None
     return max(0.0, time.time() - p.stat().st_mtime)
 
+def disk_stats(path):
+    candidate = Path(path)
+    if not candidate.exists():
+        candidate = candidate.parent if candidate.parent.exists() else Path(".")
+    try:
+        stat = os.statvfs(str(candidate))
+    except Exception:
+        return {{}}
+    total = stat.f_frsize * stat.f_blocks
+    free = stat.f_frsize * stat.f_bavail
+    used = max(total - free, 0)
+    return {{
+        "disk_total_gb": round(total / (1024 ** 3), 2),
+        "disk_free_gb": round(free / (1024 ** 3), 2),
+        "disk_used_percent": round((used / total) * 100.0, 1) if total else None,
+    }}
+
+def gpu_stats():
+    rc, out = run(
+        "nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits"
+    )
+    if rc != 0 or not out.strip():
+        return {{
+            "gpu_available": False,
+            "gpu_name": None,
+            "gpu_utilization_pct": None,
+            "gpu_memory_used_mb": None,
+            "gpu_memory_total_mb": None,
+        }}
+    first = out.splitlines()[0]
+    parts = [part.strip() for part in first.split(",")]
+    if len(parts) < 4:
+        return {{
+            "gpu_available": False,
+            "gpu_name": first.strip() or None,
+            "gpu_utilization_pct": None,
+            "gpu_memory_used_mb": None,
+            "gpu_memory_total_mb": None,
+        }}
+    return {{
+        "gpu_available": True,
+        "gpu_name": parts[0] or None,
+        "gpu_utilization_pct": float(parts[1]) if parts[1] else None,
+        "gpu_memory_used_mb": float(parts[2]) if parts[2] else None,
+        "gpu_memory_total_mb": float(parts[3]) if parts[3] else None,
+    }}
+
+def first_line(text):
+    return text.splitlines()[0].strip() if text.splitlines() else None
+
 supervisor_lines = pgrep("scripts/[m]inimal_loop_supervisor.sh.*" + re.escape(work_dir))
 loop_lines = pgrep("scripts/[m]inimal_alphazero_loop.py.*--work-dir " + re.escape(work_dir))
 supervisor_hb = "/tmp/supervisor_%s.heartbeat" % config
 metrics_tail = tail(str(Path(work_dir) / "metrics.jsonl"), 3)
+metrics_rows = parse_json_lines(metrics_tail)
+supervisor_payload = read_json(supervisor_hb) or {{}}
 log_paths = [
     "/tmp/minimal_alphazero_%s.log" % config,
     "/tmp/minimal_alphazero.log",
@@ -185,6 +246,10 @@ for line in log_tail.splitlines():
     ):
         error_lines.append(line.strip())
 
+hostname_rc, hostname_out = run("hostname")
+host_ip_rc, host_ip_out = run("hostname -I")
+tailscale_rc, tailscale_out = run("tailscale ip -4")
+
 print(json.dumps({{
     "ssh_ok": True,
     "supervisor_alive": bool(supervisor_lines),
@@ -194,11 +259,22 @@ print(json.dumps({{
     "loop_pid": loop_lines[0].split()[0] if loop_lines else None,
     "supervisor_heartbeat_path": supervisor_hb,
     "supervisor_heartbeat_age_seconds": file_age(supervisor_hb),
-    "metrics_tail": parse_json_lines(metrics_tail),
-    "latest_metrics": parse_json_lines(metrics_tail)[-1] if parse_json_lines(metrics_tail) else None,
+    "supervisor_heartbeat": supervisor_payload or None,
+    "supervisor_state": supervisor_payload.get("state"),
+    "supervisor_restart_count": supervisor_payload.get("restart_count"),
+    "supervisor_last_restart_time": supervisor_payload.get("last_restart_time"),
+    "supervisor_uptime_seconds": supervisor_payload.get("uptime_seconds"),
+    "supervisor_pid_from_heartbeat": supervisor_payload.get("supervisor_pid"),
+    "metrics_tail": metrics_rows,
+    "latest_metrics": metrics_rows[-1] if metrics_rows else None,
     "log_path": log_path,
     "last_error": "\\n".join(error_lines[-6:]),
     "model_exists": Path(model).exists(),
+    "hostname": first_line(hostname_out) if hostname_rc == 0 else None,
+    "host_ip": first_line(host_ip_out) if host_ip_rc == 0 else None,
+    "tailscale_ip": first_line(tailscale_out) if tailscale_rc == 0 else None,
+    **disk_stats(work_dir),
+    **gpu_stats(),
 }}))
 PY"""
 
@@ -211,6 +287,7 @@ def ssh_probe_node(
     timeout: int,
     connect_timeout: int,
 ) -> dict[str, Any]:
+    started_at = time.time()
     command = (
         "cd ~/ringrift/ai-service 2>/dev/null || cd /home/ubuntu/ringrift/ai-service 2>/dev/null || exit 2; "
         + _remote_probe_script(node)
@@ -223,18 +300,25 @@ def ssh_probe_node(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return {"ssh_ok": False, "ssh_error": "timeout"}
+        return {"ssh_ok": False, "ssh_error": "timeout", "ssh_latency_ms": round((time.time() - started_at) * 1000.0, 1)}
 
     stdout = result.stdout.strip()
     if result.returncode != 0:
         return {
             "ssh_ok": False,
             "ssh_error": (result.stderr.strip() or stdout or f"rc={result.returncode}")[-500:],
+            "ssh_latency_ms": round((time.time() - started_at) * 1000.0, 1),
         }
     try:
-        return json.loads(stdout.splitlines()[-1])
+        payload = json.loads(stdout.splitlines()[-1])
+        payload["ssh_latency_ms"] = round((time.time() - started_at) * 1000.0, 1)
+        return payload
     except (json.JSONDecodeError, IndexError):
-        return {"ssh_ok": False, "ssh_error": f"unparseable SSH output: {stdout[-500:]}"}
+        return {
+            "ssh_ok": False,
+            "ssh_error": f"unparseable SSH output: {stdout[-500:]}",
+            "ssh_latency_ms": round((time.time() - started_at) * 1000.0, 1),
+        }
 
 
 def _merge_status(
