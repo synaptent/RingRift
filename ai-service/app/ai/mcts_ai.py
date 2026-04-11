@@ -24,19 +24,30 @@ import math
 import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import psutil
+import psutil  # Backward-compatible test patch target.
 
-from ..models import AIConfig, BoardType, GamePhase, GameState, Move, MoveType
+from ..models import AIConfig, BoardType, GameState, Move, MoveType
 from ..rules.legacy.move_type_aliases import convert_legacy_move_type
 from ..rules.mutable_state import MoveUndo, MutableGameState
 from ..utils.memory_config import MemoryConfig
 from .bounded_transposition_table import BoundedTranspositionTable
 from .game_state_utils import infer_num_players
 from .heuristic_ai import HeuristicAI
+from .mcts_tree import (
+    MCTSNode,
+    MCTSNodeLite,
+    MCTSSearchSupportMixin,
+    _EvalBatchIncremental,
+    _EvalBatchLegacy,
+    _get_cached_nnue_policy,
+    _move_key,
+    _moves_match,
+    _pos_key,
+    _pos_seq_key,
+)
 
 # Lazy imports for neural network components to avoid loading torch when not needed
 # These are only imported when difficulty >= 6 (neural MCTS tiers)
@@ -60,430 +71,13 @@ _GPU_MCTS_SHADOW_VALIDATE = os.environ.get("RINGRIFT_GPU_MCTS_SHADOW_VALIDATE", 
     "1", "true", "yes", "on"
 )
 
-# Module-level cache for NNUE policy models to avoid reloading per MCTSAI instance
-# Key: (board_type.value, num_players) -> RingRiftNNUEWithPolicy model
-_NNUE_POLICY_CACHE: dict[tuple[str, int], Any] = {}
-_NNUE_POLICY_CACHE_LOCK = None  # Lazy init threading lock
-
-
-def _get_cached_nnue_policy(board_type: BoardType, num_players: int) -> Any | None:
-    """Get cached NNUE policy model or load and cache it."""
-    global _NNUE_POLICY_CACHE_LOCK
-
-    # Handle both BoardType enum and string arguments
-    board_type_value = (
-        board_type.value if hasattr(board_type, "value")
-        else str(board_type).lower()
-    )
-    cache_key = (board_type_value, num_players)
-
-    # Fast path - already cached
-    if cache_key in _NNUE_POLICY_CACHE:
-        return _NNUE_POLICY_CACHE[cache_key]
-
-    # Lazy init lock
-    if _NNUE_POLICY_CACHE_LOCK is None:
-        import threading
-        _NNUE_POLICY_CACHE_LOCK = threading.Lock()
-
-    with _NNUE_POLICY_CACHE_LOCK:
-        # Double-check after acquiring lock
-        if cache_key in _NNUE_POLICY_CACHE:
-            return _NNUE_POLICY_CACHE[cache_key]
-
-        try:
-            from .nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
-
-            model_path = os.path.join(
-                os.path.dirname(__file__), "..", "..",
-                "models", "nnue", f"nnue_policy_{board_type_value}_{num_players}p.pt"
-            )
-            model_path = os.path.normpath(model_path)
-
-            if os.path.exists(model_path):
-                from app.utils.torch_utils import safe_load_checkpoint
-                checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
-                state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
-                    checkpoint,
-                    board_type,
-                )
-
-                model = RingRiftNNUEWithPolicy(
-                    board_type=board_type,
-                    hidden_dim=hidden_dim,
-                    num_hidden_layers=num_hidden_layers,
-                )
-                model.load_state_dict(state_dict)
-                model.eval()
-
-                _NNUE_POLICY_CACHE[cache_key] = model
-                logger.info(
-                    f"NNUE Policy Cache: Loaded model for {board_type_value}_{num_players}p "
-                    f"(hidden={hidden_dim}, layers={num_hidden_layers})"
-                )
-                return model
-            else:
-                # Mark as None to avoid repeated load attempts
-                _NNUE_POLICY_CACHE[cache_key] = None
-                logger.debug(f"NNUE Policy Cache: No model at {model_path}")
-                return None
-
-        except Exception as e:
-            logger.warning(f"NNUE Policy Cache: Failed to load model: {e}")
-            _NNUE_POLICY_CACHE[cache_key] = None
-            return None
-
-
-def _pos_key(pos: Any | None) -> str | None:
-    """Convert a position object to a hashable string key for caching.
-
-    Args:
-        pos: Position object with either a to_key() method or x,y[,z] attributes.
-
-    Returns:
-        String key like "x,y" or "x,y,z", or None if position is invalid.
-    """
-    if pos is None:
-        return None
-    to_key = getattr(pos, "to_key", None)
-    if callable(to_key):
-        return cast(str, to_key())
-    x = getattr(pos, "x", None)
-    y = getattr(pos, "y", None)
-    z = getattr(pos, "z", None)
-    if x is None or y is None:
-        return None
-    return f"{x},{y},{z}" if z is not None else f"{x},{y}"
-
-
-def _pos_seq_key(seq: tuple[Any, ...] | None) -> tuple[str, ...] | None:
-    """Convert a sequence of positions to a hashable tuple of string keys.
-
-    Args:
-        seq: Tuple of position objects.
-
-    Returns:
-        Tuple of position keys, or None if sequence is empty/None.
-    """
-    if not seq:
-        return None
-    return tuple(k for k in (_pos_key(p) for p in seq) if k is not None)
-
-
-def _move_key(move: Move) -> tuple:
-    """Return a stable, hashable key for comparing AI moves.
-
-    Purpose:
-        Used to avoid conflating distinct moves that share the same (type, to)
-        shape but differ in semantics (e.g. multi-ring place_ring placementCount,
-        choose_line_option collapsed_markers segments).
-
-    Notes:
-        This key intentionally excludes timing metadata (timestamp/think_time/
-        move_number) so that host-synthesized bookkeeping moves remain comparable
-        across regenerations.
-    """
-    move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
-    return (
-        move_type,
-        int(move.player),
-        _pos_key(getattr(move, "from_pos", None)),
-        _pos_key(getattr(move, "to", None)),
-        _pos_key(getattr(move, "capture_target", None)),
-        getattr(move, "placement_count", None),
-        getattr(move, "placed_on_stack", None),
-        getattr(move, "line_index", None),
-        _pos_seq_key(getattr(move, "collapsed_markers", None)),
-        _pos_seq_key(getattr(move, "collapse_positions", None)),
-        tuple(getattr(move, "extraction_stacks", None) or ()),
-        getattr(move, "recovery_option", None),
-        getattr(move, "recovery_mode", None),
-        getattr(move, "elimination_context", None),
-        _pos_seq_key(getattr(move, "capture_chain", None)),
-        tuple(getattr(move, "overtaken_rings", None) or ()),
-    )
-
-
-def _moves_match(m1: Move, m2: Move) -> bool:
-    """Check if two moves match by semantic identity (not timing metadata)."""
-    if m1.type != m2.type or m1.player != m2.player:
-        return False
-    if m1.from_pos != m2.from_pos:
-        return False
-    if m1.to != m2.to:
-        return False
-    if m1.capture_target != m2.capture_target:
-        return False
-    if m1.placement_count != m2.placement_count:
-        return False
-    if m1.placed_on_stack != m2.placed_on_stack:
-        return False
-    if m1.line_index != m2.line_index:
-        return False
-    if m1.collapsed_markers != m2.collapsed_markers:
-        return False
-    if m1.collapse_positions != m2.collapse_positions:
-        return False
-    if m1.extraction_stacks != m2.extraction_stacks:
-        return False
-    if m1.recovery_option != m2.recovery_option:
-        return False
-    if m1.recovery_mode != m2.recovery_mode:
-        return False
-    if m1.elimination_context != m2.elimination_context:
-        return False
-    if m1.capture_chain != m2.capture_chain:
-        return False
-    return m1.overtaken_rings == m2.overtaken_rings
-
-
-class MCTSNode:
-    """MCTS tree node for legacy (immutable) search.
-
-    Each node owns its own :class:`GameState` snapshot. This path trades
-    memory for simplicity and is kept primarily for A/B testing against
-    the incremental implementation and for debugging.
-    """
-
-    def __init__(
-        self,
-        game_state: GameState,
-        parent: MCTSNode | None = None,
-        move: Move | None = None,
-    ) -> None:
-        self.game_state: GameState = game_state
-        self.parent: MCTSNode | None = parent
-        self.move: Move | None = move
-        self.children: list[MCTSNode] = []
-        self.wins = 0
-        self.visits = 0
-        self.amaf_wins = 0
-        self.amaf_visits = 0
-        self.untried_moves: list[Move] = []
-        self.prior = 0.0
-        self.policy_map: dict[str, float] = {}
-        # Whether the side to move at this node is the root player (AI player).
-        # Populated by MCTSAI during tree construction/traversal.
-        self.to_move_is_root: bool = True
-
-    def uct_select_child(
-        self,
-        *,
-        c_puct: float = 1.0,
-        rave_k: float = 1000.0,
-        fpu_reduction: float = 0.0,
-    ) -> MCTSNode:
-        """Select child using PUCT formula with RAVE."""
-        # PUCT = Q + c_puct * P * sqrt(N) / (1 + n)
-        # RAVE: Value = (1 - beta) * Q + beta * AMAF
-
-        def puct_value(child: MCTSNode) -> float:
-            parent_is_root = bool(getattr(self, "to_move_is_root", True))
-            child_is_root = bool(getattr(child, "to_move_is_root", parent_is_root))
-            flip = parent_is_root != child_is_root
-
-            # Q(s,a) in the parent's perspective (root vs opponent coalition).
-            parent_q = self.wins / self.visits if self.visits > 0 else 0.0
-            if child.visits == 0:
-                q_value = parent_q - float(fpu_reduction)
-            else:
-                q_value = child.wins / child.visits
-                if flip:
-                    q_value = -q_value
-
-            # AMAF (RAVE) value, also in the parent's perspective.
-            if child.amaf_visits == 0:
-                amaf_value = 0.0
-            else:
-                amaf_value = child.amaf_wins / child.amaf_visits
-                if flip:
-                    amaf_value = -amaf_value
-
-            beta = 0.0
-            if rave_k > 0:
-                beta = math.sqrt(float(rave_k) / (3 * self.visits + float(rave_k)))
-
-            combined_value = (1 - beta) * q_value + beta * amaf_value
-
-            # Prior probability P(s, a)
-            prior = getattr(child, "prior", 1.0 / len(self.children))
-
-            u_value = (
-                c_puct * prior * math.sqrt(self.visits) / (1 + child.visits)
-            )
-            return combined_value + u_value
-
-        return max(self.children, key=puct_value)
-
-    def add_child(
-        self,
-        move: Move,
-        game_state: GameState,
-        prior: float | None = None,
-    ) -> MCTSNode:
-        """Add a new child node."""
-        child = MCTSNode(game_state, parent=self, move=move)
-        if prior is not None:
-            child.prior = prior
-        self.untried_moves.remove(move)
-        self.children.append(child)
-        return child
-
-    def update(
-        self,
-        result: float,
-        played_moves: list[Move] | None = None,
-    ) -> None:
-        """Update node stats."""
-        self.visits += 1
-        self.wins += result
-
-        if played_moves and self.move:
-            # Update AMAF stats if this node's move was played in the
-            # simulation. Check if self.move is in played_moves.
-            for m in played_moves:
-                if _moves_match(m, self.move):
-                    self.amaf_visits += 1
-                    self.amaf_wins += result
-                    break
-
-
-class MCTSNodeLite:
-    """Lightweight MCTS tree node for incremental (mutable) search.
-
-    This variant does **not** store a :class:`GameState`; the caller
-    maintains a single mutable state and uses make/unmake to traverse
-    the tree. This dramatically reduces memory usage while preserving
-    behaviour.
-    """
-    __slots__ = [
-        'amaf_visits',
-        'amaf_wins',
-        'children',
-        'move',
-        'parent',
-        'policy_map',
-        'prior',
-        'to_move_is_root',
-        'untried_moves',
-        'visits',
-        'wins',
-    ]
-
-    def __init__(
-        self,
-        parent: MCTSNodeLite | None = None,
-        move: Move | None = None,
-        to_move_is_root: bool = True,
-    ):
-        self.parent: MCTSNodeLite | None = parent
-        self.move: Move | None = move
-        self.children: list[MCTSNodeLite] = []
-        self.wins = 0.0
-        self.visits = 0
-        self.amaf_wins = 0.0
-        self.amaf_visits = 0
-        self.untried_moves: list[Move] = []
-        self.prior = 0.0
-        self.policy_map: dict[str, float] = {}
-        self.to_move_is_root: bool = bool(to_move_is_root)
-
-    def is_leaf(self) -> bool:
-        """Check if this is a leaf node (no children)."""
-        return len(self.children) == 0
-
-    def is_fully_expanded(self) -> bool:
-        """Check if all moves have been tried."""
-        return len(self.untried_moves) == 0
-
-    def uct_select_child(
-        self,
-        *,
-        c_puct: float = 1.0,
-        rave_k: float = 1000.0,
-        fpu_reduction: float = 0.0,
-    ) -> MCTSNodeLite:
-        """Select child using PUCT formula with RAVE."""
-        def puct_value(child: MCTSNodeLite) -> float:
-            parent_is_root = bool(getattr(self, "to_move_is_root", True))
-            child_is_root = bool(getattr(child, "to_move_is_root", parent_is_root))
-            flip = parent_is_root != child_is_root
-
-            parent_q = self.wins / self.visits if self.visits > 0 else 0.0
-            if child.visits == 0:
-                q_value = parent_q - float(fpu_reduction)
-            else:
-                q_value = child.wins / child.visits
-                if flip:
-                    q_value = -q_value
-
-            if child.amaf_visits == 0:
-                amaf_value = 0.0
-            else:
-                amaf_value = child.amaf_wins / child.amaf_visits
-                if flip:
-                    amaf_value = -amaf_value
-
-            beta = 0.0
-            if rave_k > 0:
-                beta = math.sqrt(float(rave_k) / (3 * self.visits + float(rave_k)))
-            combined_value = (1 - beta) * q_value + beta * amaf_value
-
-            num_children = max(1, len(self.children))
-            prior = child.prior if child.prior > 0 else 1.0 / num_children
-            sqrt_visits = math.sqrt(self.visits)
-            u_value = c_puct * prior * sqrt_visits / (1 + child.visits)
-
-            return combined_value + u_value
-
-        return max(self.children, key=puct_value)
-
-    def add_child(
-        self,
-        move: Move,
-        prior: float | None = None,
-        to_move_is_root: bool | None = None,
-    ) -> MCTSNodeLite:
-        """Add a new child node."""
-        child = MCTSNodeLite(
-            parent=self,
-            move=move,
-            to_move_is_root=(
-                bool(to_move_is_root)
-                if to_move_is_root is not None
-                else bool(getattr(self, "to_move_is_root", True))
-            ),
-        )
-        if prior is not None:
-            child.prior = prior
-        if move in self.untried_moves:
-            self.untried_moves.remove(move)
-        self.children.append(child)
-        return child
-
-    def update(
-        self,
-        result: float,
-        played_moves: list[Move] | None = None
-    ) -> None:
-        """Update node stats."""
-        self.visits += 1
-        self.wins += result
-
-        if played_moves and self.move:
-            for m in played_moves:
-                if _moves_match(m, self.move):
-                    self.amaf_visits += 1
-                    self.amaf_wins += result
-                    break
-
 
 class DynamicBatchSizer:
     """Dynamically adjusts MCTS batch size based on available memory.
 
-    This class monitors system memory and calculates optimal batch sizes
-    for MCTS simulations, allowing more simulations when memory permits
-    and gracefully reducing when memory is constrained.
+    This compatibility-local definition keeps existing test patch targets at
+    ``app.ai.mcts_ai.psutil`` and ``app.ai.mcts_ai.MemoryConfig`` stable while
+    the tree/search helpers live in ``mcts_tree.py``.
     """
 
     def __init__(
@@ -493,71 +87,32 @@ class DynamicBatchSizer:
         batch_size_max: int = 1600,
         memory_safety_margin: float = 0.8,
         node_size_estimate: int = 500,
-    ):
-        """Initialize the dynamic batch sizer.
-
-        Args:
-            memory_config: Memory configuration for limits
-            batch_size_min: Minimum batch size (default: 100)
-            batch_size_max: Maximum batch size (default: 1600)
-            memory_safety_margin: Only use this fraction of available budget
-                (default: 0.8 = 80%)
-            node_size_estimate: Estimated bytes per MCTS node (default: 500)
-        """
+    ) -> None:
         self.memory_config = memory_config or MemoryConfig.from_env()
         self.batch_size_min = batch_size_min
         self.batch_size_max = batch_size_max
         self.memory_safety_margin = memory_safety_margin
         self.node_size_estimate = node_size_estimate
-
-        # Track actual memory usage to refine estimates
         self._memory_samples: list[tuple[int, int]] = []
         self._last_batch_size = batch_size_max
         self._adjustment_count = 0
 
     def get_optimal_batch_size(self, current_node_count: int = 0) -> int:
-        """Calculate optimal batch size based on available memory.
-
-        Args:
-            current_node_count: Current number of nodes in the tree
-
-        Returns:
-            Optimal batch size within configured limits
-        """
-        # Get available memory
+        """Calculate optimal batch size based on available memory."""
         mem_info = psutil.virtual_memory()
         available_bytes = mem_info.available
-
-        # Get inference budget from config
         inference_budget = self.memory_config.get_inference_limit_bytes()
-
-        # Apply safety margin
         safe_budget = int(inference_budget * self.memory_safety_margin)
-
-        # Use minimum of available memory and safe budget
         usable_memory = min(available_bytes, safe_budget)
-
-        # Estimate memory already used by current tree
         current_tree_memory = current_node_count * self.node_size_estimate
-
-        # Calculate remaining memory for new nodes
         remaining_memory = max(0, usable_memory - current_tree_memory)
-
-        # Calculate how many new nodes we can create
-        # Each batch iteration may create up to batch_size new nodes
         max_new_nodes = remaining_memory // self.node_size_estimate
 
-        # Clamp to configured limits
-        optimal = max(
-            self.batch_size_min, min(self.batch_size_max, max_new_nodes)
-        )
-
-        # Log if batch size changes significantly
+        optimal = max(self.batch_size_min, min(self.batch_size_max, max_new_nodes))
         if abs(optimal - self._last_batch_size) >= self.batch_size_min // 2:
             self._adjustment_count += 1
             logger.info(
-                "Dynamic batch size adjusted: %d -> %d (available=%.2fMB, "
-                "budget=%.2fMB, tree_nodes=%d, adjustments=%d)",
+                "Dynamic batch size adjusted: %d -> %d (available=%.2fMB, budget=%.2fMB, tree_nodes=%d, adjustments=%d)",
                 self._last_batch_size,
                 optimal,
                 available_bytes / (1024**2),
@@ -570,66 +125,45 @@ class DynamicBatchSizer:
         return optimal
 
     def record_memory_sample(self, node_count: int) -> None:
-        """Record a memory sample to refine node size estimates.
-
-        Args:
-            node_count: Current number of nodes in the tree
-        """
-        # Get current process memory
+        """Record a memory sample to refine node size estimates."""
         process = psutil.Process()
         memory_bytes = process.memory_info().rss
-
         self._memory_samples.append((node_count, memory_bytes))
-
-        # Keep only recent samples (last 100)
         if len(self._memory_samples) > 100:
             self._memory_samples = self._memory_samples[-100:]
-
-        # Refine estimate if we have enough samples
         if len(self._memory_samples) >= 10:
             self._refine_node_size_estimate()
 
     def _refine_node_size_estimate(self) -> None:
-        """Refine node size estimate based on memory samples."""
+        """Refine node size estimate based on recent memory samples."""
         if len(self._memory_samples) < 2:
             return
 
-        # Calculate average memory increase per node
-        samples = sorted(self._memory_samples, key=lambda x: x[0])
-
-        # Use linear regression-like approach
+        samples = sorted(self._memory_samples, key=lambda sample: sample[0])
         deltas = []
-        for i in range(1, len(samples)):
-            node_delta = samples[i][0] - samples[i - 1][0]
-            mem_delta = samples[i][1] - samples[i - 1][1]
-
+        for index in range(1, len(samples)):
+            node_delta = samples[index][0] - samples[index - 1][0]
+            mem_delta = samples[index][1] - samples[index - 1][1]
             if node_delta > 0:
                 deltas.append(mem_delta / node_delta)
 
-        if deltas:
-            # Use median to avoid outliers
-            deltas.sort()
-            median_idx = len(deltas) // 2
-            estimated = int(deltas[median_idx])
+        if not deltas:
+            return
 
-            # Only update if estimate is reasonable
-            if 100 <= estimated <= 2000:
-                old_estimate = self.node_size_estimate
-                self.node_size_estimate = estimated
+        deltas.sort()
+        estimated = int(deltas[len(deltas) // 2])
+        if 100 <= estimated <= 2000:
+            old_estimate = self.node_size_estimate
+            self.node_size_estimate = estimated
+            if abs(self.node_size_estimate - old_estimate) > 50:
+                logger.debug(
+                    "Refined MCTS node size estimate: %d -> %d bytes",
+                    old_estimate,
+                    self.node_size_estimate,
+                )
 
-                if abs(self.node_size_estimate - old_estimate) > 50:
-                    logger.debug(
-                        "Refined MCTS node size estimate: %d -> %d bytes",
-                        old_estimate,
-                        self.node_size_estimate,
-                    )
-
-    def stats(self) -> dict:
-        """Return current stats.
-
-        Returns:
-            Dictionary with current batch size, estimates, and adjustment count
-        """
+    def stats(self) -> dict[str, Any]:
+        """Return current dynamic-batching statistics."""
         return {
             "current_batch_size": self._last_batch_size,
             "node_size_estimate": self.node_size_estimate,
@@ -641,55 +175,7 @@ class DynamicBatchSizer:
         }
 
 
-@dataclass
-class _EvalBatchLegacy:
-    """Batch evaluation state for legacy (immutable) MCTS search.
-
-    Aggregates leaves to be evaluated in a single neural network forward pass.
-    Separates cached results from uncached ones to minimize redundant inference.
-
-    Attributes:
-        leaves: Tuples of (node, game_state, legal_moves) for each leaf.
-        states: All game states corresponding to leaves (for NN input).
-        cached_results: Pre-computed results as (index, value, policy).
-        uncached_indices: Indices of leaves needing NN evaluation.
-        uncached_states: States of uncached leaves for batched inference.
-        use_hex_nn: Whether to use hex-specific neural network format.
-    """
-
-    leaves: list[tuple[MCTSNode, GameState, list[Move]]]
-    states: list[GameState]
-    cached_results: list[tuple[int, float, Any]]
-    uncached_indices: list[int]
-    uncached_states: list[GameState]
-    use_hex_nn: bool
-
-
-@dataclass
-class _EvalBatchIncremental:
-    """Batch evaluation state for incremental (mutable) MCTS search.
-
-    Like _EvalBatchLegacy but uses lightweight nodes and undo stacks
-    for memory-efficient incremental tree traversal.
-
-    Attributes:
-        leaves: Tuples of (node, undo_stack, legal_moves) for each leaf.
-        states: All game states corresponding to leaves (for NN input).
-        cached_results: Pre-computed results as (index, value, policy).
-        uncached_indices: Indices of leaves needing NN evaluation.
-        uncached_states: States of uncached leaves for batched inference.
-        use_hex_nn: Whether to use hex-specific neural network format.
-    """
-
-    leaves: list[tuple[MCTSNodeLite, list[MoveUndo], list[Move]]]
-    states: list[GameState]
-    cached_results: list[tuple[int, float, Any]]
-    uncached_indices: list[int]
-    uncached_states: list[GameState]
-    use_hex_nn: bool
-
-
-class MCTSAI(HeuristicAI):
+class MCTSAI(MCTSSearchSupportMixin, HeuristicAI):
     """Monte Carlo Tree Search AI with neural network evaluation.
 
     MCTSAI combines MCTS with neural network value/policy estimates for
@@ -1041,130 +527,6 @@ class MCTSAI(HeuristicAI):
             return self._extract_visit_dist_legacy(self._training_root)
 
         return [], []
-
-    def _extract_visit_dist_legacy(
-        self, root: MCTSNode
-    ) -> tuple[list[Move], list[float]]:
-        """Extract visit distribution from legacy MCTSNode root."""
-        if not root.children:
-            return [], []
-
-        total_visits = sum(c.visits for c in root.children)
-        if total_visits == 0:
-            return [], []
-
-        moves: list[Move] = []
-        probs: list[float] = []
-
-        for child in root.children:
-            if child.move is not None and child.visits > 0:
-                moves.append(child.move)
-                probs.append(child.visits / total_visits)
-
-        return moves, probs
-
-    def _extract_visit_dist_lite(
-        self, root: MCTSNodeLite
-    ) -> tuple[list[Move], list[float]]:
-        """Extract visit distribution from incremental MCTSNodeLite root."""
-        if not root.children:
-            return [], []
-
-        total_visits = sum(c.visits for c in root.children)
-        if total_visits == 0:
-            return [], []
-
-        moves: list[Move] = []
-        probs: list[float] = []
-
-        for child in root.children:
-            if child.move is not None and child.visits > 0:
-                moves.append(child.move)
-                probs.append(child.visits / total_visits)
-
-        return moves, probs
-
-    # ------------------------------------------------------------------
-    # Dynamic PUCT / FPU / RAVE tuning (strength-focused).
-    # ------------------------------------------------------------------
-
-    def _normalized_entropy(self, priors: list[float]) -> float:
-        """Return normalized Shannon entropy of priors in [0, 1]."""
-        if not priors:
-            return 0.0
-        total = float(sum(priors))
-        if total <= 0.0:
-            return 1.0
-        if len(priors) <= 1:
-            return 0.0
-        inv_total = 1.0 / total
-        ent = 0.0
-        for p in priors:
-            if p <= 0.0:
-                continue
-            pn = float(p) * inv_total
-            ent -= pn * math.log(pn)
-        denom = math.log(len(priors))
-        if denom <= 0.0:
-            return 0.0
-        return max(0.0, min(1.0, ent / denom))
-
-    def _dynamic_c_puct(self, parent_visits: int, priors: list[float]) -> float:
-        """Compute a dynamic exploration constant based on priors + visits."""
-        entropy = self._normalized_entropy(priors)
-        visit_term = min(1.0, math.log1p(max(0, int(parent_visits))) / 6.0)
-
-        # Conservative baseline; allow more exploration for high-entropy priors.
-        base = 1.0
-        cpuct = base + 0.8 * entropy + 0.4 * visit_term
-        return float(max(0.25, min(4.0, cpuct)))
-
-    def _rave_k_for_node(self, parent_visits: int, priors: list[float]) -> float:
-        """Compute an effective RAVE k that tapers with visits/difficulty."""
-        entropy = self._normalized_entropy(priors)
-
-        # Higher difficulties rely more on NN priors; taper RAVE sooner.
-        diff = int(getattr(self.config, "difficulty", 5))
-        difficulty_scale = max(0.2, 1.0 - 0.12 * max(0, diff - 5))
-
-        visit_scale = 1.0 / (1.0 + max(0, int(parent_visits)) / 200.0)
-        entropy_scale = 0.5 + 0.5 * entropy
-
-        base_k = 1000.0
-        return float(max(0.0, base_k * difficulty_scale * visit_scale * entropy_scale))
-
-    def _fpu_reduction_for_phase(self, phase: GamePhase) -> float:
-        """Phase-aware First-Play Urgency reduction (larger => less widening)."""
-        phase_map = {
-            GamePhase.RING_PLACEMENT: 0.05,
-            GamePhase.MOVEMENT: 0.10,
-            GamePhase.CAPTURE: 0.12,
-            GamePhase.CHAIN_CAPTURE: 0.12,
-            GamePhase.LINE_PROCESSING: 0.16,
-            GamePhase.TERRITORY_PROCESSING: 0.20,
-            GamePhase.FORCED_ELIMINATION: 0.22,
-        }
-        return float(phase_map.get(phase, 0.10))
-
-    def _puct_params_for_node(
-        self,
-        node: Any,
-        phase: GamePhase,
-    ) -> tuple[float, float, float]:
-        children = getattr(node, "children", None) or []
-        if not children:
-            priors: list[float] = []
-        else:
-            uniform = 1.0 / max(1, len(children))
-            priors = [
-                float(getattr(c, "prior", 0.0) or 0.0) or uniform for c in children
-            ]
-
-        visits = int(getattr(node, "visits", 0) or 0)
-        c_puct = self._dynamic_c_puct(visits, priors)
-        rave_k = self._rave_k_for_node(visits, priors)
-        fpu_reduction = self._fpu_reduction_for_phase(phase)
-        return c_puct, rave_k, fpu_reduction
 
     # ------------------------------------------------------------------
     # NNUE Policy Model Support
@@ -3140,326 +2502,3 @@ class MCTSAI(HeuristicAI):
 
         self.move_count += 1
         return selected, policy
-
-    # =========================================================================
-    # Shared Utility Methods
-    # =========================================================================
-
-    def _default_dirichlet_alpha(self, board_type: BoardType) -> float:
-        """Return a conservative board-specific Dirichlet alpha."""
-        if board_type == BoardType.SQUARE8:
-            return 0.3
-        # Large action spaces should use smaller alpha.
-        return 0.15
-
-    def _maybe_apply_root_dirichlet_noise(
-        self,
-        node: Any,
-        board_type: BoardType,
-    ) -> None:
-        """Mix Dirichlet noise into root priors for self-play only."""
-        if not self.self_play or self._dirichlet_applied_this_search:
-            return
-        if getattr(node, "parent", None) is not None:
-            return
-        if not getattr(node, "policy_map", None):
-            return
-
-        keys = list(node.policy_map.keys())
-        if len(keys) <= 1 or self.root_noise_fraction <= 0:
-            self._dirichlet_applied_this_search = True
-            return
-
-        alpha = self.root_dirichlet_alpha or self._default_dirichlet_alpha(board_type)
-        epsilon = self.root_noise_fraction
-
-        # Seed numpy from the per-instance RNG for reproducibility.
-        seed = int(self.rng.randrange(0, 2**32 - 1))
-        rng = np.random.default_rng(seed)
-        noise = rng.dirichlet([alpha] * len(keys))
-
-        for i, key in enumerate(keys):
-            prior = float(node.policy_map[key])
-            node.policy_map[key] = (1.0 - epsilon) * prior + epsilon * float(noise[i])
-
-        total = float(sum(node.policy_map.values()))
-        if total > 0:
-            for key in node.policy_map:
-                node.policy_map[key] /= total
-
-        self._dirichlet_applied_this_search = True
-
-    def _get_selfplay_temperature(self, game_state: GameState) -> float:
-        """Return temperature for self-play root move sampling."""
-        if self.temperature_override is not None:
-            return float(self.temperature_override)
-
-        board_type = game_state.board.type
-        cutoff = self.temperature_cutoff_moves
-        if cutoff is None:
-            if board_type == BoardType.SQUARE8:
-                cutoff = 24
-            else:
-                cutoff = 40
-
-        move_index = len(game_state.move_history)
-        if move_index < cutoff:
-            return 1.0
-        if move_index < cutoff * 2:
-            return 0.5
-        return 0.1
-
-    def _default_leaf_batch_size(self) -> int:
-        """Choose a default leaf batch size for NN evaluation.
-
-        This is a throughput knob only; correctness is unaffected. Callers can
-        override via RINGRIFT_MCTS_LEAF_BATCH_SIZE.
-        """
-        env_val = os.environ.get("RINGRIFT_MCTS_LEAF_BATCH_SIZE")
-        if env_val:
-            try:
-                parsed = int(env_val)
-                if parsed > 0:
-                    return parsed
-            except ValueError:
-                pass
-
-        if not self.neural_net:
-            return 8
-
-        device = getattr(self.neural_net, "device", "cpu")
-        dev_str = device if isinstance(device, str) else getattr(device, "type", "cpu")
-        if dev_str == "cuda":
-            return 32
-        if dev_str == "mps":
-            return 16
-        if dev_str == "cpu":
-            return 8
-        return 16
-
-    def _maybe_seed_root_priors(self, root: Any, game_state: GameState) -> None:
-        """Seed NN priors at the root.
-
-        Progressive widening relies on high-quality priors to select the
-        initial children. For square19/hex boards, evaluate the root once
-        so early expansions focus on top-prior moves and reused roots regain
-        consistent priors.
-
-        When no neural network is available but NNUE policy is loaded, uses
-        NNUE policy priors as a lightweight alternative. This applies to ALL
-        board types (including square8) to benefit from policy guidance even
-        without progressive widening.
-        """
-        board_type = game_state.board.type
-        use_progressive = self._use_progressive_widening(board_type)
-
-        # For non-progressive-widening boards, only seed if NNUE policy is available
-        # (no neural net and NNUE model loaded)
-        if not use_progressive and (self.neural_net or self.nnue_policy_model is None):
-            return
-
-        existing_map = getattr(root, "policy_map", None)
-        if isinstance(existing_map, dict) and existing_map:
-            return
-
-        # Fallback to NNUE policy when no neural net is available
-        if not self.neural_net:
-            if self.nnue_policy_model is not None:
-                try:
-                    valid_moves = self.rules_engine.get_valid_moves(
-                        game_state, game_state.current_player
-                    )
-                    nnue_policy = self._compute_nnue_policy(valid_moves, game_state)
-                    if nnue_policy:
-                        root.policy_map = nnue_policy
-                        root.untried_moves = list(valid_moves)
-                        # Sort by priors
-                        root.untried_moves.sort(
-                            key=lambda m: root.policy_map.get(str(m), 0.0),
-                            reverse=True,
-                        )
-                        # Update existing children
-                        for child in getattr(root, "children", []):
-                            move = getattr(child, "move", None)
-                            if move is None:
-                                continue
-                            prior = root.policy_map.get(str(move))
-                            if prior is not None:
-                                child.prior = float(prior)
-                        # Compute entropy for logging (higher = more uniform)
-                        max_p = max(nnue_policy.values()) if nnue_policy else 0.0
-                        min_p = min(nnue_policy.values()) if nnue_policy else 0.0
-                        logger.debug(
-                            f"Seeded NNUE root priors for {board_type.value}: "
-                            f"{len(nnue_policy)} moves, temp={self.policy_temperature:.1f}, "
-                            f"max_prior={max_p:.3f}, min_prior={min_p:.4f}"
-                        )
-                except (ValueError, TypeError, KeyError, AttributeError):
-                    logger.debug("Failed to seed NNUE root priors", exc_info=True)
-            return
-
-        try:
-            use_hex_nn = (
-                self.hex_model is not None
-                and self.hex_encoder is not None
-                and board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
-            )
-            use_vector_head = (
-                self.use_vector_value_head
-                and not use_hex_nn
-                and infer_num_players(game_state) > 2
-            )
-            value_head = (self.player_number - 1) if use_vector_head else None
-
-            if use_hex_nn:
-                eval_values, eval_policies = self._evaluate_hex_batch([game_state])
-                policy_vec = eval_policies[0]
-                value = float(eval_values[0]) if eval_values else 0.0
-            else:
-                eval_values, policy_batch = (
-                    self.nn_batcher.evaluate(
-                        [game_state],
-                        value_head=value_head,
-                    )
-                    if self.nn_batcher is not None
-                    else self.neural_net.evaluate_batch(
-                        [game_state],
-                        value_head=value_head,
-                    )
-                )
-                policy_vec = policy_batch[0]
-                value = float(eval_values[0]) if eval_values else 0.0
-
-            if isinstance(root, MCTSNode):
-                self._update_node_policy_legacy(
-                    root, game_state, policy_vec, bool(use_hex_nn)
-                )
-            else:
-                self._update_node_policy_lite(
-                    cast(MCTSNodeLite, root),
-                    game_state,
-                    policy_vec,
-                    bool(use_hex_nn),
-                )
-
-            # Update priors on existing children (tree reuse).
-            for child in getattr(root, "children", []):
-                move = getattr(child, "move", None)
-                if move is None:
-                    continue
-                prior = getattr(root, "policy_map", {}).get(str(move))
-                if prior is not None:
-                    child.prior = float(prior)
-
-            # Cache root eval for TT reuse.
-            state_hash = game_state.zobrist_hash or 0
-            if self.transposition_table.get(state_hash) is None:
-                self.transposition_table.put(state_hash, (value, policy_vec))
-        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
-            logger.debug("Failed to seed root priors", exc_info=True)
-
-    def _sample_child_by_temperature(
-        self,
-        children: list[Any],
-        temperature: float,
-    ) -> Any:
-        """Sample a child proportional to visits^1/temperature."""
-        if temperature <= 0 or len(children) == 1:
-            return max(children, key=lambda c: c.visits)
-
-        visits = np.array(
-            [max(0.0, float(c.visits)) for c in children],
-            dtype=np.float64,
-        )
-        if visits.sum() <= 0:
-            probs = np.ones_like(visits) / len(visits)
-        else:
-            probs = visits / visits.sum()
-
-        if temperature != 1.0:
-            probs = probs ** (1.0 / float(temperature))
-            p_sum = probs.sum()
-            if p_sum > 0:
-                probs /= p_sum
-
-        idx = self.rng.choices(
-            list(range(len(children))),
-            weights=probs.tolist(),
-            k=1,
-        )[0]
-        return children[idx]
-
-    # ------------------------------------------------------------------
-    # Progressive widening (large boards only).
-    # ------------------------------------------------------------------
-
-    def _use_progressive_widening(self, board_type: BoardType) -> bool:
-        return board_type in (BoardType.SQUARE19, BoardType.HEXAGONAL)
-
-    def _max_children_allowed(self, visits: int, board_type: BoardType) -> int:
-        if not self._use_progressive_widening(board_type):
-            return 1_000_000_000
-
-        # Conservative defaults; tune per-board in future slices.
-        min_children = 8 if board_type == BoardType.SQUARE19 else 10
-        c = 2.0
-        alpha = 0.5
-        v = max(1, int(visits))
-        return max(min_children, int(c * (v**alpha)))
-
-    def _can_expand_node(self, node: Any, board_type: BoardType) -> bool:
-        if not self._use_progressive_widening(board_type):
-            return True
-        visits = int(getattr(node, "visits", 0))
-        children = getattr(node, "children", [])
-        return len(children) < self._max_children_allowed(visits, board_type)
-
-    def _select_untried_move(self, node: Any, board_type: BoardType) -> Move:
-        """Pick the next untried move for expansion.
-
-        When policy_map is available (from neural net or NNUE policy), selects
-        the highest-probability move. Otherwise falls back to random selection.
-        """
-        moves: list[Move] = list(getattr(node, "untried_moves", []))
-        if not moves:
-            raise ValueError("No untried moves to select")
-        # Use policy-guided selection when policy_map is available
-        policy_map = getattr(node, "policy_map", None)
-        if isinstance(policy_map, dict) and policy_map:
-            return max(moves, key=lambda m: policy_map.get(str(m), 0.0))
-        return cast(Move, self.get_random_element(moves))
-
-    def _log_stats(self) -> None:
-        """Log transposition table and dynamic sizer stats."""
-        if logger.isEnabledFor(logging.DEBUG):
-            tt_stats = self.transposition_table.stats()
-            logger.debug(
-                "MCTS transposition table stats: entries=%d/%d, "
-                "hits=%d, misses=%d, hit_rate=%.2f%%, evictions=%d, "
-                "est_memory=%.2fMB",
-                tt_stats["entries"],
-                tt_stats["max_entries"],
-                tt_stats["hits"],
-                tt_stats["misses"],
-                tt_stats["hit_rate"] * 100,
-                tt_stats["evictions"],
-                tt_stats["estimated_memory_mb"],
-            )
-
-            if self.enable_dynamic_batching and self.dynamic_sizer is not None:
-                ds_stats = self.dynamic_sizer.stats()
-                logger.debug(
-                    "MCTS dynamic batch sizer stats: batch_size=%d, "
-                    "node_estimate=%d bytes, adjustments=%d",
-                    ds_stats["current_batch_size"],
-                    ds_stats["node_size_estimate"],
-                    ds_stats["adjustment_count"],
-                )
-
-    def clear_tree(self) -> None:
-        """Clear the MCTS tree to free memory.
-
-        This should be called after move selection if memory is constrained.
-        """
-        if hasattr(self, "last_root"):
-            self.last_root = None

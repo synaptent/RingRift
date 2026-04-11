@@ -161,11 +161,7 @@ class TestGameReplayDBBasic:
             }
         )
 
-        moves = [
-            create_test_move(1, 0),
-            create_test_move(2, 1),
-            create_test_move(1, 2),
-        ]
+        moves = [create_test_move((move_idx % 2) + 1, move_idx) for move_idx in range(5)]
 
         db.store_game(
             game_id=game_id,
@@ -182,7 +178,7 @@ class TestGameReplayDBBasic:
         assert metadata is not None
         assert metadata["game_id"] == game_id
         assert metadata["winner"] == 1
-        assert metadata["total_moves"] == 3
+        assert metadata["total_moves"] == 5
 
         # Retrieve initial state
         retrieved_state = db.get_initial_state(game_id)
@@ -191,7 +187,7 @@ class TestGameReplayDBBasic:
 
         # Retrieve moves
         retrieved_moves = db.get_moves(game_id)
-        assert len(retrieved_moves) == 3
+        assert len(retrieved_moves) == 5
         assert retrieved_moves[0].move_number == 0
 
         # Verify that full metadata is persisted as JSON for debugging.
@@ -225,7 +221,7 @@ class TestGameReplayDBBasic:
                     "winner": (i % 2) + 1,
                 }
             )
-            moves = [create_test_move(1, 0)]
+            moves = [create_test_move((move_idx % 2) + 1, move_idx) for move_idx in range(5)]
 
             db.store_game(
                 game_id=game_id,
@@ -233,6 +229,8 @@ class TestGameReplayDBBasic:
                 final_state=final_state,
                 moves=moves,
                 metadata={"source": "test"},
+                store_history_entries=False,
+                snapshot_interval=0,
             )
 
         # Query all games
@@ -419,7 +417,7 @@ class TestStateReconstruction:
             }
         )
 
-        moves = [create_test_move(1, 0)]
+        moves = [create_test_move((move_idx % 2) + 1, move_idx) for move_idx in range(5)]
 
         # Skip history entry replay since this test uses synthetic moves
         # that don't represent a real game progression
@@ -429,6 +427,7 @@ class TestStateReconstruction:
             final_state=final_state,
             moves=moves,
             store_history_entries=False,
+            snapshot_interval=0,
         )
 
         # Verify we can retrieve the stored game metadata
@@ -438,7 +437,7 @@ class TestStateReconstruction:
         assert metadata is not None
         # The game should be stored with our provided final state metadata
         assert metadata["game_id"] == game_id
-        assert metadata["total_moves"] == 1
+        assert metadata["total_moves"] == 5
 
 
 class TestChoices:
@@ -459,7 +458,7 @@ class TestChoices:
         final_state = initial_state.model_copy(
             update={"game_status": GameStatus.COMPLETED, "winner": 1}
         )
-        moves = [create_test_move(1, 0)]
+        moves = [create_test_move((move_idx % 2) + 1, move_idx) for move_idx in range(5)]
 
         choices = [
             {
@@ -478,6 +477,8 @@ class TestChoices:
             final_state=final_state,
             moves=moves,
             choices=choices,
+            store_history_entries=False,
+            snapshot_interval=0,
         )
 
         # Retrieve choices
@@ -507,7 +508,9 @@ class TestNNUEFeaturesCaching:
             game_id=game_id,
             initial_state=state,
             final_state=final_state,
-            moves=[create_test_move(1, 0)],
+            moves=[create_test_move((index % 2) + 1, index) for index in range(5)],
+            store_history_entries=False,
+            snapshot_interval=0,
         )
 
     def test_store_and_retrieve_single_feature(self, db):
