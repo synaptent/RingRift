@@ -864,17 +864,14 @@ class TestEventEmission:
         orchestrator = create_mock_orchestrator()
         loop = LeaderProbeLoop(orchestrator)
 
-        # Mock the emit_event import inside _emit_event method
-        mock_emit = MagicMock()
-        with patch.dict(
-            "sys.modules",
-            {"app.coordination.event_router": MagicMock(emit_event=mock_emit)},
-        ):
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             loop._emit_event("TEST_EVENT", {"data": "value"})
 
         mock_emit.assert_called_once()
-        call_args = mock_emit.call_args
-        payload = call_args[0][1]
+        payload = mock_emit.call_args.args[1]
         assert payload["source"] == "leader_probe_loop"
         assert payload["data"] == "value"
         assert "timestamp" in payload
@@ -884,13 +881,9 @@ class TestEventEmission:
         orchestrator = create_mock_orchestrator()
         loop = LeaderProbeLoop(orchestrator)
 
-        # Create a mock module that raises ImportError when emit_event is accessed
-        mock_module = MagicMock()
-        mock_module.emit_event.side_effect = Exception("Test error")
-
-        with patch.dict(
-            "sys.modules",
-            {"app.coordination.event_router": mock_module},
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            side_effect=Exception("Test error"),
         ):
             # Should not raise
             loop._emit_event("TEST_EVENT", {"data": "value"})

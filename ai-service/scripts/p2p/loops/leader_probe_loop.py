@@ -1074,13 +1074,18 @@ class LeaderProbeLoop(BaseLoop):
             payload: Event payload dictionary
         """
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(event_type, {
-                "source": "leader_probe_loop",
-                "timestamp": time.time(),
-                **payload,
-            })
+            safe_emit_event(
+                event_type,
+                {
+                    "source": "leader_probe_loop",
+                    "timestamp": time.time(),
+                    **payload,
+                },
+                context="leader_probe_loop",
+                source="leader_probe_loop",
+            )
         except Exception as e:
             logger.debug(f"[LeaderProbe] Failed to emit event {event_type}: {e}")
 

@@ -622,21 +622,26 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
         """
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             # Use lock-free snapshot to prevent race conditions
             peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
             peer_info = peer_snapshot.get_snapshot().get(node_id) if peer_snapshot else None
 
-            emit_event(DataEventType.HOST_ONLINE.value, {
-                "node_id": node_id,
-                "host": getattr(peer_info, "host", "") if peer_info else "",
-                "port": getattr(peer_info, "port", 0) if peer_info else 0,
-                "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
-                "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
-                "capabilities": capabilities or [],
-                "source": "peer_recovery_sync",
-            })
+            safe_emit_event(
+                DataEventType.HOST_ONLINE,
+                {
+                    "node_id": node_id,
+                    "host": getattr(peer_info, "host", "") if peer_info else "",
+                    "port": getattr(peer_info, "port", 0) if peer_info else 0,
+                    "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
+                    "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
+                    "capabilities": capabilities or [],
+                    "source": "peer_recovery_sync",
+                },
+                context="peer_network_orchestrator",
+                source="peer_recovery_sync",
+            )
             self._log_debug(f"Emitted HOST_ONLINE (sync) for peer: {node_id}")
         except ImportError:
             pass
@@ -792,22 +797,27 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
         """Emit HOST_ONLINE event for self-registration."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             node_id = getattr(self._p2p, "node_id", "")
             self_info = getattr(self._p2p, "self_info", None)
             if self_info is None:
                 return
 
-            emit_event(DataEventType.HOST_ONLINE.value, {
-                "node_id": node_id,
-                "host": getattr(self_info, "host", ""),
-                "port": getattr(self_info, "port", 0),
-                "has_gpu": getattr(self_info, "has_gpu", False),
-                "gpu_name": getattr(self_info, "gpu_name", ""),
-                "capabilities": list(self_info.capabilities) if getattr(self_info, "capabilities", None) else [],
-                "source": "leader_self_registration",
-            })
+            safe_emit_event(
+                DataEventType.HOST_ONLINE,
+                {
+                    "node_id": node_id,
+                    "host": getattr(self_info, "host", ""),
+                    "port": getattr(self_info, "port", 0),
+                    "has_gpu": getattr(self_info, "has_gpu", False),
+                    "gpu_name": getattr(self_info, "gpu_name", ""),
+                    "capabilities": list(self_info.capabilities) if getattr(self_info, "capabilities", None) else [],
+                    "source": "leader_self_registration",
+                },
+                context="peer_network_orchestrator",
+                source="leader_self_registration",
+            )
             self._log_debug(f"Emitted HOST_ONLINE for self: {node_id}")
         except ImportError:
             pass

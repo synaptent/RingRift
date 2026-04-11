@@ -1160,19 +1160,24 @@ class P2POrchestrator(
         """Emit HOST_ONLINE event for a peer coming online."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             # Jan 22, 2026: Use lock-free snapshot to prevent race conditions
             peer_info = self._peer_snapshot.get_snapshot().get(node_id)
-            emit_event(DataEventType.HOST_ONLINE.value, {
-                "node_id": node_id,
-                "host": getattr(peer_info, "host", "") if peer_info else "",
-                "port": getattr(peer_info, "port", 0) if peer_info else 0,
-                "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
-                "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
-                "capabilities": capabilities or [],
-                "source": "peer_discovery",
-            })
+            safe_emit_event(
+                DataEventType.HOST_ONLINE,
+                {
+                    "node_id": node_id,
+                    "host": getattr(peer_info, "host", "") if peer_info else "",
+                    "port": getattr(peer_info, "port", 0) if peer_info else 0,
+                    "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
+                    "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
+                    "capabilities": capabilities or [],
+                    "source": "peer_discovery",
+                },
+                context="p2p_orchestrator",
+                source="peer_discovery",
+            )
             logger.debug(f"[P2P] Emitted HOST_ONLINE for peer: {node_id}")
         except ImportError:
             pass
@@ -1184,14 +1189,19 @@ class P2POrchestrator(
         """Emit HOST_OFFLINE event for a peer going offline."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.HOST_OFFLINE.value, {
-                "node_id": node_id,
-                "reason": reason,
-                "last_heartbeat": last_heartbeat,
-                "source": "peer_retirement",
-            })
+            safe_emit_event(
+                DataEventType.HOST_OFFLINE,
+                {
+                    "node_id": node_id,
+                    "reason": reason,
+                    "last_heartbeat": last_heartbeat,
+                    "source": "peer_retirement",
+                },
+                context="p2p_orchestrator",
+                source="peer_retirement",
+            )
             logger.debug(f"[P2P] Emitted HOST_OFFLINE for peer: {node_id} (reason={reason})")
         except ImportError:
             pass
@@ -1203,15 +1213,20 @@ class P2POrchestrator(
         """Emit P2P_NODE_DEAD event for a dead peer."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.P2P_NODE_DEAD.value, {
-                "node_id": node_id,
-                "reason": reason,
-                "last_heartbeat": last_heartbeat,
-                "dead_for_seconds": dead_for,
-                "source": "peer_timeout",
-            })
+            safe_emit_event(
+                DataEventType.P2P_NODE_DEAD,
+                {
+                    "node_id": node_id,
+                    "reason": reason,
+                    "last_heartbeat": last_heartbeat,
+                    "dead_for_seconds": dead_for,
+                    "source": "peer_timeout",
+                },
+                context="p2p_orchestrator",
+                source="peer_timeout",
+            )
             logger.debug(f"[P2P] Emitted P2P_NODE_DEAD for peer: {node_id} (dead_for={dead_for:.0f}s)")
         except ImportError:
             pass
@@ -1231,17 +1246,22 @@ class P2POrchestrator(
         """Emit CLUSTER_CAPACITY_CHANGED event when cluster capacity changes."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.CLUSTER_CAPACITY_CHANGED.value, {
-                "total_nodes": total_nodes,
-                "alive_nodes": alive_nodes,
-                "gpu_nodes": gpu_nodes,
-                "training_nodes": training_nodes,
-                "change_type": change_type,
-                "change_details": change_details or {},
-                "source": "peer_management",
-            })
+            safe_emit_event(
+                DataEventType.CLUSTER_CAPACITY_CHANGED,
+                {
+                    "total_nodes": total_nodes,
+                    "alive_nodes": alive_nodes,
+                    "gpu_nodes": gpu_nodes,
+                    "training_nodes": training_nodes,
+                    "change_type": change_type,
+                    "change_details": change_details or {},
+                    "source": "peer_management",
+                },
+                context="p2p_orchestrator",
+                source="peer_management",
+            )
             logger.debug(f"[P2P] Emitted CLUSTER_CAPACITY_CHANGED: {change_type}, alive={alive_nodes}")
         except ImportError:
             pass
@@ -1266,7 +1286,7 @@ class P2POrchestrator(
         """
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             # Handle both string and enum event types
             event_value = None
@@ -1285,7 +1305,12 @@ class P2POrchestrator(
                 # Pass through as-is
                 event_value = str(event_type)
 
-            emit_event(event_value, payload)
+            safe_emit_event(
+                event_value,
+                payload,
+                context="p2p_orchestrator",
+                source="p2p_orchestrator",
+            )
             logger.debug(f"[P2P] Emitted event: {event_value}")
         except ImportError:
             pass  # Event router not available

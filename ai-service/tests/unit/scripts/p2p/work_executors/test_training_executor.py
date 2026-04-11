@@ -253,6 +253,7 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
 ):
     """Post-training signaling/upload failures should not be silent."""
     import app.coordination.npz_validation as npz_validation
+    import app.coordination.event_emission_helpers as event_emission_helpers
     import app.training.game_gauntlet as game_gauntlet
     from scripts.p2p.managers import work_discovery_manager
     from scripts.p2p.work_executors import training_executor
@@ -292,11 +293,7 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
         "play_single_game",
         lambda *args, **kwargs: SimpleNamespace(candidate_won=True),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "app.coordination.event_router",
-        SimpleNamespace(emit_event=lambda *args, **kwargs: False),
-    )
+    monkeypatch.setattr(event_emission_helpers, "safe_emit_event", lambda *args, **kwargs: False)
 
     work_item = {"work_id": "work-success"}
     result = await training_executor.execute_training_work(

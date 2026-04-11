@@ -153,16 +153,18 @@ class TrainingSyncLoop(BaseLoop):
     async def _emit_sync_started(self) -> None:
         """Emit DATA_SYNC_STARTED event."""
         try:
-            # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.DATA_SYNC_STARTED,
                 {
                     "host": "training_nodes",
                     "sync_type": "incremental",
                     "source": "training_sync_loop",
                 },
+                context=self.name,
+                source="training_sync_loop",
             )
         except ImportError:
             pass  # data_events not available
@@ -172,10 +174,10 @@ class TrainingSyncLoop(BaseLoop):
     async def _emit_sync_completed(self, jobs_created: int, duration: float) -> None:
         """Emit DATA_SYNC_COMPLETED event."""
         try:
-            # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.DATA_SYNC_COMPLETED,
                 {
                     "host": "training_nodes",
@@ -183,6 +185,8 @@ class TrainingSyncLoop(BaseLoop):
                     "duration": duration,
                     "source": "training_sync_loop",
                 },
+                context=self.name,
+                source="training_sync_loop",
             )
         except ImportError:
             pass
@@ -192,16 +196,18 @@ class TrainingSyncLoop(BaseLoop):
     async def _emit_sync_failed(self, error: str) -> None:
         """Emit DATA_SYNC_FAILED event."""
         try:
-            # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.DATA_SYNC_FAILED,
                 {
                     "host": "training_nodes",
                     "error": error,
                     "source": "training_sync_loop",
                 },
+                context=self.name,
+                source="training_sync_loop",
             )
         except ImportError:
             pass

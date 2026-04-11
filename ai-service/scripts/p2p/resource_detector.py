@@ -466,11 +466,16 @@ class ResourceDetector:
             payload: Event payload dict
         """
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
             event_type = getattr(DataEventType, event_name, None)
             if event_type:
-                emit_event(event_type, payload)
+                safe_emit_event(
+                    event_type,
+                    payload,
+                    context="resource_detector",
+                    source="resource_detector",
+                )
         except (ImportError, AttributeError, Exception) as e:
             logger.debug(f"[ResourceDetector] Could not emit {event_name}: {e}")
 

@@ -342,13 +342,18 @@ class LeaderMaintenanceLoop(BaseLoop):
     def _emit_event(self, event_type: str, payload: dict[str, Any]) -> None:
         """Emit an event for observability."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(event_type, {
-                "source": "leader_maintenance_loop",
-                "timestamp": time.time(),
-                **payload,
-            })
+            safe_emit_event(
+                event_type,
+                {
+                    "source": "leader_maintenance_loop",
+                    "timestamp": time.time(),
+                    **payload,
+                },
+                context="leader_maintenance_loop",
+                source="leader_maintenance_loop",
+            )
         except Exception as e:
             logger.debug(f"[LeaderMaintenance] Failed to emit event {event_type}: {e}")
 

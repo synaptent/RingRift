@@ -1356,26 +1356,25 @@ async def execute_training_work(
             # Emit training completed event
             event_emitted = False
             try:
-                import importlib
+                from app.coordination.event_emission_helpers import safe_emit_event
+                from app.distributed.data_events import DataEventType
 
-                data_events = sys.modules.get("app.distributed.data_events")
-                if data_events is None:
-                    data_events = importlib.import_module("app.distributed.data_events")
-                event_router = sys.modules.get("app.coordination.event_router")
-                if event_router is None:
-                    event_router = importlib.import_module("app.coordination.event_router")
-
-                event_emitted = event_router.emit_event(data_events.DataEventType.TRAINING_COMPLETED, {
-                    "config_key": config_key,
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "model_version": model_version,
-                    "model_path": model_path,
-                    "final_loss": final_loss,
-                    "training_samples": training_samples,
-                    "training_games": training_games,
-                    "work_id": work_id,
-                })
+                event_emitted = safe_emit_event(
+                    DataEventType.TRAINING_COMPLETED,
+                    {
+                        "config_key": config_key,
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "model_version": model_version,
+                        "model_path": model_path,
+                        "final_loss": final_loss,
+                        "training_samples": training_samples,
+                        "training_games": training_games,
+                        "work_id": work_id,
+                    },
+                    context="training_executor",
+                    source="training_executor",
+                )
                 if not event_emitted:
                     message = f"training completion event returned False for {config_key}"
                     logger.warning(message)

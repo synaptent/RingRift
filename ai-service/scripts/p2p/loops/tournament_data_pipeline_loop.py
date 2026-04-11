@@ -501,10 +501,10 @@ class TournamentDataPipelineLoop(BaseLoop):
     ) -> None:
         """Emit TOURNAMENT_DATA_READY event for training consumption."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.TOURNAMENT_DATA_READY,
                 {
                     "npz_path": str(result.npz_path),
@@ -517,6 +517,8 @@ class TournamentDataPipelineLoop(BaseLoop):
                     "avg_quality": db_stats.avg_quality,
                     "export_time": result.export_time,
                 },
+                context=self.name,
+                source=self.name,
             )
             logger.info(
                 f"[{self.name}] Emitted TOURNAMENT_DATA_READY for {result.npz_path}"
@@ -529,10 +531,10 @@ class TournamentDataPipelineLoop(BaseLoop):
     def _emit_completion_event(self, stats: PipelineCycleStats) -> None:
         """Emit event when pipeline cycle completes."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.TOURNAMENT_PIPELINE_COMPLETED,
                 {
                     "databases_discovered": stats.databases_discovered,
@@ -547,6 +549,8 @@ class TournamentDataPipelineLoop(BaseLoop):
                     "total_samples": stats.total_samples_generated,
                     "cycle_duration": stats.cycle_duration,
                 },
+                context=self.name,
+                source=self.name,
             )
         except ImportError:
             logger.debug(f"[{self.name}] Event system not available")

@@ -981,7 +981,7 @@ class TestBaseLoopEventEmission:
         """Test startup failure event emission."""
         loop = ConcreteLoop(depends_on=["dep1"])
 
-        with patch("app.coordination.event_router.emit_event") as mock_emit:
+        with patch("app.coordination.event_emission_helpers.safe_emit_event") as mock_emit:
             loop._emit_startup_failure_event()
 
             mock_emit.assert_called_once()
@@ -1005,7 +1005,7 @@ class TestBaseLoopEventEmission:
         loop = ConcreteLoop()
 
         with patch(
-            "app.coordination.event_router.emit_event",
+            "app.coordination.event_emission_helpers.safe_emit_event",
             side_effect=RuntimeError("test"),
         ):
             # Should not raise - exception is caught internally

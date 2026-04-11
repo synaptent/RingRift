@@ -533,9 +533,15 @@ class GracefulStepDown:
             if hasattr(self._orchestrator, "_safe_emit_event"):
                 self._orchestrator._safe_emit_event(event_type, payload)
             else:
-                from app.coordination.data_events import DataEventType, emit_event
+                from app.coordination.event_emission_helpers import safe_emit_event
+                from app.distributed.data_events import DataEventType
 
-                emit_event(DataEventType(event_type.lower()), payload)
+                safe_emit_event(
+                    DataEventType(event_type.lower()),
+                    payload,
+                    context="graceful_stepdown",
+                    source="graceful_stepdown",
+                )
         except (ImportError, ValueError, AttributeError, TypeError, RuntimeError):
             # Event emission should not block step-down
             pass

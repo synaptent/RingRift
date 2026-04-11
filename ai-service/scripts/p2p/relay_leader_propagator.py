@@ -432,17 +432,22 @@ class RelayLeaderPropagatorMixin:
         """
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.P2P_LEADER_CHANGED, {
-                "old_leader": getattr(self, "_previous_leader_id", None),
-                "new_leader": claim.leader_id,
-                "epoch": claim.epoch,
-                "source": "gossip_propagation",
-                "reason": reason,
-                "node_id": self.node_id,
-                "timestamp": time.time(),
-            })
+            safe_emit_event(
+                DataEventType.P2P_LEADER_CHANGED,
+                {
+                    "old_leader": getattr(self, "_previous_leader_id", None),
+                    "new_leader": claim.leader_id,
+                    "epoch": claim.epoch,
+                    "source": "gossip_propagation",
+                    "reason": reason,
+                    "node_id": self.node_id,
+                    "timestamp": time.time(),
+                },
+                context="relay_leader_propagator",
+                source="gossip_propagation",
+            )
         except ImportError:
             pass  # Event system not available
         except Exception as e:

@@ -326,10 +326,10 @@ class RelayCommandExecutionMixin(P2PMixinBase):
         )
 
         try:
-            from app.coordination.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.STABILITY_ALERT,
                 {
                     "symptom": symptom_str,
@@ -338,6 +338,8 @@ class RelayCommandExecutionMixin(P2PMixinBase):
                     "affected_nodes": nodes[:10],
                     "timestamp": time.time(),
                 },
+                context="relay_command_execution",
+                source="relay_command_execution",
             )
         except Exception:
             pass

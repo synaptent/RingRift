@@ -180,19 +180,25 @@ def subscribe_to_feedback_signals(orchestrator: Any) -> bool:
 
                 # Bridge to coordination event bus for EloProgressTracker
                 try:
-                    from app.coordination.event_router import emit_event
-                    from app.coordination.data_events import DataEventType
-                    emit_event(DataEventType.EVALUATION_COMPLETED, {
-                        "config_key": config_key,
-                        "elo": elo,
-                        "estimated_elo": payload.get("estimated_elo"),
-                        "games_played": games,
-                        "model_path": payload.get("model_path", ""),
-                        "win_rates": payload.get("win_rates", {}),
-                        "vs_random_rate": payload.get("vs_random_rate"),
-                        "vs_heuristic_rate": payload.get("vs_heuristic_rate"),
-                        "source": "p2p_bridge",
-                    })
+                    from app.coordination.event_emission_helpers import safe_emit_event
+                    from app.distributed.data_events import DataEventType
+
+                    safe_emit_event(
+                        DataEventType.EVALUATION_COMPLETED,
+                        {
+                            "config_key": config_key,
+                            "elo": elo,
+                            "estimated_elo": payload.get("estimated_elo"),
+                            "games_played": games,
+                            "model_path": payload.get("model_path", ""),
+                            "win_rates": payload.get("win_rates", {}),
+                            "vs_random_rate": payload.get("vs_random_rate"),
+                            "vs_heuristic_rate": payload.get("vs_heuristic_rate"),
+                            "source": "p2p_bridge",
+                        },
+                        context="p2p_event_wiring",
+                        source="p2p_bridge",
+                    )
                     logger.debug(f"[P2P] Bridged EVALUATION_COMPLETED to coordination bus for {config_key}")
                 except Exception as bridge_err:  # noqa: BLE001
                     logger.debug(f"Could not bridge EVALUATION_COMPLETED: {bridge_err}")

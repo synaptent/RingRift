@@ -452,13 +452,18 @@ class VoterHealthMonitor:
         # Emit event
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.VOTER_DEMOTED, {
-                "voter_id": voter_id,
-                "reason": reason,
-                "active_voters": len(self._get_voters_fn()) - len(self._demoted_voters) if self._get_voters_fn else 0,
-            })
+            safe_emit_event(
+                DataEventType.VOTER_DEMOTED,
+                {
+                    "voter_id": voter_id,
+                    "reason": reason,
+                    "active_voters": len(self._get_voters_fn()) - len(self._demoted_voters) if self._get_voters_fn else 0,
+                },
+                context="voter_health_monitor",
+                source="voter_health_monitor",
+            )
         except ImportError:
             pass
 
@@ -508,12 +513,17 @@ class VoterHealthMonitor:
         # Emit event
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.VOTER_PROMOTED, {
-                "voter_id": voter_id,
-                "active_voters": len(self._get_voters_fn()) if self._get_voters_fn else 0,
-            })
+            safe_emit_event(
+                DataEventType.VOTER_PROMOTED,
+                {
+                    "voter_id": voter_id,
+                    "active_voters": len(self._get_voters_fn()) if self._get_voters_fn else 0,
+                },
+                context="voter_health_monitor",
+                source="voter_health_monitor",
+            )
         except ImportError:
             pass
 

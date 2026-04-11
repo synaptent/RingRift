@@ -30,6 +30,7 @@ The current automated coverage is:
 - `tests/unit/coordination/test_event_subscription_completeness.py`
 - `tests/unit/coordination/test_safe_event_emitter.py`
 - `tests/unit/coordination/test_infrastructure_quality_contracts.py`
+- `tests/contracts/test_event_system_canonical.py`
 
 ## Findings
 
@@ -47,21 +48,30 @@ The lean profile event matrix is explicitly tested for these pipeline-critical e
 
 Dead-event detection is covered through `UnifiedEventRouter.get_orphaned_events()` and `get_status()["orphan_events"]`, so future regressions should show up as emitted event types without subscribers.
 
-## Known Remaining Backlog
+## Current Backlog
 
-There are still legacy or lower-level compatibility paths with direct `emit_event` references, especially under `scripts/p2p/**`. A source scan after the cleanup found 23 files under `app/coordination` and `scripts/p2p` with direct `emit_event` references or fallback examples, excluding `event_router.py` itself. Some are event infrastructure or fallback code such as `event_emission_helpers.py` and `event_fallback_queue.py`. The remaining P2P references are not automatically safe to rewrite without behavioral review because several sit inside leadership, partition-healing, health, and loop compatibility code.
+The active P2P runtime path has now been migrated onto `event_emission_helpers`.
+This includes the orchestrator, partition healing, voter/relay health, loop base
+helpers, leader probe/maintenance, training sync, tournament data pipeline, peer
+network bootstrap, and the cluster training executor.
 
-Important examples to audit before promoting more P2P code into the supported path:
+The remaining `emit_event` references in the repository are intentionally narrow:
 
-- `scripts/p2p/voter_health_monitor.py`
-- `scripts/p2p/relay_leader_propagator.py`
-- `scripts/p2p/partition_healer.py`
-- `scripts/p2p/loops/base.py`
-- `scripts/p2p/loops/leader_probe_loop.py`
-- `scripts/p2p/orchestrators/peer_network_orchestrator.py`
-- `scripts/p2p/work_executors/training_executor.py`
+- `app/coordination/event_router_compat_emitters.py`
+  Compatibility shim that preserves old call sites while delegating to the router.
+- `app/coordination/event_fallback_queue.py`
+  Documentation/examples around fallback queue usage, plus `publish_sync` usage for
+  its own sync-complete event.
+- `app/coordination/event_emission_helpers.py`
+  Historical explanatory text that refers to the old migration target.
+- `app/core/async_context.py`
+  Generic async callback example unrelated to the coordination event router.
+- P2P loop docstrings and examples such as `scripts/p2p/models.py`
+  Non-runtime examples that mention `emit_event`.
 
-These should be migrated deliberately to `event_emission_helpers` or to a P2P-local facade that delegates to the consolidated helper, with focused tests for the surrounding recovery behavior.
+`tests/contracts/test_event_system_canonical.py` now enforces the active-code
+boundary with an AST scan, so runtime `emit_event` regressions in
+`app/coordination` or `scripts/p2p` should fail the contract gate immediately.
 
 ## Guardrails For New Work
 
@@ -73,4 +83,7 @@ New coordination daemon code should:
 - Add a subscription matrix assertion when a profile starts a daemon that emits a pipeline-critical event.
 - Keep event payload schemas aligned with `EVENT_PAYLOAD_SCHEMAS.md` when adding or changing payload fields.
 
-The event-system cleanup is therefore not "done" for all legacy P2P code. It is done for the active coordination path covered by the current tests, and the remaining P2P backlog is documented for incremental reuse.
+The event-system cleanup is therefore complete for the active coordination and
+P2P runtime path. What remains is compatibility/documentation debt, not
+supported-path runtime debt, and the new contract test keeps that boundary
+explicit.

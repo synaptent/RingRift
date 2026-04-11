@@ -487,10 +487,10 @@ class ComprehensiveEvaluationLoop(BaseLoop):
     def _emit_completion_event(self, stats: CycleStats) -> None:
         """Emit event when evaluation cycle completes."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.COMPREHENSIVE_EVALUATION_COMPLETED,
                 {
                     "total_models": stats.total_models,
@@ -505,6 +505,8 @@ class ComprehensiveEvaluationLoop(BaseLoop):
                     ),
                     "cycle_duration": stats.cycle_duration,
                 },
+                context=self.name,
+                source=self.name,
             )
         except ImportError:
             logger.debug(f"[{self.name}] Event system not available")

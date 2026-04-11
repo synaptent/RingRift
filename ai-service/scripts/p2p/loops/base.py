@@ -556,16 +556,18 @@ class BaseLoop(ABC):
     def _emit_startup_failure_event(self) -> None:
         """Emit event when loop fails to start (Phase 1.4)."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.P2P_LOOP_STARTUP_FAILED,
                 {
                     "loop_name": self.name,
                     "interval": self.interval,
                     "depends_on": self.depends_on,
                 },
+                context=self.name,
+                source=self.name,
             )
         except ImportError:
             logger.debug(f"[{self.name}] Event system not available for startup failure")
@@ -603,14 +605,14 @@ class BaseLoop(ABC):
     ) -> None:
         """Emit event when loop performance degrades (Phase 5.1)."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
             logger.warning(
                 f"[{self.name}] Performance degraded: "
                 f"avg={avg_duration:.2f}s > threshold={threshold:.2f}s"
             )
-            emit_event(
+            safe_emit_event(
                 DataEventType.P2P_LOOP_PERFORMANCE_DEGRADED,
                 {
                     "loop_name": self.name,
@@ -620,6 +622,8 @@ class BaseLoop(ABC):
                     "total_runs": self._stats.total_runs,
                     "success_rate": self._stats.success_rate,
                 },
+                context=self.name,
+                source=self.name,
             )
         except ImportError:
             logger.debug(f"[{self.name}] Event system not available for perf degradation")
@@ -794,10 +798,10 @@ class BaseLoop(ABC):
         Emits P2P_LOOP_TIMEOUT event for observability and alerting.
         """
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.P2P_LOOP_TIMEOUT,
                 {
                     "loop_name": self.name,
@@ -806,6 +810,8 @@ class BaseLoop(ABC):
                     "total_timeouts": self._stats.total_timeouts,
                     "interval": self.interval,
                 },
+                context=self.name,
+                source=self.name,
             )
         except ImportError:
             logger.debug(f"[{self.name}] Event system not available for timeout event")

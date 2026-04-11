@@ -349,7 +349,8 @@ def _emit_elo_event(event_type: str, payload: dict[str, Any]) -> None:
     in some contexts (tests, standalone scripts).
     """
     try:
-        from app.coordination.event_router import DataEventType, emit_event
+        from app.coordination.event_emission_helpers import safe_emit_event
+        from app.distributed.data_events import DataEventType
 
         # Map string to DataEventType if possible
         try:
@@ -359,7 +360,12 @@ def _emit_elo_event(event_type: str, payload: dict[str, Any]) -> None:
             logger.debug(f"[elo_recording] Event type '{event_type}' not in DataEventType enum")
             return
 
-        emit_event(dtype, payload)
+        safe_emit_event(
+            dtype,
+            payload,
+            context="elo_recording",
+            source="elo_recording",
+        )
     except ImportError:
         pass  # Event router not available
     except Exception as e:

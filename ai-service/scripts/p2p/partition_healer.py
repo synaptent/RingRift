@@ -1017,9 +1017,9 @@ class PartitionHealer:
         """Emit PARTITION_HEALED event after successful healing."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.PARTITION_HEALED,
                 {
                     "partitions_found": result.partitions_found,
@@ -1028,6 +1028,8 @@ class PartitionHealer:
                     "duration_ms": result.duration_ms,
                     "timestamp": time.time(),
                 },
+                context="partition_healer",
+                source="partition_healer",
             )
             logger.info(
                 f"Emitted PARTITION_HEALED event: "
@@ -1138,11 +1140,13 @@ class PartitionHealer:
         """Emit PARTITION_HEALING_STARTED event."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.PARTITION_HEALING_STARTED,
                 {"timestamp": time.time()},
+                context="partition_healer",
+                source="partition_healer",
             )
         except (ImportError, Exception):
             pass  # Best effort
@@ -1151,11 +1155,13 @@ class PartitionHealer:
         """Emit PARTITION_HEALING_FAILED event."""
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.PARTITION_HEALING_FAILED,
                 {"error": error, "timestamp": time.time()},
+                context="partition_healer",
+                source="partition_healer",
             )
         except (ImportError, Exception):
             pass  # Best effort
@@ -1240,9 +1246,9 @@ class PartitionHealer:
             # Emit event for observability
             try:
                 from app.distributed.data_events import DataEventType
-                from app.coordination.event_router import emit_event
+                from app.coordination.event_emission_helpers import safe_emit_event
 
-                emit_event(
+                safe_emit_event(
                     DataEventType.LEADER_ELECTION_STARTED,
                     {
                         "reason": f"partition_healing:{reason}",
@@ -1250,6 +1256,8 @@ class PartitionHealer:
                         "escalation_level": self._escalation_level,
                         "timestamp": now,
                     },
+                    context="partition_healer",
+                    source="partition_healer",
                 )
             except (ImportError, Exception):
                 pass  # Best effort
@@ -1326,9 +1334,9 @@ class PartitionHealer:
         ):
             try:
                 from app.distributed.data_events import DataEventType
-                from app.coordination.event_router import emit_event
+                from app.coordination.event_emission_helpers import safe_emit_event
 
-                emit_event(
+                safe_emit_event(
                     DataEventType.P2P_RECOVERY_NEEDED,
                     {
                         "reason": f"Partition healing convergence failed repeatedly: {reason}",
@@ -1336,6 +1344,8 @@ class PartitionHealer:
                         "consecutive_failures": self._consecutive_failures,
                         "timestamp": time.time(),
                     },
+                    context="partition_healer",
+                    source="partition_healer",
                 )
                 logger.error(
                     f"[RecoveryEscalation] Emitted P2P_RECOVERY_NEEDED at max escalation. "
