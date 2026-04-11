@@ -339,13 +339,36 @@ def evaluate(cand: str, best: str, n_games: int, budget: int,
 # Detects true 53% models 83% of the time (vs 50% with old 50-game eval).
 # Clear wins/losses resolve in 50 games.
 
-_EVAL_STAGES = [
+_EVAL_STAGES_2P = [
     # (cumulative_games, promote_threshold, reject_threshold)
     (50,  0.60, 0.42),
     (100, 0.56, 0.46),
     (200, 0.53, 0.48),
     (400, 0.501, 0.0),  # final: any improvement promotes
 ]
+# Multiplayer evaluation: candidate plays 1 seat vs (N-1) copies of best.
+# Random baseline is 1/N, not 50%.  Lower thresholds accordingly.
+# 3-player: random WR ≈ 33%, so 42-45% is a meaningful improvement.
+_EVAL_STAGES_3P = [
+    (50,  0.50, 0.30),
+    (100, 0.47, 0.33),
+    (200, 0.44, 0.36),
+    (400, 0.401, 0.0),
+]
+# 4-player: random WR ≈ 25%, so 35-38% is a meaningful improvement.
+_EVAL_STAGES_4P = [
+    (50,  0.45, 0.22),
+    (100, 0.42, 0.25),
+    (200, 0.38, 0.28),
+    (400, 0.334, 0.0),  # beat random chance = promote
+]
+
+def _get_eval_stages() -> list:
+    if NUM_PLAYERS == 3:
+        return _EVAL_STAGES_3P
+    elif NUM_PLAYERS >= 4:
+        return _EVAL_STAGES_4P
+    return _EVAL_STAGES_2P
 
 
 def staged_evaluate(
@@ -359,6 +382,7 @@ def staged_evaluate(
     clear wins/losses while giving marginal improvements up to 400 games
     of evidence.
     """
+    eval_stages = _get_eval_stages()
     env = _make_env()
     cw, bw, dr = 0, 0, 0
     t0 = time.time()
@@ -366,7 +390,7 @@ def staged_evaluate(
     decision = None
     decision_stage = 0
 
-    for stage_idx, (target_games, promote_thr, reject_thr) in enumerate(_EVAL_STAGES):
+    for stage_idx, (target_games, promote_thr, reject_thr) in enumerate(eval_stages):
         games_this_stage = target_games - games_played
         for i in range(games_played, target_games):
             gseed = 42_000 + i * 7919
@@ -435,13 +459,13 @@ def staged_evaluate(
     if decision is None:
         # Reached final stage without early exit
         decision = "reject"
-        decision_stage = len(_EVAL_STAGES)
+        decision_stage = len(eval_stages)
 
     el = time.time() - t0
     dec = cw + bw
     wr = cw / dec if dec > 0 else 0.5
     logger.info(f"  eval done: cand {cw}-{bw} best (wr={wr:.1%}, "
-                 f"{dr} draws, {el:.0f}s, stage {decision_stage}/{len(_EVAL_STAGES)})")
+                 f"{dr} draws, {el:.0f}s, stage {decision_stage}/{len(eval_stages)})")
     return {
         "candidate_wins": cw, "best_wins": bw, "draws": dr,
         "win_rate": wr, "elapsed_s": el,
