@@ -196,6 +196,7 @@ SELFPLAY_CONFIGS: list[dict[str, Any]] = [
 # ============================================================================
 
 LOW_MEMORY_THRESHOLD_GB = 48  # Nodes below this get square8 only
+POLICY_TRAINING_ENGINE_MODES = frozenset({"gumbel-mcts"})
 
 
 # ============================================================================
@@ -205,6 +206,8 @@ LOW_MEMORY_THRESHOLD_GB = 48  # Nodes below this get square8 only
 def get_filtered_configs(
     node_memory_gb: int | None = None,
     board_types: list[str] | None = None,
+    selfplay_profile: str | None = None,
+    allowed_config_keys: list[str] | tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Filter selfplay configs based on node constraints.
 
@@ -212,6 +215,9 @@ def get_filtered_configs(
         node_memory_gb: Node's available memory in GB. If < 48GB,
             filters to square8 only to prevent OOM.
         board_types: Optional list of allowed board types.
+        selfplay_profile: Optional selfplay profile. ``policy-gumbel`` keeps
+            only policy-bearing Gumbel MCTS configs.
+        allowed_config_keys: Optional explicit config keys (e.g. ``hex8_2p``).
 
     Returns:
         Filtered list of selfplay configurations.
@@ -225,6 +231,19 @@ def get_filtered_configs(
     # Additional board type filtering if specified
     if board_types:
         configs = [cfg for cfg in configs if cfg.get("board_type") in board_types]
+
+    if selfplay_profile and selfplay_profile.strip().lower() in {"policy-gumbel", "policy-training"}:
+        configs = [
+            cfg for cfg in configs
+            if cfg.get("engine_mode") in POLICY_TRAINING_ENGINE_MODES
+        ]
+
+    if allowed_config_keys:
+        allowed = {str(value) for value in allowed_config_keys if value}
+        configs = [
+            cfg for cfg in configs
+            if config_key_for(cfg) in allowed
+        ]
 
     return configs
 
@@ -286,6 +305,40 @@ def get_gumbel_configs() -> list[dict[str, Any]]:
         List of Gumbel MCTS configs.
     """
     return get_configs_for_engine_mode("gumbel-mcts")
+
+
+def config_key_for(config: dict[str, Any]) -> str:
+    """Return canonical config key for a selfplay config dict."""
+
+    return f"{config.get('board_type', '')}_{config.get('num_players', 2)}p"
+
+
+def coerce_config_to_profile(
+    config: dict[str, Any],
+    *,
+    selfplay_profile: str | None = None,
+    allowed_config_keys: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any] | None:
+    """Coerce a selected config to the node's workload profile.
+
+    ``policy-gumbel`` selfplay workers should only generate policy-bearing data,
+    so mixed/diverse/heuristic modes are normalized back to Gumbel MCTS.
+    """
+
+    profile = (selfplay_profile or "").strip().lower()
+    config_key = config_key_for(config)
+
+    if allowed_config_keys:
+        allowed = {str(value) for value in allowed_config_keys if value}
+        if config_key not in allowed:
+            return None
+
+    if profile in {"policy-gumbel", "policy-training"} and config.get("engine_mode") not in POLICY_TRAINING_ENGINE_MODES:
+        coerced = dict(config)
+        coerced["engine_mode"] = "gumbel-mcts"
+        return coerced
+
+    return config
 
 
 # ============================================================================

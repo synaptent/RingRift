@@ -26,6 +26,11 @@ from scripts.p2p.managers.work_discovery_manager import (
     set_work_discovery_manager,
     _is_selfplay_enabled_for_node,
 )
+from app.config.node_roles import clear_node_role_manifest_cache
+from app.config.cluster_config import (
+    ClusterConfigCache,
+    clear_cluster_config_cache,
+)
 
 
 # ============================================================================
@@ -47,9 +52,15 @@ def reset_selfplay_enabled_cache():
     import scripts.p2p.managers.work_discovery_manager as module
     module._selfplay_enabled_checked = False
     module._selfplay_enabled = None
+    clear_cluster_config_cache()
+    ClusterConfigCache.reset_instance()
+    clear_node_role_manifest_cache()
     yield
     module._selfplay_enabled_checked = False
     module._selfplay_enabled = None
+    clear_cluster_config_cache()
+    ClusterConfigCache.reset_instance()
+    clear_node_role_manifest_cache()
 
 
 @pytest.fixture
@@ -872,6 +883,43 @@ class TestSelfplayEnabledCheck:
                 # Should return True (default) on error
                 result = _is_selfplay_enabled_for_node()
                 assert result is True
+
+    def test_node_role_manifest_can_disable_selfplay_for_trainer(self, tmp_path: Path):
+        """Manifest trainer role should disable local direct selfplay."""
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+        roles_path = tmp_path / "node_roles.yaml"
+        cluster_path.write_text(
+            """
+            hosts:
+              gh200-8:
+                role: gpu_training_selfplay
+                gpu: GH200 (96 GB)
+                gpu_vram_gb: 96
+                selfplay_enabled: true
+                training_enabled: true
+            """.strip() + "\n",
+            encoding="utf-8",
+        )
+        roles_path.write_text(
+            """
+            nodes:
+              gh200-8:
+                role: trainer
+                target_config: hex8_2p
+            """.strip() + "\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "RINGRIFT_CLUSTER_CONFIG_PATH": str(cluster_path),
+                "RINGRIFT_NODE_ROLE_CONFIG": str(roles_path),
+            },
+            clear=False,
+        ):
+            with patch("socket.gethostname", return_value="lambda-gh200-8"):
+                assert _is_selfplay_enabled_for_node() is False
 
 
 class TestSelfplayDisabledOverride:

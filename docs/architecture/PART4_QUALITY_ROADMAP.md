@@ -12,13 +12,17 @@ This document records the next quality push after the Part 3 infrastructure sess
   - `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120`
   - `npx tsc --noEmit`
   - `PYTHONPATH=ai-service bash scripts/check_supported_path.sh`
-- Exhaustive AI-service verification is not yet green:
-  - `cd ai-service && PYTHONPATH=. python -m pytest tests/ -x -q --timeout=300`
-- Remaining active risk is concentrated in:
-  - coordination/bootstrap side effects
-  - non-hermetic tests
-  - remaining large active modules
-  - active compatibility boundaries around legacy code
+- Exhaustive AI-service verification is green:
+  - `cd ai-service && PYTHONPATH=. python -m pytest tests/ -x -q --randomly-seed=1 --timeout=300`
+  - Result: `37768 passed, 222 skipped, 1 xfailed, 94 warnings`
+- Confirmation gate is green:
+  - `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120`
+  - Result: `33142 passed, 94 skipped, 21 warnings`
+- Remaining active risk is now concentrated in:
+  - autonomy/control-plane drift between P2P orchestration and the minimal loop
+  - trainer nodes still being too easy to misconfigure into selfplay generation
+  - broad selfplay catalog defaults that mix policy-bearing and non-policy workloads
+  - deploy/runtime surfaces that still key off legacy role strings
 
 ## Constraints
 
@@ -34,15 +38,27 @@ This document records the next quality push after the Part 3 infrastructure sess
 
 ## Roadmap
 
-| Phase | Focus                                | Target Outcome                                                                                                  | Status      |
-| ----- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ----------- |
-| 0     | Roadmap capture                      | Durable document for Part 4 goals, order, and verification                                                      | Completed   |
-| 1     | Exhaustive suite stabilization       | `pytest tests/ -x -q --timeout=300` is clean or reduced to a tightly bounded residual list with fixes in flight | In progress |
-| 2     | Coordination side-effect containment | Constructors/bootstrap paths stop doing real cluster/process work during unit-test setup                        | Pending     |
-| 3     | Remaining active monolith reduction  | Split the largest active non-legacy files and add new size contracts                                            | Pending     |
-| 4     | Test architecture cleanup            | Split giant tests, centralize builders/fixtures, and block live network/SSH from unit tests                     | Pending     |
-| 5     | Legacy boundary hardening            | Make supported-path vs compatibility-path imports explicit and enforceable                                      | Pending     |
-| 6     | Final trust pass                     | Full Python suite, TypeScript, and supported-path gates all green with refreshed docs                           | Pending     |
+| Phase | Focus                                | Target Outcome                                                                              | Status    |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------- | --------- |
+| 0     | Roadmap capture                      | Durable document for Part 4 goals, order, and verification                                  | Completed |
+| 1     | Exhaustive suite stabilization       | `pytest tests/ -x -q --timeout=300` is clean and trustworthy again                          | Completed |
+| 2     | Coordination side-effect containment | Constructors/bootstrap paths stop doing real cluster/process work during unit-test setup    | Pending   |
+| 3     | Remaining active monolith reduction  | Split the largest active non-legacy files and add new size contracts                        | Pending   |
+| 4     | Test architecture cleanup            | Split giant tests, centralize builders/fixtures, and block live network/SSH from unit tests | Pending   |
+| 5     | Legacy boundary hardening            | Make supported-path vs compatibility-path imports explicit and enforceable                  | Pending   |
+| 6     | Final trust pass                     | Full Python suite, TypeScript, and supported-path gates all green with refreshed docs       | Pending   |
+
+## Autonomy Control-Plane Lane
+
+With Phase 1 green, the highest-ROI execution lane is no longer generic suite burn-down. It is aligning the cluster control plane with the actual training objective: stronger models per GPU-day.
+
+| Lane Phase | Focus                            | Target Outcome                                                                                   | Status      |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------------------------------ | ----------- |
+| A1         | Role policy and workload gating  | Declarative trainer/selfplay/evaluator/sync roles override legacy host-role drift                | In progress |
+| A2         | Policy-bearing selfplay only     | Dedicated selfplay workers generate only Gumbel/MCTS policy targets for primary training input   | Pending     |
+| A3         | Ingestion without loop drift     | External selfplay lands in trainer-visible data flow without breaking minimal-loop NPZ windowing | Pending     |
+| A4         | Role-aware deploy/runtime        | Deploy/systemd surfaces read the same role manifest and stop doing ad hoc kill/disable logic     | Pending     |
+| A5         | Evaluator and hard-position loop | Dedicated evaluator node produces calibrated Elo, hard positions, and promotion diagnostics      | Pending     |
 
 ## Execution Order
 
@@ -52,6 +68,14 @@ This document records the next quality push after the Part 3 infrastructure sess
 4. Reduce the remaining large active modules only after the suite is stable enough to protect the changes.
 5. Clean up oversized and integration-heavy tests so they stop hiding failures behind shared setup.
 6. Harden the remaining legacy boundaries and rerun the full verification stack.
+
+## Autonomy Execution Order
+
+1. Freeze the current green verification baseline and keep it green with focused tests.
+2. Add a declarative node-role policy layer that can override legacy host roles without editing `distributed_hosts.yaml`.
+3. Enforce that trainer nodes remain coordination-capable but selfplay-ineligible.
+4. Enforce that selfplay-worker nodes default to policy-bearing Gumbel/MCTS generation only.
+5. Add ingestion and deploy changes only after the role policy is live and covered by tests.
 
 ## Phase Detail
 
@@ -90,6 +114,15 @@ Target:
 - move heavyweight initialization behind explicit wiring/start boundaries
 - make unit-test setup deterministic and local-only by default
 - reduce ambient singleton/global state mutations during import
+
+### Autonomy Phase A1: Role Policy and Workload Gating
+
+Target:
+
+- add a separate node-role manifest (`config/node_roles.yaml`) for explicit cluster workload policy
+- resolve effective node policy from host inventory + role overlay in one helper module
+- enforce trainer/selfplay/evaluator behavior at local selfplay eligibility, remote selfplay eligibility, and node job preference boundaries
+- stop policy-only selfplay workers from being silently upgraded back into mixed/diverse/heuristic modes by higher-level config selectors
 
 ### Phase 3: Remaining Active Monolith Reduction
 
@@ -169,3 +202,11 @@ Then update:
 - Phase 1 targeted verification: `cd ai-service && PYTHONPATH=. python -m pytest tests/integration/coordination/test_training_activity_coordination.py -q --timeout=120` passed at `13 passed`.
 - Phase 1 exhaustive verification progress: `cd ai-service && PYTHONPATH=. python -m pytest tests/ -x -q --timeout=300` advanced from a hard stop at `3719 passed` on `tests/test_thresholds_usage.py::test_no_hardcoded_production_elo_threshold` to a later async/socket-heavy section after the threshold fixes, with no new deterministic failure yet isolated.
 - Phase 1 exhaustive verification progress: the same gate now reaches `6981 passed, 37 skipped` before the next deterministic failure in `tests/integration/coordination/test_training_activity_coordination.py::TestTrainingActivityToSyncFlow::test_graceful_shutdown_triggers_final_sync`, and that shutdown-hook regression has now been fixed.
+- Phase 1 completed: `cd ai-service && PYTHONPATH=. python -m pytest tests/ -x -q --randomly-seed=1 --timeout=300` passed at `37768 passed, 222 skipped, 1 xfailed, 94 warnings in 2572.83s (0:42:52)`.
+- Phase 1 confirmation: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` passed at `33127 passed, 94 skipped, 13 warnings in 1553.00s (0:25:52)`.
+- Autonomy Phase A1 progress: added `app/config/node_roles.py` plus `config/node_roles.yaml` so trainer, selfplay-worker, evaluator, and sync-only roles can override legacy host-role strings without touching `distributed_hosts.yaml`.
+- Autonomy Phase A1 progress: wired workload policy into `scripts/p2p/managers/work_discovery_manager.py`, `scripts/p2p/loops/autonomous_queue_loop.py`, `scripts/p2p/mixins/job_management_mixin.py`, and `scripts/p2p/orchestrators/process_spawner_orchestrator.py` so trainer nodes remain P2P-capable but selfplay-ineligible.
+- Autonomy Phase A1 progress: narrowed selfplay-worker config selection in `scripts/p2p/config/selfplay_job_configs.py` to support `policy-gumbel` filtering and profile coercion back to `gumbel-mcts` when higher-level selectors try to return mixed/diverse configs.
+- Autonomy Phase A1 targeted verification: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/config/test_node_roles.py tests/unit/p2p/test_selfplay_job_configs.py tests/unit/p2p/managers/test_work_discovery_manager.py tests/unit/p2p/loops/test_autonomous_queue_loop.py -q --timeout=120` passed at `131 passed`.
+- Autonomy Phase A1 targeted verification: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/p2p/managers/test_job_orchestration_manager.py -q --timeout=120` passed at `53 passed`.
+- Autonomy Phase A1 confirmation: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` passed at `33142 passed, 94 skipped, 21 warnings in 1457.81s (0:24:17)`.

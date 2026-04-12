@@ -1,0 +1,48 @@
+version: 1
+
+# Declarative workload-role overlay for the active GH200 fleet.
+# This file intentionally lives outside distributed_hosts.yaml so cluster host
+# inventory can stay stable while workload policy evolves.
+#
+# Role defaults:
+# - trainer: minimal loop + P2P sync/health only, no selfplay dispatch
+# - selfplay-worker: P2P selfplay only, policy-bearing Gumbel by default
+# - evaluator: evaluation/calibration only
+# - sync-only: coordination/sync only
+
+nodes:
+  gh200-8:
+    role: trainer
+    target_config: hex8_2p
+
+  gh200-9:
+    role: trainer
+    target_config: square8_2p
+
+  gh200-10:
+    role: evaluator
+    assigned_configs:
+      - hex8_2p
+      - square8_2p
+      - square8_3p
+      - square19_2p
+
+  gh200-11:
+    role: selfplay-worker
+    target_config: hex8_2p
+    feeds_trainer: gh200-8
+    selfplay_profile: policy-gumbel
+
+  gh200-12:
+    role: trainer
+    target_config: square8_3p
+
+  gh200-13:
+    role: selfplay-worker
+    target_config: square8_2p
+    feeds_trainer: gh200-9
+    selfplay_profile: policy-gumbel
+
+  gh200-14:
+    role: trainer
+    target_config: square19_2p

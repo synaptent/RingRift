@@ -42,12 +42,28 @@ try:
     from scripts.p2p.config.selfplay_job_configs import (
         SELFPLAY_ENGINE_MODES,
         GUMBEL_ENGINE_MODES,
+        coerce_config_to_profile,
+        get_filtered_configs,
+        get_unique_configs,
+        get_weighted_configs,
     )
     HAS_SELFPLAY_CONFIG = True
 except ImportError:
     HAS_SELFPLAY_CONFIG = False
     SELFPLAY_ENGINE_MODES = {"nn-only", "gumbel-mcts-only", "mixed"}
     GUMBEL_ENGINE_MODES = {"gumbel-mcts", "gumbel", "gumbel-mcts-only"}
+
+    def get_filtered_configs(*args, **kwargs):  # type: ignore[no-redef]
+        return [{"board_type": "hex8", "num_players": 2, "engine_mode": "gumbel-mcts"}]
+
+    def get_weighted_configs(configs):  # type: ignore[no-redef]
+        return list(configs)
+
+    def get_unique_configs(configs):  # type: ignore[no-redef]
+        return list(configs)
+
+    def coerce_config_to_profile(config, **kwargs):  # type: ignore[no-redef]
+        return config
 
 # Import safeguards if available
 try:
@@ -1361,10 +1377,33 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
             needed = target_selfplay - node.selfplay_jobs
             self._log_info(f"{node.node_id} needs {needed} more selfplay jobs")
 
+            # Resolve node workload policy before choosing configs.
+            selfplay_profile = None
+            allowed_config_keys: tuple[str, ...] = ()
+            if hasattr(self._p2p, "_get_node_job_preference"):
+                try:
+                    from app.config.node_roles import get_node_workload_policy
+
+                    policy = get_node_workload_policy(node.node_id)
+                    if policy.resolved:
+                        selfplay_profile = policy.selfplay_profile
+                        allowed_config_keys = policy.allowed_config_keys
+                except Exception as exc:
+                    self._log_debug(f"Could not resolve workload policy for {node.node_id}: {exc}")
+
             # Get configs
             if HAS_CONFIG_HELPERS:
                 node_mem = int(getattr(node, "memory_gb", 0) or 0)
-                filtered_configs = get_filtered_configs(node_memory_gb=node_mem)
+                filtered_configs = get_filtered_configs(
+                    node_memory_gb=node_mem,
+                    selfplay_profile=selfplay_profile,
+                    allowed_config_keys=allowed_config_keys,
+                )
+                if not filtered_configs:
+                    self._log_info(
+                        f"{node.node_id}: no selfplay configs available for profile={selfplay_profile or 'default'}"
+                    )
+                    continue
                 weighted_configs = get_weighted_configs(filtered_configs)
                 unique_configs = get_unique_configs(filtered_configs)
             else:
@@ -1477,6 +1516,20 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
                 else:
                     config_idx = i % len(unique_configs)
                     config = unique_configs[config_idx]
+
+                if config is None:
+                    continue
+
+                config = coerce_config_to_profile(
+                    config,
+                    selfplay_profile=selfplay_profile,
+                    allowed_config_keys=allowed_config_keys,
+                )
+                if config is None:
+                    if filtered_configs:
+                        config = dict(filtered_configs[i % len(filtered_configs)])
+                    else:
+                        continue
 
                 # Track diversity
                 if selfplay_scheduler is not None:

@@ -1327,7 +1327,7 @@ class JobManagementMixin(P2PMixinBase):
         )
 
     def _get_node_job_preference(self, node_id: str) -> str:
-        """Get preferred job type based on node role from YAML config.
+        """Get preferred job type based on resolved workload policy.
 
         Jan 7, 2026: Added to enforce role-based job selection.
         GPU-only nodes should not fall back to CPU selfplay.
@@ -1339,21 +1339,10 @@ class JobManagementMixin(P2PMixinBase):
         - 'both': Node can run both GPU selfplay and training (default)
         """
         try:
-            from app.config.cluster_config import get_config_cache
-            config = get_config_cache().get_config()
-            host_cfg = config.hosts_raw.get(node_id, {})
-            role = str(host_cfg.get("role", "")).lower()
+            from app.config.node_roles import get_node_workload_policy
 
-            if role in ("coordinator", "cpu_selfplay"):
-                return "cpu_only"
-            if role == "gpu_selfplay":
-                return "gpu_only"
-            if role == "gpu_training_primary":
-                # Training-primary nodes can still do selfplay when idle
-                return "both"
-            if role == "gpu_training_selfplay":
-                return "both"
-            return "both"
+            policy = get_node_workload_policy(node_id)
+            return policy.job_preference if policy.resolved else "both"
         except Exception as e:
             logger.debug(f"Could not get job preference for {node_id}: {e}")
             return "both"

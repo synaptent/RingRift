@@ -24,10 +24,12 @@ import socket
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-import yaml
+from app.config.node_roles import (
+    get_local_node_workload_policy,
+    get_node_workload_policy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +39,14 @@ _selfplay_enabled: bool | None = None
 
 
 def _is_selfplay_enabled_for_node() -> bool:
-    """Check if selfplay is enabled for this node via YAML config.
+    """Check if selfplay is enabled for this node via workload policy.
 
     This prevents coordinator nodes from spawning direct selfplay
     when WorkDiscoveryManager tries to generate fallback work.
 
-    Jan 5, 2026: Same logic as AutonomousQueuePopulationLoop._is_selfplay_enabled_for_node()
+    Apr 12, 2026: Workload policy overlay now takes precedence over the
+    legacy distributed_hosts.yaml booleans so trainer nodes can keep P2P
+    coordination without remaining eligible for selfplay dispatch.
     """
     global _selfplay_enabled_checked, _selfplay_enabled
 
@@ -53,77 +57,19 @@ def _is_selfplay_enabled_for_node() -> bool:
 
     try:
         hostname = socket.gethostname()
-        hostname_lower = hostname.lower().replace("-", "").replace("_", "")
-
-        # Try to find cluster config
-        config_paths = [
-            Path(__file__).parent.parent.parent.parent / "config" / "distributed_hosts.yaml",
-            Path.cwd() / "config" / "distributed_hosts.yaml",
-            Path("/Users/armand/Development/RingRift/ai-service/config/distributed_hosts.yaml"),
-        ]
-
-        cluster_config = None
-        for config_path in config_paths:
-            if config_path.exists():
-                try:
-                    with open(config_path) as f:
-                        cluster_config = yaml.safe_load(f)
-                    break
-                except (OSError, IOError):
-                    # File read error
-                    continue
-                except yaml.YAMLError:
-                    # Malformed YAML
-                    continue
-
-        if not cluster_config:
+        policy = get_local_node_workload_policy(hostname=hostname)
+        if not policy.resolved:
             return True
+        _selfplay_enabled = policy.selfplay_enabled
+        if not _selfplay_enabled:
+            logger.info(
+                "[WorkDiscovery] Node %s matched workload policy %s, selfplay disabled",
+                hostname,
+                policy.matched_name or policy.role,
+            )
+        return _selfplay_enabled
 
-        # YAML uses "hosts" key, not "nodes"
-        hosts = cluster_config.get("hosts", {})
-        if hosts:
-            # Search for matching host config by hostname
-            for config_name, cfg in hosts.items():
-                if not isinstance(cfg, dict):
-                    continue
-                config_name_lower = config_name.lower().replace("-", "").replace("_", "")
-
-                # Direct hostname match
-                if hostname_lower in config_name_lower or config_name_lower in hostname_lower:
-                    _selfplay_enabled = cfg.get("selfplay_enabled", True)
-                    if not _selfplay_enabled:
-                        logger.info(
-                            f"[WorkDiscovery] Node {hostname} matched config {config_name}, "
-                            "selfplay_enabled=false - disabling direct selfplay"
-                        )
-                    return _selfplay_enabled
-
-                # Special case: MacBook hostname maps to mac-studio or local-mac config
-                if "macbook" in hostname_lower and config_name_lower in ("macstudio", "localmac"):
-                    _selfplay_enabled = cfg.get("selfplay_enabled", True)
-                    if not _selfplay_enabled:
-                        logger.info(
-                            f"[WorkDiscovery] MacBook {hostname} matched {config_name} config, "
-                            "selfplay_enabled=false - disabling direct selfplay"
-                        )
-                    return _selfplay_enabled
-
-        # Also check elo_sync.coordinator as an indicator
-        elo_sync = cluster_config.get("elo_sync", {})
-        coordinator_name = elo_sync.get("coordinator", "")
-        if coordinator_name:
-            coord_lower = coordinator_name.lower().replace("-", "").replace("_", "")
-            if coord_lower in hostname_lower or hostname_lower in coord_lower:
-                logger.info(
-                    f"[WorkDiscovery] Node {hostname} matches elo_sync coordinator {coordinator_name}, "
-                    "disabling direct selfplay"
-                )
-                _selfplay_enabled = False
-                return False
-
-        return True
-
-    except (AttributeError, KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as e:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError) as e:
         logger.debug(f"[WorkDiscovery] Error checking selfplay_enabled config: {e}")
         return True
 
@@ -133,7 +79,7 @@ _node_selfplay_cache: dict[str, bool] = {}
 
 
 def _is_selfplay_enabled_for_node_id(node_id: str) -> bool:
-    """Check if selfplay is enabled for a specific node_id via YAML config.
+    """Check if selfplay is enabled for a specific node_id via workload policy.
 
     Mar 2026: Used by leader's manage_cluster_jobs() to skip dispatching
     selfplay to nodes with selfplay_enabled=false (e.g. coordinator).
@@ -144,39 +90,16 @@ def _is_selfplay_enabled_for_node_id(node_id: str) -> bool:
         return _node_selfplay_cache[node_id]
 
     try:
-        config_paths = [
-            Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml",
-            Path.cwd() / "config" / "distributed_hosts.yaml",
-        ]
-
-        for config_path in config_paths:
-            if config_path.exists():
-                try:
-                    with open(config_path) as f:
-                        cluster_config = yaml.safe_load(f)
-                    break
-                except (OSError, yaml.YAMLError):
-                    continue
-        else:
+        policy = get_node_workload_policy(node_id)
+        if not policy.resolved:
             _node_selfplay_cache[node_id] = True
             return True
-
-        hosts = cluster_config.get("hosts", {})
-        node_id_lower = node_id.lower().replace("-", "").replace("_", "")
-        for config_name, cfg in hosts.items():
-            if not isinstance(cfg, dict):
-                continue
-            config_name_lower = config_name.lower().replace("-", "").replace("_", "")
-            if node_id_lower == config_name_lower or node_id_lower in config_name_lower or config_name_lower in node_id_lower:
-                result = cfg.get("selfplay_enabled", True)
-                _node_selfplay_cache[node_id] = result
-                if not result:
-                    logger.info(f"[WorkDiscovery] Node {node_id} has selfplay_enabled=false")
-                return result
-
-        _node_selfplay_cache[node_id] = True
-        return True
-    except (AttributeError, KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as e:
+        result = policy.selfplay_enabled
+        _node_selfplay_cache[node_id] = result
+        if not result:
+            logger.info("[WorkDiscovery] Node %s has selfplay disabled by workload policy", node_id)
+        return result
+    except (AttributeError, KeyError, OSError, TypeError, ValueError) as e:
         logger.debug(f"[WorkDiscovery] Error checking selfplay_enabled for {node_id}: {e}")
         _node_selfplay_cache[node_id] = True
         return True
@@ -205,7 +128,7 @@ _training_enabled: bool | None = None
 
 
 def _is_training_enabled_for_node() -> bool:
-    """Check if training is enabled for this node via YAML config.
+    """Check if training is enabled for this node via workload policy.
 
     This prevents coordinator nodes (mac-studio, local-mac) from running
     training locally. Training should only run on GPU cluster nodes.
@@ -221,59 +144,19 @@ def _is_training_enabled_for_node() -> bool:
 
     try:
         hostname = socket.gethostname()
-        hostname_lower = hostname.lower().replace("-", "").replace("_", "")
-
-        # Try to find cluster config
-        config_paths = [
-            Path(__file__).parent.parent.parent.parent / "config" / "distributed_hosts.yaml",
-            Path.cwd() / "config" / "distributed_hosts.yaml",
-            Path("/Users/armand/Development/RingRift/ai-service/config/distributed_hosts.yaml"),
-        ]
-
-        cluster_config = None
-        for config_path in config_paths:
-            if config_path.exists():
-                try:
-                    with open(config_path) as f:
-                        cluster_config = yaml.safe_load(f)
-                    break
-                except (OSError, IOError, yaml.YAMLError):
-                    continue
-
-        if not cluster_config:
+        policy = get_local_node_workload_policy(hostname=hostname)
+        if not policy.resolved:
             return True
+        _training_enabled = policy.training_enabled
+        if not _training_enabled:
+            logger.info(
+                "[WorkDiscovery] Node %s matched workload policy %s, training disabled",
+                hostname,
+                policy.matched_name or policy.role,
+            )
+        return _training_enabled
 
-        # YAML uses "hosts" key
-        hosts = cluster_config.get("hosts", {})
-        if hosts:
-            for config_name, cfg in hosts.items():
-                if not isinstance(cfg, dict):
-                    continue
-                config_name_lower = config_name.lower().replace("-", "").replace("_", "")
-
-                # Direct hostname match
-                if hostname_lower in config_name_lower or config_name_lower in hostname_lower:
-                    _training_enabled = cfg.get("training_enabled", True)
-                    if not _training_enabled:
-                        logger.info(
-                            f"[WorkDiscovery] Node {hostname} matched config {config_name}, "
-                            "training_enabled=false - skipping training work"
-                        )
-                    return _training_enabled
-
-                # MacBook hostname maps to mac-studio or local-mac config
-                if "macbook" in hostname_lower and config_name_lower in ("macstudio", "localmac"):
-                    _training_enabled = cfg.get("training_enabled", True)
-                    if not _training_enabled:
-                        logger.info(
-                            f"[WorkDiscovery] MacBook {hostname} matched {config_name} config, "
-                            "training_enabled=false - skipping training work"
-                        )
-                    return _training_enabled
-
-        return True
-
-    except (AttributeError, KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as e:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError) as e:
         logger.debug(f"[WorkDiscovery] Error checking training_enabled config: {e}")
         return True
 

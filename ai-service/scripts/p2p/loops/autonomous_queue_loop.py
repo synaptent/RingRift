@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -247,7 +248,7 @@ class AutonomousQueuePopulationLoop(BaseLoop):
         return len(self._local_queue)
 
     def _is_selfplay_enabled_for_node(self) -> bool:
-        """Check if selfplay is enabled for this node via YAML config.
+        """Check if selfplay is enabled for this node via workload policy.
 
         Jan 5, 2026: Added to prevent coordinator nodes (mac-studio) from
         spawning local selfplay work when selfplay_enabled: false in config.
@@ -264,65 +265,24 @@ class AutonomousQueuePopulationLoop(BaseLoop):
         self._selfplay_enabled_checked = True
 
         try:
-            import socket
+            from app.config.node_roles import get_local_node_workload_policy
 
-            # Try to get node config from orchestrator
             node_id = getattr(self._orchestrator, "node_id", None)
             hostname = socket.gethostname()
             if not node_id:
                 self._selfplay_enabled = True
                 return True  # Can't determine node identity, preserve legacy allow-default
 
-            # Check for cached cluster config
-            cluster_config = getattr(self._orchestrator, "_cluster_config", None)
-            hostname_lower = hostname.lower().replace("-", "").replace("_", "")
-            if cluster_config:
-                # YAML uses "hosts" key, not "nodes"
-                hosts = cluster_config.get("hosts", {})
-                if hosts:
-                    # First try direct lookup by node_id
-                    node_cfg = hosts.get(node_id, {})
-
-                    # If not found, search by hostname or role match
-                    if not node_cfg:
-                        for config_name, cfg in hosts.items():
-                            if not isinstance(cfg, dict):
-                                continue
-                            config_name_lower = config_name.lower().replace("-", "").replace("_", "")
-                            # Match if hostname contains config name or vice versa
-                            if hostname_lower in config_name_lower or config_name_lower in hostname_lower:
-                                node_cfg = cfg
-                                logger.debug(
-                                    f"[AutonomousQueue] Matched hostname {hostname} to config {config_name}"
-                                )
-                                break
-                            # Special case: MacBook hostname maps to mac-studio or local-mac config
-                            if "macbook" in hostname_lower and config_name_lower in ("macstudio", "localmac"):
-                                node_cfg = cfg
-                                logger.info(
-                                    f"[AutonomousQueue] Matched MacBook hostname {hostname} to {config_name} config"
-                                )
-                                break
-
-                    if node_cfg:
-                        self._selfplay_enabled = node_cfg.get("selfplay_enabled", True)
-                        if not self._selfplay_enabled:
-                            logger.info(
-                                f"[AutonomousQueue] Node {node_id} (hostname={hostname}) has selfplay_enabled=false, "
-                                "disabling autonomous queue population"
-                            )
-                        return self._selfplay_enabled
-
-                # Also check elo_sync.coordinator as an indicator
-                elo_sync = cluster_config.get("elo_sync", {})
-                coordinator_name = elo_sync.get("coordinator", "")
-                if coordinator_name and coordinator_name.lower().replace("-", "") in hostname_lower.replace("-", ""):
+            policy = get_local_node_workload_policy(node_id=node_id, hostname=hostname)
+            if policy.resolved:
+                self._selfplay_enabled = policy.selfplay_enabled
+                if not self._selfplay_enabled:
                     logger.info(
-                        f"[AutonomousQueue] Node {node_id} matches elo_sync coordinator {coordinator_name}, "
-                        "disabling autonomous queue population"
+                        "[AutonomousQueue] Node %s matched workload policy %s, disabling autonomous queue population",
+                        node_id,
+                        policy.matched_name or policy.role,
                     )
-                    self._selfplay_enabled = False
-                    return False
+                return self._selfplay_enabled
 
             # Fallback: check role - coordinators shouldn't run selfplay
             role = getattr(self._orchestrator, "_role", None)
