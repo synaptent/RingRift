@@ -430,6 +430,31 @@ class TestEloTrendComputation:
         # Should be close to zero
         assert abs(signals.elo_trend) < 10  # Less than 10 Elo/hour
 
+    def test_elo_trend_ignores_none_entries(self, computer):
+        """Trend calculation should tolerate sparse history before first Elo."""
+        now = datetime.now()
+        computer._config_states["test"] = ConfigTrainingState(
+            config_key="test",
+            model_count=1,
+            elo_history=[
+                (now - timedelta(minutes=30), None),  # type: ignore[list-item]
+                (now - timedelta(minutes=20), None),  # type: ignore[list-item]
+                (now - timedelta(minutes=10), 1500.0),
+                (now, 1510.0),
+            ],
+        )
+
+        signals = computer.compute_signals(
+            current_games=100,
+            current_elo=None,  # type: ignore[arg-type]
+            config_key="test",
+            model_count=1,
+            force_recompute=True,
+        )
+
+        assert signals.current_elo == 1510.0
+        assert signals.elo_trend > 0
+
 
 class TestSingletonPattern:
     """Test singleton pattern for global signal computer."""

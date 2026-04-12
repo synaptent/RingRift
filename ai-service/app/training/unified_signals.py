@@ -476,14 +476,20 @@ class UnifiedSignalComputer:
             )
 
             # Elo tracking
-            signals.current_elo = current_elo
-            elo_history.append((now, current_elo))
+            if current_elo is not None:
+                signals.current_elo = current_elo
+                elo_history.append((now, current_elo))
+            else:
+                for _timestamp, historical_elo in reversed(elo_history):
+                    if historical_elo is not None:
+                        signals.current_elo = float(historical_elo)
+                        break
 
             # Keep last hour, max 100 points
             cutoff = now - timedelta(hours=1)
             elo_history[:] = [
                 (t, e) for t, e in elo_history
-                if t > cutoff
+                if t > cutoff and e is not None
             ][-100:]
 
             if len(elo_history) >= 2:
@@ -537,13 +543,14 @@ class UnifiedSignalComputer:
 
         Returns Elo change per hour (positive = improving).
         """
-        if len(elo_history) < 2:
+        valid_history = [(t, float(e)) for t, e in elo_history if e is not None]
+        if len(valid_history) < 2:
             return 0.0
 
         # Convert to relative seconds and Elo values
-        base_time = elo_history[0][0]
-        times = [(t - base_time).total_seconds() for t, _ in elo_history]
-        elos = [e for _, e in elo_history]
+        base_time = valid_history[0][0]
+        times = [(t - base_time).total_seconds() for t, _ in valid_history]
+        elos = [e for _, e in valid_history]
 
         n = len(times)
         sum_t = sum(times)

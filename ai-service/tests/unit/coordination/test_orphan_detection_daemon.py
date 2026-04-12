@@ -228,16 +228,21 @@ class TestOrphanDetectionDaemon:
             ),
         ]
 
-        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+        mock_router = MagicMock()
+        mock_router.publish = AsyncMock()
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
             await daemon._emit_detection_event(orphans)
 
-            mock_publish.assert_awaited_once()
-            payload = mock_publish.await_args.kwargs["payload"]
+            mock_router.publish.assert_awaited_once()
+            payload = mock_router.publish.await_args.kwargs["payload"]
 
             assert payload["orphan_count"] == 2
             assert payload["total_games"] == 150
             assert payload["total_bytes"] == 1500000
-            assert mock_publish.await_args.kwargs["event_type"] == DataEventType.ORPHAN_GAMES_DETECTED
+            assert (
+                mock_router.publish.await_args.kwargs["event_type"]
+                == DataEventType.ORPHAN_GAMES_DETECTED.value
+            )
 
     @pytest.mark.asyncio
     async def test_emit_registration_event(self, daemon):
@@ -255,15 +260,20 @@ class TestOrphanDetectionDaemon:
             ),
         ]
 
-        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+        mock_router = MagicMock()
+        mock_router.publish = AsyncMock()
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
             await daemon._emit_registration_event(registered)
 
-            mock_publish.assert_awaited_once()
-            payload = mock_publish.await_args.kwargs["payload"]
+            mock_router.publish.assert_awaited_once()
+            payload = mock_router.publish.await_args.kwargs["payload"]
 
             assert payload["registered_count"] == 1
             assert payload["total_games"] == 100
-            assert mock_publish.await_args.kwargs["event_type"] == DataEventType.ORPHAN_GAMES_REGISTERED
+            assert (
+                mock_router.publish.await_args.kwargs["event_type"]
+                == DataEventType.ORPHAN_GAMES_REGISTERED.value
+            )
 
     @pytest.mark.asyncio
     async def test_register_orphans(self, daemon):

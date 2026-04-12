@@ -31,6 +31,7 @@ sys.path.insert(
 )
 
 # Import after path is set
+from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES
 from app.models import BoardType
 from scripts.evaluate_ai_models import (
     AI_TYPE_BASELINE_HEURISTIC,
@@ -164,6 +165,7 @@ class TestCreateAI:
             ai = create_ai(AI_TYPE_CMAES_HEURISTIC, player_num=1, board_type=BoardType.SQUARE8)
             assert ai is not None
             assert ai.config.heuristic_profile_id == "cmaes_optimized"
+            assert "WEIGHT_STACK_CONTROL" in HEURISTIC_WEIGHT_PROFILES["cmaes_optimized"]
 
 
 class TestGameResult:

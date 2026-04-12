@@ -248,6 +248,15 @@ def load_cmaes_weights(path: str = "heuristic_weights_optimized.json") -> dict[s
     raise FileNotFoundError(f"Could not find CMA-ES weights file. Tried: {paths_to_try}")
 
 
+def _canonicalize_heuristic_weights(weights: dict[str, float]) -> dict[str, float]:
+    """Merge partial heuristic weights onto the canonical balanced baseline."""
+    canonical_weights = dict(BASE_V1_BALANCED_WEIGHTS)
+    canonical_weights.update(
+        {str(key): float(value) for key, value in weights.items()}
+    )
+    return canonical_weights
+
+
 def _evaluation_heuristic_speed_knobs(
     board_type: BoardType,
 ) -> tuple[str, int | None]:
@@ -365,7 +374,7 @@ def create_ai(
     if ai_type == AI_TYPE_CMAES_HEURISTIC:
         # Load and register CMA-ES optimized weights
         weights_path = cmaes_path or "heuristic_weights_optimized.json"
-        cmaes_weights = load_cmaes_weights(weights_path)
+        cmaes_weights = _canonicalize_heuristic_weights(load_cmaes_weights(weights_path))
 
         profile_id = "cmaes_optimized"
         HEURISTIC_WEIGHT_PROFILES[profile_id] = cmaes_weights
