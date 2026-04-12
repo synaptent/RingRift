@@ -2175,12 +2175,11 @@ class ClusterAwareDataCatalog:
 
         # Trigger sync via event
         try:
-            from app.coordination.data_events import DataEventType
-            from app.coordination.event_router import get_event_router
+            from app.coordination.event_router import DataEventType, get_event_router
 
             router = get_event_router()
             await router.emit(
-                DataEventType.DATA_SYNC_REQUESTED,
+                DataEventType.SYNC_REQUEST,
                 {
                     "config_key": config_key,
                     "source_node": source.node_id,

@@ -77,7 +77,7 @@ class TestNodeCircuitBreaker:
 
     def test_recovery_timeout_triggers_half_open(self):
         """Test that circuit transitions to half-open after recovery timeout."""
-        config = NodeCircuitConfig(failure_threshold=1, recovery_timeout=0.01)
+        config = NodeCircuitConfig(failure_threshold=1, recovery_timeout=0.05)
         breaker = NodeCircuitBreaker(config=config)
 
         breaker.record_failure("test-node")

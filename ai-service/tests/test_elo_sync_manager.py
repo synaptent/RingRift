@@ -55,6 +55,7 @@ def elo_db(temp_db_dir):
             game_id TEXT UNIQUE,
             metadata TEXT,
             worker TEXT,
+            harness_type TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -138,7 +139,6 @@ class TestNodeInfo:
             ssh_port=22,
             http_url="http://lambda-h100:8080",
             is_coordinator=True,
-            vast_instance_id="123456",
             vast_ssh_host="ssh7.vast.ai",
             vast_ssh_port=14398,
         )
@@ -315,28 +315,28 @@ class TestSyncCallbacks:
         """Test sync complete callback is called."""
         callback_called = []
 
-        def on_complete(node_name, method, matches):
-            callback_called.append((node_name, method, matches))
+        def on_complete(node_name, method, state):
+            callback_called.append((node_name, method, state))
 
         sync_manager.on_sync_complete(on_complete)
-        await sync_manager._notify_sync_complete("test-node", "tailscale", 50)
+        await sync_manager._notify_sync_complete("test-node", "tailscale")
 
         assert len(callback_called) == 1
-        assert callback_called[0] == ("test-node", "tailscale", 50)
+        assert callback_called[0] == ("test-node", "tailscale", sync_manager._db_state)
 
     @pytest.mark.asyncio
     async def test_sync_failed_callback(self, sync_manager):
         """Test sync failed callback is called."""
         callback_called = []
 
-        def on_failed(errors):
-            callback_called.append(errors)
+        def on_failed(node_name, reason, state):
+            callback_called.append((node_name, reason, state))
 
         sync_manager.on_sync_failed(on_failed)
-        await sync_manager._notify_sync_failed(["Error 1", "Error 2"])
+        await sync_manager._notify_sync_failed("test-node", "Error 1")
 
         assert len(callback_called) == 1
-        assert callback_called[0] == ["Error 1", "Error 2"]
+        assert callback_called[0] == ("test-node", "Error 1", sync_manager._db_state)
 
 
 class TestGetStatus:
@@ -371,8 +371,8 @@ class TestVastInstances:
     """Tests for Vast.ai instance configuration."""
 
     def test_vast_instances_defined(self):
-        """Test Vast.ai instances are properly defined."""
-        assert len(EloSyncManager.VAST_INSTANCES) > 0
+        """Static Vast instance mapping remains optional under dynamic discovery."""
+        assert isinstance(EloSyncManager.VAST_INSTANCES, dict)
 
         for _name, config in EloSyncManager.VAST_INSTANCES.items():
             assert "host" in config
@@ -380,17 +380,15 @@ class TestVastInstances:
             assert isinstance(config["port"], int)
 
     def test_vast_instance_node_creation(self):
-        """Test creating NodeInfo from Vast.ai instance."""
-        vast_config = EloSyncManager.VAST_INSTANCES.get("4xRTX5090")
-
-        if vast_config:
-            node = NodeInfo(
-                name="4xRTX5090",
-                vast_ssh_host=vast_config["host"],
-                vast_ssh_port=vast_config["port"],
-            )
-            assert node.vast_ssh_host == vast_config["host"]
-            assert node.vast_ssh_port == vast_config["port"]
+        """Test creating NodeInfo from a Vast-style SSH config."""
+        vast_config = {"host": "ssh7.vast.ai", "port": 14398}
+        node = NodeInfo(
+            name="4xRTX5090",
+            vast_ssh_host=vast_config["host"],
+            vast_ssh_port=vast_config["port"],
+        )
+        assert node.vast_ssh_host == vast_config["host"]
+        assert node.vast_ssh_port == vast_config["port"]
 
 
 class TestDatabaseMerge:

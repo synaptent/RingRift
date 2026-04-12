@@ -670,8 +670,10 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         self._status = CoordinatorStatus.STARTING
         self._stats.started_at = time.time()
 
-        # Subscribe to events
-        self._subscribe_all_events()
+        # Subscribe to events via the legacy hook name so older tests and
+        # subclasses can still intercept start()/stop() without overriding the
+        # newer internal helper names.
+        self._subscribe_to_events()
 
         # Hook for subclasses
         await self._on_start()
@@ -697,8 +699,8 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
 
-        # Unsubscribe from events
-        self._unsubscribe_all_events()
+        # Unsubscribe via the legacy hook name for backward compatibility.
+        self._unsubscribe_from_events()
 
         # Hook for subclasses
         await self._on_stop()
@@ -1082,6 +1084,15 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             logger.warning(f"[{self._name}] Event subscription failed: {e}")
             return False
 
+    def _subscribe_to_events(self) -> bool:
+        """Backward-compat alias for legacy coordinators/tests.
+
+        Older handlers and tests patch `_subscribe_to_events()` directly.
+        Keep that hook available and route it through the consolidated
+        subscription helper.
+        """
+        return self._subscribe_all_events()
+
     def _unsubscribe_all_events(self) -> None:
         """Unsubscribe from all events."""
         if not self._event_subscriptions:
@@ -1098,6 +1109,10 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         self._event_subscribed = False
         self._subscribed = False
         self._event_router = None
+
+    def _unsubscribe_from_events(self) -> None:
+        """Backward-compat alias for legacy coordinators/tests."""
+        self._unsubscribe_all_events()
 
     # =========================================================================
     # Event Deduplication

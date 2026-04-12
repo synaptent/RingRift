@@ -25,6 +25,7 @@ from app.coordination.daemon_manager import (
     DaemonManagerConfig,
     DaemonState,
     DaemonType,
+    RESTART_STATE_FILE,
 )
 
 
@@ -47,11 +48,14 @@ def manager_config():
 @pytest.fixture
 def manager(manager_config):
     """Create fresh DaemonManager for each test with no default factories."""
+    RESTART_STATE_FILE.unlink(missing_ok=True)
     DaemonManager.reset_instance()
     mgr = DaemonManager(manager_config)
     # Clear default factories to avoid loading heavy dependencies
     mgr._factories.clear()
     mgr._daemons.clear()
+    mgr._persisted_restart_counts.clear()
+    mgr._permanently_failed.clear()
     yield mgr
     # Cleanup - stop any running tasks
     mgr._running = False
@@ -60,6 +64,7 @@ def manager(manager_config):
     for info in list(mgr._daemons.values()):
         if info.task and not info.task.done():
             info.task.cancel()
+    RESTART_STATE_FILE.unlink(missing_ok=True)
     DaemonManager.reset_instance()
 
 
@@ -626,6 +631,7 @@ class TestHealthCheckTimeout:
         # Set instance with health_check method
         info = manager._daemons[DaemonType.MODEL_SYNC]
         info.instance = mock_daemon
+        info.startup_grace_period = 0.0
 
         await manager._check_health()
 
@@ -669,6 +675,8 @@ class TestHealthCheckTimeout:
         # Set instances with health_check methods
         manager._daemons[DaemonType.MODEL_SYNC].instance = mock_sync
         manager._daemons[DaemonType.EVENT_ROUTER].instance = mock_async
+        manager._daemons[DaemonType.MODEL_SYNC].startup_grace_period = 0.0
+        manager._daemons[DaemonType.EVENT_ROUTER].startup_grace_period = 0.0
 
         await manager._check_health()
 
@@ -1091,6 +1099,7 @@ class TestTaskLivenessVsHealthCheck:
         # Set instance with unhealthy health_check
         info = manager._daemons[DaemonType.MODEL_SYNC]
         info.instance = mock_daemon
+        info.startup_grace_period = 0.0
 
         # Run health check
         await manager._check_health()
@@ -1125,6 +1134,7 @@ class TestTaskLivenessVsHealthCheck:
         # Set instance with dict health_check
         info = manager._daemons[DaemonType.MODEL_SYNC]
         info.instance = mock_daemon
+        info.startup_grace_period = 0.0
 
         await manager._check_health()
 

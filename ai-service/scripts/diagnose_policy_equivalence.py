@@ -57,6 +57,7 @@ from app.utils.progress_reporter import ProgressReporter  # type: ignore
 DEFAULT_STATE_POOL = os.path.join("data", "eval_pools", "square8", "pool_v1.jsonl")
 DEFAULT_MAX_STATES = 300
 DEFAULT_OUTPUT_DIR = os.path.join("logs", "diagnostics")
+DETERMINISTIC_DIAGNOSTIC_SEED = 0
 
 
 @dataclass
@@ -222,7 +223,7 @@ def compare_moves_on_states(
             difficulty=5,
             think_time=0,
             randomness=0.0,
-            rngSeed=None,
+            rngSeed=DETERMINISTIC_DIAGNOSTIC_SEED,
             heuristic_profile_id=None,
         ),
     )
@@ -232,7 +233,7 @@ def compare_moves_on_states(
             difficulty=5,
             think_time=0,
             randomness=0.0,
-            rngSeed=None,
+            rngSeed=DETERMINISTIC_DIAGNOSTIC_SEED,
             heuristic_profile_id=None,
         ),
     )
@@ -264,8 +265,18 @@ def compare_moves_on_states(
         baseline_ai.player_number = current_player
         candidate_ai.player_number = current_player
 
-        baseline_move = baseline_ai.select_move(state)
-        candidate_move = candidate_ai.select_move(state)
+        if hasattr(state, "model_copy"):
+            baseline_state = state.model_copy(deep=True)
+            candidate_state = state.model_copy(deep=True)
+        elif hasattr(state, "copy"):
+            baseline_state = state.copy(deep=True)
+            candidate_state = state.copy(deep=True)
+        else:
+            baseline_state = state
+            candidate_state = state
+
+        baseline_move = baseline_ai.select_move(baseline_state)
+        candidate_move = candidate_ai.select_move(candidate_state)
 
         sig_baseline = _move_signature(baseline_move)
         sig_candidate = _move_signature(candidate_move)

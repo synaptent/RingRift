@@ -1113,7 +1113,7 @@ class TestAsyncClusterOperations:
     async def test_enforce_process_limits(self, daemon):
         """Test enforcing process limits."""
         # Mock SSH executor to prevent actual network calls
-        with patch("app.coordination.idle_resource_daemon.SSHExecutor", None):
+        with patch("app.coordination.idle_resource_spawn_mixin.SSHExecutor", None):
             # Should complete without error
             await daemon._enforce_process_limits()
 

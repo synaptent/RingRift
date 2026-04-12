@@ -58,9 +58,9 @@ def test_build_remote_tournament_command_includes_checkpoint_and_label() -> None
         wilson_confidence=0.95,
         worker_label="host1",
         nn_model_id=None,
+        require_neural_net=False,
     )
     assert "--output-checkpoint" in cmd
     assert "D1_vs_D2.checkpoint.json" in cmd
     assert "--worker-label" in cmd
     assert "host1" in cmd
-

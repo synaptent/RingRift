@@ -10,6 +10,7 @@ from app.models import (
     GamePhase,
     GameState,
     GameStatus,
+    Move,
     Player,
     Position,
     RingStack,
@@ -493,10 +494,13 @@ class TestMinimaxAISearchEquivalence(unittest.TestCase):
         ai_leg = MinimaxAI(player_number=1, config=config_leg)
 
         # Mock get_valid_moves to return predictable moves
-        mock_move1 = MagicMock()
-        mock_move1.type = "move_stack"
-        mock_move1.to = Position(x=4, y=4)
-        mock_move1.from_pos = Position(x=3, y=3)
+        mock_move1 = Move(
+            id="move-equivalence-1",
+            type="move_stack",
+            player=1,
+            from_pos=Position(x=3, y=3),
+            to=Position(x=4, y=4),
+        )
 
         with patch.object(
             ai_inc, "get_valid_moves", return_value=[mock_move1]
@@ -529,10 +533,13 @@ class TestMinimaxAISearchEquivalence(unittest.TestCase):
         ai = MinimaxAI(player_number=1, config=config)
         game_state = self._create_simple_game_state()
 
-        mock_move = MagicMock()
-        mock_move.type = "move_stack"
-        mock_move.to = Position(x=4, y=4)
-        mock_move.from_pos = Position(x=3, y=3)
+        mock_move = Move(
+            id="move-mutable-1",
+            type="move_stack",
+            player=1,
+            from_pos=Position(x=3, y=3),
+            to=Position(x=4, y=4),
+        )
 
         # Patch MutableGameState.from_immutable to track calls
         original_from_immutable = MutableGameState.from_immutable

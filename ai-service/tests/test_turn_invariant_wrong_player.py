@@ -12,7 +12,7 @@ from app.training.env import RingRiftEnv
     reason="Test requires phase/player invariant enforcement to be enabled",
 )
 def test_apply_move_rejects_wrong_player():
-    """Ensure apply_move enforces move.player == current_player."""
+    """Ensure the strict non-trace path enforces move.player == current_player."""
     env = RingRiftEnv(board_type="square8", num_players=2)
     state = env.reset()
     assert state.current_player == 1
@@ -28,7 +28,7 @@ def test_apply_move_rejects_wrong_player():
     )
 
     try:
-        GameEngine.apply_move(state, bad_move, trace_mode=True)
+        GameEngine.apply_move(state, bad_move)
     except ValueError as exc:
         assert "current player" in str(exc)
     else:

@@ -445,11 +445,15 @@ class TestAutoRestart:
     @pytest.mark.asyncio
     async def test_restart_count_increments(self, manager, failing_daemon):
         """Restart count should increment on failure."""
-        config = DaemonManagerConfig(
-            auto_restart_failed=True,
-            max_restart_attempts=2,
-        )
-        manager = DaemonManager(config)
+        manager.config.auto_restart_failed = True
+        manager.config.max_restart_attempts = 2
+        manager._coordination_wired = True
+        manager._factories.clear()
+        manager._daemons.clear()
+        manager._persisted_restart_counts.clear()
+        manager._restart_timestamps.clear()
+        manager._permanently_failed.clear()
+        manager._degraded_daemons.clear()
         manager.register_factory(
             DaemonType.SYNC_COORDINATOR,
             failing_daemon,

@@ -66,6 +66,24 @@ class EloManagerSyncState(DatabaseSyncState):
     pending_matches: list[dict] = field(default_factory=list)
     sync_errors: list[str] = field(default_factory=list)
 
+    @property
+    def local_match_count(self) -> int:
+        """Backward-compatible alias for local_record_count."""
+        return self.local_record_count
+
+    @local_match_count.setter
+    def local_match_count(self, value: int) -> None:
+        self.local_record_count = value
+
+    @property
+    def last_sync_hash(self) -> str:
+        """Backward-compatible alias for local_hash."""
+        return self.local_hash
+
+    @last_sync_hash.setter
+    def last_sync_hash(self, value: str) -> None:
+        self.local_hash = value
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize state to dictionary."""
         base = super().to_dict()
@@ -189,6 +207,14 @@ class EloSyncManager(DatabaseSyncManager):
                 json.dump(self._elo_state.to_dict(), f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save Elo sync state: {e}")
+
+    def _load_state(self) -> None:
+        """Backward-compatible state loader for older callers/tests."""
+        self._load_elo_state()
+
+    def _save_state(self) -> None:
+        """Backward-compatible state saver for older callers/tests."""
+        self._save_elo_state()
 
     def _decay_failed_nodes(self) -> int:
         """Remove nodes from failed_nodes list after TTL expires.

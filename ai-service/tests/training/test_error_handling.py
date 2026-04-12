@@ -118,6 +118,7 @@ class TestRetryWithBackoff:
             max_retries=2,
             base_delay=0.05,
             exponential_base=2.0,
+            jitter=False,
         )
         def timed_func():
             call_times.append(time.time())

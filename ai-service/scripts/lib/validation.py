@@ -276,6 +276,8 @@ def validate_model_file(file_path: Path) -> ValidationResult:
         return result
 
     try:
+        import torch
+
         from app.utils.torch_utils import safe_load_checkpoint
 
         # Load checkpoint

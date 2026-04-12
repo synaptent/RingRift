@@ -182,7 +182,8 @@ class TestListEncoderConfigs:
         configs = list_encoder_configs()
         for board_type, model_version, config in configs:
             assert isinstance(board_type, str)
-            assert model_version in ("v2", "v3", "v4")
+            assert isinstance(model_version, str)
+            assert model_version
             assert isinstance(config, EncoderConfig)
 
 

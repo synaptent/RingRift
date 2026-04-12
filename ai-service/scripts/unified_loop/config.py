@@ -26,7 +26,7 @@ See ai-service/docs/CONSOLIDATION_ROADMAP.md for consolidation status.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -482,6 +482,99 @@ class ConfigState:
     consecutive_high_win_rate: int = 0  # Count of evals with win_rate > 0.7
     # Consolidated feedback state (2025-12)
     feedback: FeedbackState = field(default_factory=FeedbackState)
+
+
+@dataclass
+class UnifiedLoopState:
+    """Backward-compatible unified loop runtime state."""
+
+    started_at: str = ""
+    hosts: dict[str, HostState] = field(default_factory=dict)
+    configs: dict[str, ConfigState] = field(default_factory=dict)
+    curriculum_weights: dict[str, float] = field(default_factory=dict)
+    training_in_progress: bool = False
+    training_config: str = ""
+    training_started_at: float = 0.0
+    total_data_syncs: int = 0
+    total_training_runs: int = 0
+    total_evaluations: int = 0
+    total_promotions: int = 0
+    total_games_pending: int = 0
+    current_temperature_preset: str = "default"
+    regression_detected: bool = False
+    last_curriculum_rebalance: float = 0.0
+    last_calibration_time: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the state for tests and legacy checkpoint flows."""
+        return {
+            "started_at": self.started_at,
+            "hosts": {name: asdict(host) for name, host in self.hosts.items()},
+            "configs": {name: asdict(config) for name, config in self.configs.items()},
+            "curriculum_weights": dict(self.curriculum_weights),
+            "training_in_progress": self.training_in_progress,
+            "training_config": self.training_config,
+            "training_started_at": self.training_started_at,
+            "total_data_syncs": self.total_data_syncs,
+            "total_training_runs": self.total_training_runs,
+            "total_evaluations": self.total_evaluations,
+            "total_promotions": self.total_promotions,
+            "total_games_pending": self.total_games_pending,
+            "current_temperature_preset": self.current_temperature_preset,
+            "regression_detected": self.regression_detected,
+            "last_curriculum_rebalance": self.last_curriculum_rebalance,
+            "last_calibration_time": self.last_calibration_time,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "UnifiedLoopState":
+        """Restore the state from the serialized representation."""
+        state = cls()
+        state.started_at = data.get("started_at", "")
+        state.curriculum_weights = dict(data.get("curriculum_weights", {}))
+        state.training_in_progress = bool(data.get("training_in_progress", False))
+        state.training_config = data.get("training_config", "")
+        state.training_started_at = float(data.get("training_started_at", 0.0))
+        state.total_data_syncs = int(data.get("total_data_syncs", 0))
+        state.total_training_runs = int(data.get("total_training_runs", 0))
+        state.total_evaluations = int(data.get("total_evaluations", 0))
+        state.total_promotions = int(data.get("total_promotions", 0))
+        state.total_games_pending = int(data.get("total_games_pending", 0))
+        state.current_temperature_preset = data.get("current_temperature_preset", "default")
+        state.regression_detected = bool(data.get("regression_detected", False))
+        state.last_curriculum_rebalance = float(data.get("last_curriculum_rebalance", 0.0))
+        state.last_calibration_time = float(data.get("last_calibration_time", 0.0))
+
+        for host_name, host_data in data.get("hosts", {}).items():
+            state.hosts[host_name] = HostState(**host_data)
+        for config_key, config_data in data.get("configs", {}).items():
+            config_payload = dict(config_data)
+            feedback_data = dict(config_payload.pop("feedback", {}))
+            config_payload["feedback"] = FeedbackState(**feedback_data)
+            state.configs[config_key] = ConfigState(**config_payload)
+        return state
+
+
+@dataclass
+class ConfigPriorityQueue:
+    """Minimal priority queue retained for unified-loop compatibility."""
+
+    _trained_model_counts: dict[str, int] = field(default_factory=dict)
+
+    def _update_trained_model_counts(self) -> None:
+        """Legacy hook retained for training scheduler compatibility."""
+        return None
+
+    def get_prioritized_configs(
+        self, configs: dict[str, ConfigState]
+    ) -> list[tuple[str, float]]:
+        """Return configs ordered by training need."""
+        prioritized: list[tuple[str, float]] = []
+        for config_key, config_state in configs.items():
+            priority = float(config_state.games_since_training)
+            priority += max(0.0, config_state.training_weight - 1.0) * 100.0
+            prioritized.append((config_key, priority))
+        return sorted(prioritized, key=lambda item: (-item[1], item[0]))
 
 
 # =============================================================================

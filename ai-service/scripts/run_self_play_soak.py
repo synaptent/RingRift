@@ -3171,7 +3171,11 @@ def _has_anomalies(records: list[GameRecord]) -> bool:
         if not reason.startswith("status:"):
             return False
         # status:completed or status:completed:<victory_type> are normal.
-        return not reason.startswith("status:completed")
+        # Legacy fixtures also use status:finished to mean a normal completion.
+        return not (
+            reason.startswith("status:completed")
+            or reason == "status:finished"
+        )
 
     for rec in records:
         if getattr(rec, "db_record_error", None):

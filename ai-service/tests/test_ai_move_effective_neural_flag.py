@@ -116,7 +116,7 @@ def test_ai_move_use_neural_net_reflects_effective_mcts(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         main_mod,
         "_create_ai_instance",
-        lambda _ai_type, _player_number, _config: DummyAI(neural_net=None),
+        lambda _ai_type, _player_number, _config, board_type=None: DummyAI(neural_net=None),
     )
     response = client.post("/ai/move", json=payload)
     assert response.status_code == 200, response.text
@@ -125,7 +125,7 @@ def test_ai_move_use_neural_net_reflects_effective_mcts(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         main_mod,
         "_create_ai_instance",
-        lambda _ai_type, _player_number, _config: DummyAI(neural_net=object()),
+        lambda _ai_type, _player_number, _config, board_type=None: DummyAI(neural_net=object()),
     )
     response = client.post("/ai/move", json=payload)
     assert response.status_code == 200, response.text
@@ -172,7 +172,7 @@ def test_ai_move_use_neural_net_reflects_effective_minimax_nnue(monkeypatch: pyt
     monkeypatch.setattr(
         main_mod,
         "_create_ai_instance",
-        lambda _ai_type, _player_number, _config: DummyAI(use_nnue=False),
+        lambda _ai_type, _player_number, _config, board_type=None: DummyAI(use_nnue=False),
     )
     response = client.post("/ai/move", json=payload)
     assert response.status_code == 200, response.text
@@ -181,9 +181,8 @@ def test_ai_move_use_neural_net_reflects_effective_minimax_nnue(monkeypatch: pyt
     monkeypatch.setattr(
         main_mod,
         "_create_ai_instance",
-        lambda _ai_type, _player_number, _config: DummyAI(use_nnue=True),
+        lambda _ai_type, _player_number, _config, board_type=None: DummyAI(use_nnue=True),
     )
     response = client.post("/ai/move", json=payload)
     assert response.status_code == 200, response.text
     assert response.json().get("use_neural_net") is True
-

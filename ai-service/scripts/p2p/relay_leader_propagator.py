@@ -431,11 +431,10 @@ class RelayLeaderPropagatorMixin:
             reason: Why the leader was adopted
         """
         try:
-            from app.distributed.data_events import DataEventType
             from app.coordination.event_emission_helpers import safe_emit_event
 
             safe_emit_event(
-                DataEventType.P2P_LEADER_CHANGED,
+                "p2p_leader_changed",
                 {
                     "old_leader": getattr(self, "_previous_leader_id", None),
                     "new_leader": claim.leader_id,

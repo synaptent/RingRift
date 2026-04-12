@@ -327,10 +327,9 @@ class RelayCommandExecutionMixin(P2PMixinBase):
 
         try:
             from app.coordination.event_emission_helpers import safe_emit_event
-            from app.distributed.data_events import DataEventType
 
             safe_emit_event(
-                DataEventType.STABILITY_ALERT,
+                "stability_alert",
                 {
                     "symptom": symptom_str,
                     "confidence": confidence,

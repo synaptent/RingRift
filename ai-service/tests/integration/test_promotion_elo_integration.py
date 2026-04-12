@@ -31,6 +31,31 @@ from app.training.promotion_controller import (
 )
 
 
+def _attach_multi_harness_gate(
+    mock_elo: MagicMock,
+    *,
+    model_id: str,
+    board_type: str = "square8",
+    num_players: int = 2,
+    harnesses: list[str] | None = None,
+) -> None:
+    """Attach minimal multi-harness query support to a mocked Elo service."""
+    supported_harnesses = harnesses or ["gauntlet", "arena"]
+
+    class _MockConnection:
+        def execute(self, _query: str, params: tuple[str, str, str, int]):
+            query_model_id, _other_model_id, query_board_type, query_num_players = params
+            if (
+                query_model_id == model_id
+                and query_board_type == board_type
+                and query_num_players == num_players
+            ):
+                return [(harness,) for harness in supported_harnesses]
+            return []
+
+    mock_elo._get_connection.return_value = _MockConnection()
+
+
 class TestPromotionWithEloIntegration:
     """Test PromotionController with Elo data integration."""
 
@@ -114,14 +139,15 @@ class TestPromotionWithEloIntegration:
         # Mock rating for improved model
         mock_rating = MagicMock()
         mock_rating.rating = 1560.0
-        mock_rating.games_played = 80
-        mock_rating.win_rate = 0.58
+        mock_rating.games_played = 200
+        mock_rating.win_rate = 0.60
 
         # Mock baseline rating
         mock_baseline = MagicMock()
         mock_baseline.rating = 1500.0
 
         mock_elo.get_rating.side_effect = [mock_rating, mock_baseline]
+        _attach_multi_harness_gate(mock_elo, model_id="model_improved")
 
         controller = PromotionController(
             criteria=PromotionCriteria(min_elo_improvement=25.0, min_games_played=50),
@@ -386,11 +412,12 @@ class TestMetricsEmission:
             mock_elo = MagicMock()
             mock_rating = MagicMock()
             mock_rating.rating = 1550
-            mock_rating.games_played = 100
-            mock_rating.win_rate = 0.55
+            mock_rating.games_played = 200
+            mock_rating.win_rate = 0.60
             mock_baseline = MagicMock()
             mock_baseline.rating = 1500
             mock_elo.get_rating.side_effect = [mock_rating, mock_baseline]
+            _attach_multi_harness_gate(mock_elo, model_id="test_model")
 
             controller = PromotionController(elo_service=mock_elo)
             controller.evaluate_promotion(
@@ -447,8 +474,8 @@ class TestFullPromotionWorkflow:
         mock_elo = MagicMock()
         mock_rating = MagicMock()
         mock_rating.rating = 1560
-        mock_rating.games_played = 100
-        mock_rating.win_rate = 0.58
+        mock_rating.games_played = 200
+        mock_rating.win_rate = 0.60
         mock_baseline = MagicMock()
         mock_baseline.rating = 1500
         mock_elo.get_rating.side_effect = [mock_rating, mock_baseline]

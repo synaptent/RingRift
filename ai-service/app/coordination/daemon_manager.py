@@ -1221,10 +1221,10 @@ class DaemonManager(DaemonManagerLifecycleMixin, SingletonMixin["DaemonManager"]
                 "fully_ready": critical_ready == len(critical_types),
             }
 
-            # Check if ALL_CRITICAL_DAEMONS_READY event type exists
-            if hasattr(DataEventType, "ALL_CRITICAL_DAEMONS_READY"):
+            all_critical_ready_event = getattr(DataEventType, "ALL_CRITICAL_DAEMONS_READY", None)
+            if all_critical_ready_event is not None:
                 await publish(
-                    DataEventType.ALL_CRITICAL_DAEMONS_READY.value,
+                    all_critical_ready_event.value,
                     event_data,
                     source="DaemonManager",
                 )

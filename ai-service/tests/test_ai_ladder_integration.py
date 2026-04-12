@@ -118,9 +118,10 @@ def test_ai_move_uses_ladder_config_overrides(monkeypatch) -> None:
 
     captured: dict[str, Any] = {}
 
-    def _fake_create_ai_instance(ai_type, player_number, config):
+    def _fake_create_ai_instance(ai_type, player_number, config, board_type=None):
         captured["ai_type"] = ai_type
         captured["config"] = config
+        captured["board_type"] = board_type
 
         class DummyAI:
             def __init__(self, player_number: int, cfg: Any) -> None:
@@ -158,6 +159,7 @@ def test_ai_move_uses_ladder_config_overrides(monkeypatch) -> None:
     assert cfg.randomness == pytest.approx(sentinel_randomness)
     assert cfg.think_time == sentinel_think_time
     assert cfg.heuristic_profile_id == sentinel_profile
+    assert captured["board_type"] == BoardType.SQUARE8
 
 
 @pytest.mark.timeout(30)
@@ -202,9 +204,10 @@ def test_ai_move_threads_ladder_neural_settings(monkeypatch) -> None:
 
     captured: dict[str, Any] = {}
 
-    def _fake_create_ai_instance(ai_type, player_number, config):
+    def _fake_create_ai_instance(ai_type, player_number, config, board_type=None):
         captured["ai_type"] = ai_type
         captured["config"] = config
+        captured["board_type"] = board_type
 
         class DummyAI:
             def __init__(self, player_number: int, cfg: Any) -> None:
@@ -242,3 +245,4 @@ def test_ai_move_threads_ladder_neural_settings(monkeypatch) -> None:
     assert cfg.heuristic_profile_id == sentinel_profile
     assert cfg.use_neural_net is True
     assert cfg.nn_model_id == sentinel_model_id
+    assert captured["board_type"] == BoardType.SQUARE8

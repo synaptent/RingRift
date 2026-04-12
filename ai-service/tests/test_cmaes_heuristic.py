@@ -16,7 +16,7 @@ from app.training.train import (
 )
 
 
-def test_cmaes_heuristic_smoke(monkeypatch) -> None:
+def test_cmaes_heuristic_smoke() -> None:
     """Fast, deterministic smoke test for the CMA-ES heuristic harness.
 
     The real evaluation of heuristic candidates is expensive because it plays
@@ -49,12 +49,6 @@ def test_cmaes_heuristic_smoke(monkeypatch) -> None:
         calls.append(fitness)
         return fitness, result
 
-    # Stub out the expensive evaluation harness.
-    monkeypatch.setattr(
-        "app.training.train.evaluate_heuristic_candidate",
-        fake_evaluate_heuristic_candidate,
-    )
-
     report = run_cmaes_heuristic_optimization(
         tier_id="sq8_heuristic_baseline_v1",
         base_profile_id="heuristic_v1_balanced",
@@ -62,6 +56,7 @@ def test_cmaes_heuristic_smoke(monkeypatch) -> None:
         population_size=4,
         rng_seed=42,
         games_per_candidate=1,
+        evaluate_fn=fake_evaluate_heuristic_candidate,
     )
 
     assert report["run_type"] == "heuristic_cmaes_square8"

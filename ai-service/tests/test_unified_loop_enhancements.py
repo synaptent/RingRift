@@ -129,6 +129,7 @@ class TestAutoRecoveryRetryLogic:
         scheduler._retry_attempts = {}
         scheduler._last_failure_time = {}
         scheduler._pending_retries = []
+        scheduler._retry_policy = None
 
         # Import the actual methods
         from scripts.unified_loop.training import TrainingScheduler
@@ -264,7 +265,7 @@ class TestRetentionPolicyValidation:
 
         policy = RetentionPolicy()
         assert policy.max_models_per_config == 100
-        assert policy.keep_top_by_elo == 25
+        assert policy.keep_top_by_elo == 50
         assert policy.archive_after_days == 30
         assert policy.delete_archived_after_days == 90
 

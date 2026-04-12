@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
-import re
 
+from app.distributed.data_events import DataEventType
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_EVENTS_PATH = ROOT / "app" / "distributed" / "data_events.py"
 
 
 def _iter_python_files(root: Path) -> list[Path]:
@@ -30,24 +30,32 @@ def _iter_python_files(root: Path) -> list[Path]:
 
 
 def _load_data_event_types() -> set[str]:
-    text = DATA_EVENTS_PATH.read_text()
-    names: set[str] = set()
-    for line in text.splitlines():
-        match = re.match(r"^\s*([A-Z0-9_]+)\s*=\s*\"", line)
-        if match:
-            names.add(match.group(1))
+    return set(DataEventType.__members__.keys())
+
+
+def _find_data_event_type_references(text: str) -> list[str]:
+    tree = ast.parse(text)
+    names: list[str] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        if not isinstance(node.value, ast.Name) or node.value.id != "DataEventType":
+            continue
+        if node.attr.startswith("__"):
+            continue
+        names.append(node.attr)
+
     return names
 
 
 def test_data_event_type_references_are_defined() -> None:
     enum_names = _load_data_event_types()
-    pattern = re.compile(r"DataEventType\.([A-Z0-9_]+)")
     unknown: dict[str, list[str]] = {}
 
     for path in _iter_python_files(ROOT):
         text = path.read_text()
-        for match in pattern.finditer(text):
-            name = match.group(1)
+        for name in _find_data_event_type_references(text):
             if name in enum_names:
                 continue
             unknown.setdefault(name, []).append(str(path.relative_to(ROOT)))

@@ -81,7 +81,7 @@ def create_test_game_state(num_players: int = 2) -> GameState:
 def create_test_move(player: int = 1, move_number: int = 0) -> Move:
     """Create a minimal valid Move for testing."""
     return Move(
-        id="test-move",
+        id=f"test-move-{move_number}",
         player=player,
         type=MoveType.PLACE_RING,
         from_pos=None,
@@ -90,6 +90,14 @@ def create_test_move(player: int = 1, move_number: int = 0) -> Move:
         think_time=100,
         move_number=move_number,
     )
+
+
+def create_test_moves(count: int = 5) -> list[Move]:
+    """Create a canonical-length move list for GameReplayDB tests."""
+    return [
+        create_test_move(player=(index % 2) + 1, move_number=index)
+        for index in range(count)
+    ]
 
 
 class TestFreshDatabaseCreation:
@@ -367,14 +375,13 @@ class TestV2FieldStorage:
         initial_state = create_test_game_state()
         final_state = create_test_game_state()
         final_state.game_status = GameStatus.COMPLETED
-        move = create_test_move()
 
         # Store game
         db.store_game(
             game_id="eval-test",
             initial_state=initial_state,
             final_state=final_state,
-            moves=[move],
+            moves=create_test_moves(),
             metadata={"source": "test"},
         )
 
@@ -394,7 +401,7 @@ class TestV2FieldStorage:
 
         # Retrieve and verify
         moves = db.get_move_records("eval-test")
-        assert len(moves) == 1
+        assert len(moves) == 5
         assert moves[0]["engineEval"] == pytest.approx(0.75)
         assert moves[0]["engineEvalType"] == "heuristic"
         assert moves[0]["enginePV"] == ["e2e4", "e7e5"]
@@ -416,7 +423,7 @@ class TestV2FieldStorage:
                 game_id=f"game-{i}",
                 initial_state=state,
                 final_state=final,
-                moves=[create_test_move()],
+                moves=create_test_moves(),
                 metadata={
                     "source": "test",
                     "termination_reason": "ring_elimination" if i < 3 else "territory",
@@ -443,7 +450,7 @@ class TestV2FieldStorage:
             game_id="player-test",
             initial_state=state,
             final_state=final,
-            moves=[create_test_move()],
+            moves=create_test_moves(),
             metadata={"source": "test"},
         )
 

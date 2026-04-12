@@ -689,7 +689,7 @@ class DaemonManagerLifecycleMixin:
         try:
             from app.config.coordination_defaults import get_adaptive_health_timeout
             health_check_timeout = max(
-                get_adaptive_health_timeout(),
+                await asyncio.to_thread(get_adaptive_health_timeout),
                 DaemonHealthDefaults.HEALTH_CHECK_TIMEOUT,
             )
         except ImportError:
@@ -724,7 +724,11 @@ class DaemonManagerLifecycleMixin:
                 # December 30, 2025: Auto-restart STOPPED daemons with auto_restart=True
                 # when their dependencies are now satisfied. This handles daemons that
                 # failed to start initially due to missing dependencies.
-                if info.state == DaemonState.STOPPED and info.auto_restart:
+                if (
+                    info.state == DaemonState.STOPPED
+                    and info.auto_restart
+                    and self.config.auto_restart_failed
+                ):
                     # Check if all dependencies are now running
                     deps = list(info.depends_on or [])
                     all_deps_running = all(

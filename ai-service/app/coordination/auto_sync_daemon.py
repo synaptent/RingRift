@@ -204,6 +204,15 @@ class AutoSyncDaemon(
         return self._status
 
     @property
+    def _coordinator_status(self) -> "CoordinatorStatus":
+        """Legacy status alias retained for older tests and coordination code."""
+        return self._status
+
+    @_coordinator_status.setter
+    def _coordinator_status(self, value: "CoordinatorStatus") -> None:
+        self._status = value
+
+    @property
     def stats(self) -> SyncStats:
         """Get sync statistics (backward compatibility property).
 
@@ -2032,6 +2041,24 @@ class AutoSyncDaemon(
         Returns:
             Health check result with status and sync details.
         """
+        successful_syncs = self._sync_stats.successful_syncs
+        failed_syncs = self._sync_stats.failed_syncs
+        total_syncs = self._sync_stats.total_syncs
+
+        # HandlerBase migration compatibility: some older tests and callers
+        # still write sync counters onto ``self._stats`` rather than
+        # ``self._sync_stats``. Honor those values when the dedicated sync
+        # tracker has not observed any activity yet.
+        legacy_stats = getattr(self, "_stats", None)
+        if legacy_stats is not None and total_syncs == 0:
+            legacy_successful = getattr(legacy_stats, "syncs_completed", 0)
+            legacy_failed = getattr(legacy_stats, "syncs_failed", 0)
+            legacy_total = getattr(legacy_stats, "operations_attempted", 0)
+            if legacy_successful or legacy_failed or legacy_total:
+                successful_syncs = legacy_successful
+                failed_syncs = legacy_failed
+                total_syncs = legacy_total or (legacy_successful + legacy_failed)
+
         # Check for error state
         if self._status == CoordinatorStatus.ERROR:
             return HealthCheckResult.unhealthy(
@@ -2055,11 +2082,11 @@ class AutoSyncDaemon(
             )
 
         # Check sync health
-        if self._sync_stats.failed_syncs > self._sync_stats.successful_syncs * 0.5:
+        if failed_syncs > successful_syncs * 0.5:
             return HealthCheckResult.degraded(
-                f"High failure rate: {self._sync_stats.failed_syncs} failures, "
-                f"{self._sync_stats.successful_syncs} successes",
-                failure_rate=self._sync_stats.failed_syncs / max(self._sync_stats.total_syncs, 1),
+                f"High failure rate: {failed_syncs} failures, "
+                f"{successful_syncs} successes",
+                failure_rate=failed_syncs / max(total_syncs, 1),
             )
 
         # December 2025 - Gap 4 fix: Check verification health

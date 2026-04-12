@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.models import BoardType
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.training.selfplay_config import (
     EngineMode,
     OutputFormat,
@@ -19,6 +20,7 @@ from app.training.selfplay_config import (
     get_production_config,
     parse_selfplay_args,
 )
+from app.utils.parallel_defaults import get_default_workers
 
 
 class TestSelfplayConfigCreation:
@@ -31,7 +33,7 @@ class TestSelfplayConfigCreation:
         assert config.board_type == "square8"
         assert config.num_players == 2
         assert config.num_games == 1000
-        assert config.engine_mode == EngineMode.NNUE_GUIDED
+        assert config.engine_mode == EngineMode.MIXED
         assert config.output_format == OutputFormat.DB
 
     def test_custom_config_creation(self):
@@ -62,11 +64,14 @@ class TestSelfplayConfigCreation:
 
         configs = [
             SelfplayConfig(board_type="sq8"),
-            SelfplayConfig(board_type="square"),
+            SelfplayConfig(board_type="square-8"),
             SelfplayConfig(board_type="square8"),
         ]
         for config in configs:
             assert config.board_type == "square8"
+
+        with pytest.raises(ValueError, match="Unknown board type"):
+            SelfplayConfig(board_type="square")
 
         config = SelfplayConfig(board_type="sq19")
         assert config.board_type == "square19"
@@ -327,7 +332,7 @@ class TestResourceSettings:
         """Test default resource settings."""
         config = SelfplayConfig()
 
-        assert config.num_workers == 1
+        assert config.num_workers == get_default_workers()
         assert config.batch_size == 256
         assert config.use_gpu is True
         assert config.gpu_device == 0
@@ -337,7 +342,7 @@ class TestResourceSettings:
         config = SelfplayConfig()
 
         assert config.disk_warning_percent == 75
-        assert config.disk_critical_percent == 85
+        assert config.disk_critical_percent == DISK_PRODUCTION_HALT_PERCENT
 
     def test_checkpoint_interval(self):
         """Test checkpoint interval setting."""
@@ -349,9 +354,9 @@ class TestNNBatchingSettings:
     """Test NN batching configuration settings."""
 
     def test_default_nn_batching_disabled(self):
-        """Test NN batching is disabled by default."""
+        """Test NN batching is enabled by default."""
         config = SelfplayConfig()
-        assert config.nn_batch_enabled is False
+        assert config.nn_batch_enabled is True
 
     def test_nn_batching_settings(self):
         """Test NN batching configuration."""

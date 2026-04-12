@@ -1,12 +1,12 @@
 # P2P Decomposition Plan
 
-Updated: April 10, 2026
+Updated: April 11, 2026
 
 This plan tracks the remaining high-value extraction targets for `ai-service/scripts/p2p_orchestrator.py`. The goal is auditability and operational maintainability, not deletion. Extracted mixins must keep behavior unchanged and should follow the existing `scripts/p2p/mixins/*_mixin.py` pattern.
 
 ## Current State
 
-The orchestrator has been reduced from roughly 14,363 lines to 2,591 lines through targeted mixin extraction. The mixin modules now contain 11,893 lines across 19 `*_mixin.py` files, while the main orchestrator stays as the compatibility shell, constructor, and remaining glue code.
+The orchestrator has been reduced from roughly 14,363 lines to 2,616 lines through targeted mixin extraction. The mixin modules now contain 11,907 lines across 19 `*_mixin.py` files, while the main orchestrator stays as the compatibility shell, constructor, and remaining glue code.
 
 Verification: `cd ai-service && PYTHONPATH=. python3 -m pytest tests/unit/p2p/ -x -q` passed on April 10, 2026 with 2,615 passed and 2 skipped.
 
@@ -43,9 +43,21 @@ Expanded module:
 
 Final LOC snapshot:
 
-- `ai-service/scripts/p2p_orchestrator.py`: 2,591 LOC.
-- `ai-service/scripts/p2p/mixins/*.py`: 11,893 LOC across 19 mixins.
+- `ai-service/scripts/p2p_orchestrator.py`: 2,616 LOC.
+- `ai-service/scripts/p2p/mixins/*.py`: 11,907 LOC across 19 mixins.
 - Reduction from the original 14,363 LOC orchestrator baseline: about 82%.
+
+Phase 20 verification snapshot (April 11, 2026):
+
+- `ai-service/scripts/p2p_orchestrator.py`: 2,616 LOC
+- 19 extracted mixins remain under `ai-service/scripts/p2p/mixins/*_mixin.py`
+- Largest current mixins:
+  - `job_management_mixin.py`: 1,396 LOC
+  - `training_pipeline_mixin.py`: 1,290 LOC
+  - `heartbeat_loop_mixin.py`: 1,024 LOC
+  - `election_logic_mixin.py`: 1,033 LOC
+  - `initialization_phases_mixin.py`: 977 LOC
+- The main orchestrator remains below the Part 3 target ceiling of 3,000 LOC.
 
 ## Target 10: RuntimeLifecycleMixin
 

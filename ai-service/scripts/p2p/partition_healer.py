@@ -1245,11 +1245,10 @@ class PartitionHealer:
 
             # Emit event for observability
             try:
-                from app.distributed.data_events import DataEventType
                 from app.coordination.event_emission_helpers import safe_emit_event
 
                 safe_emit_event(
-                    DataEventType.LEADER_ELECTION_STARTED,
+                    "leader_election_started",
                     {
                         "reason": f"partition_healing:{reason}",
                         "triggered_by": "partition_healer",

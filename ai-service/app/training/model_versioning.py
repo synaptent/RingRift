@@ -55,7 +55,11 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from app.utils.torch_utils import safe_load_checkpoint
+from app.utils.torch_utils import (
+    ModelCorruptionError,
+    compute_model_checksum,
+    safe_load_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -965,7 +969,28 @@ class ModelVersionManager:
             raise FileNotFoundError(f"Checkpoint not found: {path}")
 
         device = device or self.default_device
-        checkpoint = safe_load_checkpoint(path, map_location=device, warn_on_unsafe=False)
+        try:
+            checkpoint = safe_load_checkpoint(
+                path,
+                map_location=device,
+                warn_on_unsafe=False,
+                verify_checksum=verify_checksum,
+            )
+        except ModelCorruptionError as exc:
+            if not verify_checksum:
+                raise
+            sidecar_path = Path(f"{path}.sha256")
+            if not sidecar_path.exists():
+                raise
+            with open(sidecar_path, encoding="utf-8") as sidecar_file:
+                line = sidecar_file.readline().strip()
+            expected_checksum = line.split()[0] if line else "unknown"
+            actual_checksum = compute_model_checksum(path)
+            raise ChecksumMismatchError(
+                expected=expected_checksum,
+                actual=actual_checksum,
+                checkpoint_path=path,
+            ) from exc
 
         # Check if this is a versioned checkpoint
         if self.METADATA_KEY not in checkpoint:

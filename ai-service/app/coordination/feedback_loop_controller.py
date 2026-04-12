@@ -832,6 +832,7 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
             payload = event.payload if hasattr(event, "payload") else {}
 
             config_key = extract_config_key(payload)
+            has_policy_accuracy = "policy_accuracy" in payload
             policy_accuracy = payload.get("policy_accuracy", 0.0)
             value_accuracy = payload.get("value_accuracy", 0.0)
             model_path = payload.get("model_path", "")
@@ -856,27 +857,29 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
                 f"gauntlet_enabled={env.gauntlet_enabled}"
             )
 
-            # Always trigger evaluation for newly trained models (January 21, 2026 fix)
-            # The policy accuracy threshold was too restrictive and blocked evaluation
-            # when policy_accuracy wasn't reported in the training event (defaulted to 0.0).
-            # Gauntlet evaluation provides the definitive quality assessment.
-            if model_path:
+            # Prefer the explicit threshold when training reported an accuracy.
+            # Fall back to the model path only when older emitters omit policy_accuracy.
+            if model_path and (
+                policy_accuracy >= self.policy_accuracy_threshold
+                or not has_policy_accuracy
+            ):
                 logger.info(
                     f"[FeedbackLoopController] Triggering gauntlet evaluation for {config_key} "
                     f"(will dispatch to cluster if gauntlet_enabled=false)"
                 )
                 self._trigger_evaluation(config_key, model_path)
             elif policy_accuracy >= self.policy_accuracy_threshold:
-                # Fallback: trigger based on accuracy if no model path available
+                # Accuracy is high but we cannot start evaluation without a model artifact.
                 logger.warning(
                     f"[FeedbackLoopController] No model_path in training event for {config_key}, "
-                    f"using policy_accuracy threshold fallback"
+                    "gauntlet evaluation deferred"
                 )
             else:
-                # January 28, 2026: Log when gauntlet is skipped due to missing model_path
+                # Explicitly low-accuracy results stay below the evaluation gate.
                 logger.warning(
-                    f"[FeedbackLoopController] Cannot trigger gauntlet for {config_key}: "
-                    f"model_path is empty and policy_accuracy={policy_accuracy:.2%} below threshold"
+                    f"[FeedbackLoopController] Skipping gauntlet for {config_key}: "
+                    f"policy_accuracy={policy_accuracy:.2%} below threshold "
+                    f"({self.policy_accuracy_threshold:.2%})"
                 )
 
             # Record training in curriculum

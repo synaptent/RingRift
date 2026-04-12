@@ -77,6 +77,7 @@ class MockEloService:
     def __init__(self):
         self.ratings: dict[str, dict] = {}
         self.history: dict[str, list[dict]] = {}
+        self.harness_types: dict[str, list[str]] = {}
 
     def set_rating(
         self,
@@ -95,6 +96,17 @@ class MockEloService:
         mock_rating.win_rate = win_rate
         self.ratings[key] = mock_rating
 
+    def set_harness_types(
+        self,
+        model_id: str,
+        board_type: str,
+        num_players: int,
+        harnesses: list[str],
+    ) -> None:
+        """Set mock harness coverage for a model."""
+        key = f"{model_id}_{board_type}_{num_players}"
+        self.harness_types[key] = list(harnesses)
+
     def get_rating(self, model_id: str, board_type: str, num_players: int):
         """Get a mock rating."""
         key = f"{model_id}_{board_type}_{num_players}"
@@ -104,6 +116,21 @@ class MockEloService:
         """Get mock rating history."""
         key = f"{model_id}_{board_type}_{num_players}"
         return self.history.get(key, [])
+
+    class _MockConnection:
+        """Tiny sqlite-like facade for multi-harness gate queries."""
+
+        def __init__(self, harness_types: dict[str, list[str]]):
+            self._harness_types = harness_types
+
+        def execute(self, _query: str, params: tuple[str, str, str, int]):
+            model_id, _other_model_id, board_type, num_players = params
+            key = f"{model_id}_{board_type}_{num_players}"
+            return [(harness,) for harness in self._harness_types.get(key, [])]
+
+    def _get_connection(self):
+        """Return a minimal connection object for promotion harness queries."""
+        return self._MockConnection(self.harness_types)
 
 
 class MockModelRegistry:
@@ -178,8 +205,9 @@ class TestFullRollbackCycle:
         # Phase 2: New model performs well initially → gets promoted
         elo_service.set_rating(
             "model_v2", "square8", 2,
-            rating=1550, games_played=60, win_rate=0.58  # +50 Elo
+            rating=1550, games_played=200, win_rate=0.60  # +50 Elo, clears Wilson gate
         )
+        elo_service.set_harness_types("model_v2", "square8", 2, ["gauntlet", "arena"])
 
         decision = controller.evaluate_promotion(
             model_id="model_v2",
@@ -200,7 +228,7 @@ class TestFullRollbackCycle:
         # First regression check - model drops below baseline
         elo_service.set_rating(
             "model_v2", "square8", 2,
-            rating=1460, games_played=80, win_rate=0.48  # -40 vs baseline
+            rating=1455, games_played=80, win_rate=0.48  # -45 vs baseline, below adaptive threshold
         )
 
         should_rollback, event = monitor.check_for_regression(

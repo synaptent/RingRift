@@ -118,12 +118,12 @@ class TestDatabaseTrainingIntegration:
                         2,
                         0,
                         timestamp,
-                        timestamp,
-                        GameStatus.COMPLETED.value,
-                        (i % 2) + 1,
                         None,
-                        5,
-                        5,
+                        GameStatus.ACTIVE.value,
+                        None,
+                        None,
+                        0,
+                        0,
                         0,
                         "test",
                         SCHEMA_VERSION,
@@ -168,6 +168,26 @@ class TestDatabaseTrainingIntegration:
                             0,
                         ),
                     )
+
+                conn.execute(
+                    """
+                    UPDATE games
+                    SET completed_at = ?,
+                        game_status = ?,
+                        winner = ?,
+                        total_moves = ?,
+                        total_turns = ?
+                    WHERE game_id = ?
+                    """,
+                    (
+                        timestamp,
+                        GameStatus.COMPLETED.value,
+                        (i % 2) + 1,
+                        5,
+                        5,
+                        game_id,
+                    ),
+                )
 
         yield str(db_path)
 

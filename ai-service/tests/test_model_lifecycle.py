@@ -54,7 +54,7 @@ class TestRetentionPolicy:
         """Default policy should have sensible values."""
         policy = RetentionPolicy()
         assert policy.max_models_per_config == 100
-        assert policy.keep_top_by_elo == 25
+        assert policy.keep_top_by_elo == 50
         assert policy.keep_latest_production == 5
         assert policy.archive_after_days == 30
         assert policy.delete_archived_after_days == 90

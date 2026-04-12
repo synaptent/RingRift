@@ -464,7 +464,7 @@ class IntegrityCheckDaemon(HandlerBase):
 
             bus = get_event_bus()
             await bus.publish(
-                DataEventType.DATA_QUALITY_DEGRADED,
+                DataEventType.QUALITY_DEGRADED,
                 {
                     "source": "IntegrityCheckDaemon",
                     "event_type": "orphan_games_detected",

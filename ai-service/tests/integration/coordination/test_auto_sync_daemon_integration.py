@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.auto_sync_daemon import (
     AutoSyncConfig,
     AutoSyncDaemon,
@@ -158,10 +159,10 @@ class TestAutoSyncConfig:
         assert config.strategy == SyncStrategy.AUTO
         assert config.interval_seconds == 60
         assert config.gossip_interval_seconds == 30
-        # Dec 2025: increased for faster parallel sync (was 4)
-        assert config.max_concurrent_syncs == 6
+        # Feb 2026: reduced to 1 to avoid parallel rsync OOM on constrained hosts.
+        assert config.max_concurrent_syncs == 1
         assert config.min_games_to_sync == 10
-        assert config.max_disk_usage_percent == 70.0
+        assert config.max_disk_usage_percent == float(DISK_PRODUCTION_HALT_PERCENT)
         assert config.skip_nfs_sync is True
 
     def test_custom_values(self):
@@ -262,9 +263,8 @@ class TestAutoSyncDaemonInit:
             assert daemon.config.interval_seconds == 60
 
     def test_coordinator_status_initial(self, daemon):
-        """Daemon should start in INITIALIZING status."""
-        # After __init__, status is INITIALIZING (before start())
-        assert daemon.status == CoordinatorStatus.INITIALIZING
+        """Daemon should start in STOPPED status before start() is called."""
+        assert daemon.status == CoordinatorStatus.STOPPED
 
     def test_name_property(self, daemon):
         """Daemon should have correct name property."""
@@ -283,11 +283,15 @@ class TestAutoSyncDaemonLifecycle:
     async def test_start_sets_running(self, daemon):
         """start() should set _running to True."""
         with patch.object(daemon, "_start_gossip_sync", new_callable=AsyncMock), \
+             patch.object(daemon, "_process_pending_writes", new_callable=AsyncMock), \
              patch.object(daemon, "_subscribe_to_events"), \
-             patch("app.coordination.auto_sync_daemon.safe_create_task") as mock_task, \
-             patch("app.coordination.auto_sync_daemon.register_coordinator"):
+             patch("app.coordination.auto_sync_daemon.safe_create_task") as mock_task:
 
-            mock_task.return_value = MagicMock()
+            def _fake_safe_create_task(coro, *args, **kwargs):
+                coro.close()
+                return MagicMock()
+
+            mock_task.side_effect = _fake_safe_create_task
 
             await daemon.start()
 
@@ -314,19 +318,22 @@ class TestAutoSyncDaemonLifecycle:
         """stop() should set status to STOPPED."""
         # First start the daemon
         with patch.object(daemon, "_start_gossip_sync", new_callable=AsyncMock), \
+             patch.object(daemon, "_process_pending_writes", new_callable=AsyncMock), \
              patch.object(daemon, "_subscribe_to_events"), \
-             patch("app.coordination.auto_sync_daemon.safe_create_task") as mock_task, \
-             patch("app.coordination.auto_sync_daemon.register_coordinator"):
+             patch("app.coordination.auto_sync_daemon.safe_create_task") as mock_task:
 
             # December 2025: Use AsyncMock so task can be awaited in stop()
-            mock_task.return_value = AsyncMock()
+            def _fake_safe_create_task(coro, *args, **kwargs):
+                coro.close()
+                return AsyncMock()
+
+            mock_task.side_effect = _fake_safe_create_task
             await daemon.start()
 
         # Then stop it
-        with patch("app.coordination.auto_sync_daemon.unregister_coordinator"):
-            daemon._sync_task = None  # Clear task to avoid cancel
-            daemon._pending_writes_task = None  # Clear pending writes task
-            await daemon.stop()
+        daemon._sync_task = None  # Clear task to avoid cancel
+        daemon._pending_writes_task = None  # Clear pending writes task
+        await daemon.stop()
 
         assert daemon._running is False
         assert daemon.status == CoordinatorStatus.STOPPED
@@ -382,10 +389,10 @@ class TestAutoSyncDaemonStatus:
 
     def test_is_running_reflects_state(self, daemon):
         """is_running should reflect _running state."""
-        assert daemon.is_running() is False
+        assert daemon.is_running is False
 
         daemon._running = True
-        assert daemon.is_running() is True
+        assert daemon.is_running is True
 
 
 # =============================================================================
@@ -558,7 +565,7 @@ class TestMetrics:
 
     def test_get_metrics_structure(self, daemon):
         """get_metrics should return protocol-compliant metrics."""
-        daemon._start_time = 1000.0
+        daemon._stats.started_at = 1000.0
 
         metrics = daemon.get_metrics()
 
@@ -572,7 +579,7 @@ class TestMetrics:
     def test_uptime_seconds(self, daemon):
         """uptime_seconds should calculate correctly."""
         import time
-        daemon._start_time = time.time() - 100  # Started 100 seconds ago
+        daemon._stats.started_at = time.time() - 100  # Started 100 seconds ago
 
         uptime = daemon.uptime_seconds
 

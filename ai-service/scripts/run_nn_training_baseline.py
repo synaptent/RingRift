@@ -13,9 +13,8 @@ It is intentionally conservative and exposes two primary modes:
 1. Demo / tiny mode (for CI and smoke tests):
 
    - Enabled via --demo.
-   - Uses a non-existent NPZ path so RingRiftDataset generates a
-     tiny in-memory dummy dataset (see
-     app.training.train.RingRiftDataset.__init__).
+   - Writes a tiny synthetic NPZ into --run-dir so both training-data
+     pre-validation and the dataset loader can use the same on-disk input.
    - Runs a very small number of epochs (default: 1) on the
      default device.
    - Writes nn_training_report.json into --run-dir with basic
@@ -54,6 +53,11 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.models import BoardType  # noqa: E402
+from app.ai.neural_net import (  # noqa: E402
+    HEX8_BOARD_SIZE,
+    HEX_BOARD_SIZE,
+    get_policy_size_for_board,
+)
 from app.training.config import TrainConfig  # noqa: E402
 from app.training.config import (  # noqa: E402
     get_training_config_for_board,
@@ -250,6 +254,57 @@ def _write_report(path: str, payload: Dict[str, Any]) -> None:
         json.dump(payload, f, indent=2, sort_keys=True)
 
 
+def _write_demo_dataset(path: str, board_type: BoardType) -> None:
+    """Create a tiny on-disk NPZ compatible with training pre-validation."""
+    rng = np.random.default_rng(0)
+    dummy_count = 100
+    dummy_policy_size = get_policy_size_for_board(board_type)
+    dummy_input_channels = (
+        40 if board_type in (BoardType.HEXAGONAL, BoardType.HEX8) else 56
+    )
+    dummy_global_features = 20
+
+    if board_type == BoardType.SQUARE19:
+        dummy_h = 19
+        dummy_w = 19
+    elif board_type == BoardType.HEXAGONAL:
+        dummy_h = HEX_BOARD_SIZE
+        dummy_w = HEX_BOARD_SIZE
+    elif board_type == BoardType.HEX8:
+        dummy_h = HEX8_BOARD_SIZE
+        dummy_w = HEX8_BOARD_SIZE
+    else:
+        dummy_h = 8
+        dummy_w = 8
+
+    demo_policy_indices = [
+        rng.choice(dummy_policy_size, 5, replace=False).astype(np.int32)
+        for _ in range(dummy_count)
+    ]
+    demo_policy_values = []
+    for _ in range(dummy_count):
+        weights = rng.random(5)
+        weights = (weights / weights.sum()).astype(np.float32)
+        demo_policy_values.append(weights)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    np.savez_compressed(
+        path,
+        features=rng.random(
+            (dummy_count, dummy_input_channels, dummy_h, dummy_w),
+            dtype=np.float32,
+        ),
+        globals=rng.random((dummy_count, dummy_global_features), dtype=np.float32),
+        values=rng.choice([1.0, 0.0, -1.0], size=dummy_count).astype(np.float32),
+        policy_indices=np.array(demo_policy_indices, dtype=object),
+        policy_values=np.array(demo_policy_values, dtype=object),
+        board_type=np.asarray(board_type.value),
+        history_length=np.asarray(3),
+        feature_version=np.asarray(2),
+        policy_encoding=np.asarray("board_aware"),
+    )
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
@@ -321,15 +376,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.demo:
         # Demo / tiny mode:
         #
-        # - Use a dummy NPZ path so RingRiftDataset creates a small synthetic
-        #   dataset in memory (see RingRiftDataset.__init__).
+        # - Materialize a tiny synthetic NPZ in the run directory so the
+        #   training pre-validation path and the dataset loader both succeed.
         # - Run a single epoch with minimal early stopping to keep CI cheap.
         train_cfg.epochs_per_iter = 1
 
         data_path = os.path.join(
-            train_cfg.data_dir,
+            run_dir,
             "square8_nn_baseline_demo_dummy.npz",
         )
+        _write_demo_dataset(data_path, board_enum)
+        demo_init_weights_path = os.path.join(run_dir, "demo_fresh_init_weights.pth")
         mode = "demo"
     else:
         # Full mode requires an explicit NPZ path derived from a canonical DB.
@@ -342,6 +399,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
             return 1
         data_path = os.path.abspath(args.data_path)
+        demo_init_weights_path = None
         mode = "full"
 
     save_path = os.path.join(train_cfg.model_dir, f"{model_id}.pth")
@@ -376,6 +434,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         config=train_cfg,
         data_path=data_path,
         save_path=save_path,
+        init_weights_path=demo_init_weights_path,
         early_stopping_patience=early_stop,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=train_cfg.epochs_per_iter,

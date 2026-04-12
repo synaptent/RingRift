@@ -733,7 +733,7 @@ class ComprehensiveModelScanDaemon(HandlerBase):
         }
 
         try:
-            safe_emit_event(DataEventType.MULTI_HARNESS_EVALUATION_QUEUED, payload)
+            safe_emit_event("multi_harness_evaluation_queued", payload)
         except Exception as e:
             logger.debug(f"[ComprehensiveModelScan] Failed to emit summary event: {e}")
 

@@ -157,28 +157,26 @@ class TestCombinationToTrainingFlow:
     @pytest.mark.asyncio
     async def test_combination_emits_complete_event(self, daemon, mock_combine_result):
         """Successful combination should emit NPZ_COMBINATION_COMPLETE."""
-        # Patch where emit_data_event is imported (inside the method)
         with patch(
-            "app.distributed.data_events.emit_data_event"
+            "app.coordination.npz_combination_daemon.safe_emit_event"
         ) as mock_emit:
             daemon._emit_combination_complete("hex8_2p", mock_combine_result)
 
             mock_emit.assert_called_once()
             call_args = mock_emit.call_args
-            assert call_args[0][0] == DataEventType.NPZ_COMBINATION_COMPLETE
+            assert call_args[0][0] == "npz_combination_complete"
 
     @pytest.mark.asyncio
     async def test_combination_failure_emits_failed_event(self, daemon):
         """Failed combination should emit NPZ_COMBINATION_FAILED."""
-        # Patch where emit_data_event is imported (inside the method)
         with patch(
-            "app.distributed.data_events.emit_data_event"
+            "app.coordination.npz_combination_daemon.safe_emit_event"
         ) as mock_emit:
             daemon._emit_combination_failed("hex8_2p", "Test error")
 
             mock_emit.assert_called_once()
             call_args = mock_emit.call_args
-            assert call_args[0][0] == DataEventType.NPZ_COMBINATION_FAILED
+            assert call_args[0][0] == "npz_combination_failed"
 
 
 # =============================================================================

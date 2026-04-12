@@ -14,9 +14,12 @@ Module Structure:
     - promotion.py: Model promotion with holdout validation
 """
 
+from app.distributed.data_events import EventBus
+
 # Re-export configuration classes
 from .config import (
     # Configuration dataclasses
+    ConfigPriorityQueue,
     DataIngestionConfig,
     TrainingConfig,
     EvaluationConfig,
@@ -35,6 +38,7 @@ from .config import (
     # State classes
     HostState,
     ConfigState,
+    UnifiedLoopState,
 )
 
 # Re-export service classes (Phase 2 refactoring)
@@ -48,10 +52,12 @@ from .training import TrainingScheduler
 __all__ = [
     'AdaptiveCurriculum',
     'ConfigState',
+    'ConfigPriorityQueue',
     'CurriculumConfig',
     'DataEvent',
     # Events
     'DataEventType',
+    'EventBus',
     # Configuration
     'DataIngestionConfig',
     'EvaluationConfig',
@@ -72,4 +78,5 @@ __all__ = [
     'TrainingConfig',
     'TrainingScheduler',
     'UnifiedLoopConfig',
+    'UnifiedLoopState',
 ]

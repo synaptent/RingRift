@@ -86,6 +86,7 @@ from app.training.data_pipeline import (
     validate_training_data,
 )
 from app.training.distributed import (
+    DistributedMetrics,
     cleanup_distributed,
     get_rank,
     get_world_size,
@@ -136,6 +137,11 @@ from app.training.training_run_support import (
     maybe_run_lr_finder,
 )
 from app.training.training_runtime_setup import initialize_training_runtime_setup
+from app.training.train_setup import (
+    FaultToleranceConfig,
+    TrainingState,
+    setup_fault_tolerance,
+)
 from app.training.parameter_validation import (
     validate_training_compatibility as _validate_training_compatibility,
 )
@@ -409,6 +415,7 @@ from app.training.checkpoint_unified import (
     save_checkpoint,
 )
 from app.training.datasets import RingRiftDataset
+from app.training.fault_tolerance import HeartbeatMonitor
 
 def train_model(
     config: TrainConfig,

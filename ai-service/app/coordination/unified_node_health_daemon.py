@@ -57,7 +57,11 @@ from app.coordination.utilization_optimizer import UtilizationOptimizer
 from app.coordination.p2p_auto_deployer import P2PAutoDeployer, P2PDeploymentConfig
 
 # January 2026: HandlerBase migration for unified lifecycle
-from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.handler_base import (
+    CoordinatorStatus,
+    HandlerBase,
+    HealthCheckResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +73,42 @@ def _get_default_p2p_port() -> int:
     """Get default P2P port from centralized config."""
     from app.config.cluster_config import get_p2p_port
     return get_p2p_port()
+
+
+async def emit_p2p_cluster_healthy(
+    healthy_nodes: int,
+    node_count: int,
+    *,
+    source: str = "unified_node_health_daemon",
+) -> bool:
+    """Compatibility wrapper for emitting cluster healthy events."""
+    return await safe_emit_event_async(
+        "P2P_CLUSTER_HEALTHY",
+        {
+            "healthy_nodes": healthy_nodes,
+            "node_count": node_count,
+        },
+        context=source,
+    )
+
+
+async def emit_p2p_cluster_unhealthy(
+    healthy_nodes: int,
+    node_count: int,
+    *,
+    alerts: list[str] | None = None,
+    source: str = "unified_node_health_daemon",
+) -> bool:
+    """Compatibility wrapper for emitting cluster unhealthy events."""
+    return await safe_emit_event_async(
+        "P2P_CLUSTER_UNHEALTHY",
+        {
+            "healthy_nodes": healthy_nodes,
+            "node_count": node_count,
+            "alerts": alerts or [],
+        },
+        context=source,
+    )
 
 
 @dataclass
@@ -183,6 +223,15 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         """Get daemon configuration (backward compatibility property)."""
         return self._daemon_config
 
+    @property
+    def _start_time(self) -> float:
+        """Legacy alias for HandlerBase's started_at timestamp."""
+        return self._stats.started_at
+
+    @_start_time.setter
+    def _start_time(self, value: float) -> None:
+        self._stats.started_at = value
+
     async def run(self) -> None:
         """Run the daemon main loop.
 
@@ -257,6 +306,10 @@ class UnifiedNodeHealthDaemon(HandlerBase):
             and now - self._last_p2p_deploy >= self._daemon_config.p2p_deploy_interval
         ):
             await self._run_p2p_deploy()
+
+    async def _daemon_cycle(self) -> None:
+        """Legacy alias for tests and older callers still using the old hook name."""
+        await self._run_cycle()
 
     async def _run_health_check(self) -> None:
         """Run health check cycle."""
@@ -422,15 +475,11 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         summary: ClusterHealthSummary,
     ) -> None:
         """Emit cluster health events for event-driven coordination."""
-        # January 2026: Migrated to safe_emit_event_async
         if healthy_percent >= self.config.min_healthy_percent:
-            await safe_emit_event_async(
-                "P2P_CLUSTER_HEALTHY",
-                {
-                    "healthy_nodes": healthy_nodes,
-                    "node_count": active_nodes,
-                },
-                context="unified_node_health_daemon",
+            await emit_p2p_cluster_healthy(
+                healthy_nodes=healthy_nodes,
+                node_count=active_nodes,
+                source="unified_node_health_daemon",
             )
         else:
             alerts = []
@@ -438,14 +487,11 @@ class UnifiedNodeHealthDaemon(HandlerBase):
                 alerts.append(f"{summary.offline} nodes offline")
             if summary.unhealthy > 0:
                 alerts.append(f"{summary.unhealthy} nodes unhealthy")
-            await safe_emit_event_async(
-                "P2P_CLUSTER_UNHEALTHY",
-                {
-                    "healthy_nodes": healthy_nodes,
-                    "node_count": active_nodes,
-                    "alerts": alerts,
-                },
-                context="unified_node_health_daemon",
+            await emit_p2p_cluster_unhealthy(
+                healthy_nodes=healthy_nodes,
+                node_count=active_nodes,
+                alerts=alerts,
+                source="unified_node_health_daemon",
             )
 
     async def _send_alert(self, message: str) -> None:
@@ -480,6 +526,21 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         await self.health_orchestrator.stop()
         await self.lambda_mgr.close()
 
+    def stop(self):
+        """Compatibility stop that supports both awaited and fire-and-forget use."""
+        if not self._running:
+            return None
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._running = False
+            self._status = CoordinatorStatus.STOPPED
+            self._task = None
+            return None
+
+        return loop.create_task(HandlerBase.stop(self))
+
     def health_check(self) -> HealthCheckResult:
         """Check daemon health (January 2026: Updated for HandlerBase migration).
 
@@ -490,7 +551,7 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         if not self._running:
             return HealthCheckResult(
                 healthy=False,
-                status="stopped",
+                status=CoordinatorStatus.STOPPED,
                 message="UnifiedNodeHealthDaemon not running",
             )
 
@@ -499,14 +560,14 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         if time_since_last_check > self._daemon_config.health_check_interval * 3:
             return HealthCheckResult(
                 healthy=False,
-                status="degraded",
+                status=CoordinatorStatus.DEGRADED,
                 message=f"Health checks stale ({time_since_last_check:.0f}s since last check)",
                 details=self.get_stats(),
             )
 
         return HealthCheckResult(
             healthy=True,
-            status="healthy",
+            status=CoordinatorStatus.RUNNING,
             message=f"UnifiedNodeHealthDaemon running ({self._health_checks_run} checks)",
             details=self.get_stats(),
         )

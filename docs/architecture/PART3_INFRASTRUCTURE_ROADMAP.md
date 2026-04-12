@@ -1,6 +1,6 @@
 # Part 3 Infrastructure Roadmap
 
-Updated: April 11, 2026
+Updated: April 12, 2026
 
 This document records the Part 3 deep infrastructure improvement session so future work can resume without relying on chat history. The goal is to make RingRift easier to understand, verify, operate, and evolve without SSH archaeology or tribal knowledge.
 
@@ -26,29 +26,29 @@ This document records the Part 3 deep infrastructure improvement session so futu
 
 ## Roadmap
 
-| Phase | Focus                                           | Target Outcome                                                                                                         | Status    |
-| ----- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------- |
-| 0     | Roadmap capture                                 | Durable document for the Part 3 goals and remaining work                                                               | Completed |
-| 1     | CI fix                                          | Supported-path workflow no longer fails when optional lint tools are absent; contract tests pass locally               | Completed |
-| 2     | P2P orchestrator                                | Extract state, peer discovery, job, process, HTTP, and game-count mixins; reduce `p2p_orchestrator.py` below 3,000 LOC | Completed |
-| 3     | Coordination module                             | Audit >3,000 LOC coordination files and extract repeated execution/lifecycle/strategy patterns                         | Completed |
-| 4     | Script consolidation                            | Inventory 602 scripts, archive deprecated scripts, and add a unified operational CLI                                   | Completed |
-| 5     | Training pipeline quality                       | Document minimal loop contracts, compare legacy behavior, add training pipeline contract tests                         | Completed |
-| 6     | Client code quality                             | Document extraction plans for large client files, run TypeScript checks, and reduce easy `as any` usage                | Completed |
-| 7     | Server code quality                             | Extract major route handlers and document server decomposition targets                                                 | Completed |
-| 8     | Test infrastructure                             | Remove empty tests, detect broken imports, add test-coverage meta-contracts, and clean conftest fixtures               | Completed |
-| 9     | Documentation cleanup                           | Archive stale 2025 docs and refresh current status, results, architecture, developer guide, and repository map         | Completed |
-| 10    | Type safety                                     | Audit `# type: ignore`, narrow bare `except`, add type-safety contracts                                                | Completed |
-| 11    | Config/environment cleanup                      | Audit legacy config inputs, refresh `.env.*.example` files, and remove stale deployment env surface                    | Completed |
-| 12    | Archive cleanup                                 | Audit active imports from archive modules and archive unused lambda scripts safely                                     | Completed |
-| 13    | Event system completion                         | Migrate remaining active `emit_event` calls to `safe_emit_event` and add canonical event contracts                     | Completed |
-| 14    | Large file decomposition: `app/ai` and `app/db` | Extract board encoding, MCTS tree logic, and replay validation modules with size contracts                             | Completed |
-| 15    | Large file decomposition: `app/training`        | Extract training data pipeline, checkpointing, and Elo algorithms with size contracts                                  | Completed |
-| 16    | CI workflow consolidation                       | Add composite setup actions for Python AI and Node workflows                                                           | Completed |
-| 17    | Dead code and import cleanup                    | Detect unused app modules, circular imports, star imports, and obvious unused arguments                                | Completed |
-| 18    | Operational resilience                          | Add dead-loop restart and cluster health scripts plus supervisor heartbeat tests                                       | Completed |
-| 19    | Rules engine quality                            | Add parity coverage and rules completeness contracts across all supported board/player configs                         | Completed |
-| 20    | Final verification                              | Run Python tests, TypeScript checks, supported path checks, and update final architecture/audit docs                   | Pending   |
+| Phase | Focus                                           | Target Outcome                                                                                                         | Status      |
+| ----- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 0     | Roadmap capture                                 | Durable document for the Part 3 goals and remaining work                                                               | Completed   |
+| 1     | CI fix                                          | Supported-path workflow no longer fails when optional lint tools are absent; contract tests pass locally               | Completed   |
+| 2     | P2P orchestrator                                | Extract state, peer discovery, job, process, HTTP, and game-count mixins; reduce `p2p_orchestrator.py` below 3,000 LOC | Completed   |
+| 3     | Coordination module                             | Audit >3,000 LOC coordination files and extract repeated execution/lifecycle/strategy patterns                         | Completed   |
+| 4     | Script consolidation                            | Inventory 602 scripts, archive deprecated scripts, and add a unified operational CLI                                   | Completed   |
+| 5     | Training pipeline quality                       | Document minimal loop contracts, compare legacy behavior, add training pipeline contract tests                         | Completed   |
+| 6     | Client code quality                             | Document extraction plans for large client files, run TypeScript checks, and reduce easy `as any` usage                | Completed   |
+| 7     | Server code quality                             | Extract major route handlers and document server decomposition targets                                                 | Completed   |
+| 8     | Test infrastructure                             | Remove empty tests, detect broken imports, add test-coverage meta-contracts, and clean conftest fixtures               | Completed   |
+| 9     | Documentation cleanup                           | Archive stale 2025 docs and refresh current status, results, architecture, developer guide, and repository map         | Completed   |
+| 10    | Type safety                                     | Audit `# type: ignore`, narrow bare `except`, add type-safety contracts                                                | Completed   |
+| 11    | Config/environment cleanup                      | Audit legacy config inputs, refresh `.env.*.example` files, and remove stale deployment env surface                    | Completed   |
+| 12    | Archive cleanup                                 | Audit active imports from archive modules and archive unused lambda scripts safely                                     | Completed   |
+| 13    | Event system completion                         | Migrate remaining active `emit_event` calls to `safe_emit_event` and add canonical event contracts                     | Completed   |
+| 14    | Large file decomposition: `app/ai` and `app/db` | Extract board encoding, MCTS tree logic, and replay validation modules with size contracts                             | Completed   |
+| 15    | Large file decomposition: `app/training`        | Extract training data pipeline, checkpointing, and Elo algorithms with size contracts                                  | Completed   |
+| 16    | CI workflow consolidation                       | Add composite setup actions for Python AI and Node workflows                                                           | Completed   |
+| 17    | Dead code and import cleanup                    | Detect unused app modules, circular imports, star imports, and obvious unused arguments                                | Completed   |
+| 18    | Operational resilience                          | Add dead-loop restart and cluster health scripts plus supervisor heartbeat tests                                       | Completed   |
+| 19    | Rules engine quality                            | Add parity coverage and rules completeness contracts across all supported board/player configs                         | Completed   |
+| 20    | Final verification                              | Run Python tests, TypeScript checks, supported path checks, and update final architecture/audit docs                   | In progress |
 
 ## Verification Rhythm
 
@@ -69,7 +69,7 @@ For final verification, run:
 ```bash
 cd ai-service && PYTHONPATH=. python -m pytest tests/ -x -q --timeout=300
 npx tsc --noEmit
-cd ai-service && PYTHONPATH=. python scripts/check_supported_path.py
+PYTHONPATH=ai-service bash scripts/check_supported_path.sh
 ```
 
 ## Resume Notes
@@ -128,3 +128,5 @@ If this session pauses before all phases are complete, resume from the first pha
 - Phase 19 completed: `app/rules/default_engine.py` now explicitly covers recovery, territory bookkeeping, and terminal move semantics (`recovery_slide`, `skip_recovery`, `no_territory_action`, `skip_territory_processing`, `resign`, `timeout`) through the canonical `GameEngine` surface instead of leaving those paths implicit.
 - Phase 19 contracts: `tests/contracts/test_rules_parity_coverage.py` now enforces executable TS↔Python short-trace parity for all 12 supported board/player configurations via `tests/scripts/ts_rules_config_trace_parity.ts`, and `tests/contracts/test_rules_completeness.py` now locks the canonical move/phase/victory surfaces against `src/shared/types/game.ts`; `docs/architecture/RULES_ENGINE_AUDIT.md` records the supported-path rules surface and remaining intentional gaps.
 - Phase 19 verification: focused rules tests passed at `87 passed`, and the required gate finished at `33124 passed, 94 skipped, 19 warnings` via `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120`.
+- Phase 20 checkpoint: focused verification is green after a broad stale-test cleanup batch. `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` passed at `33124 passed, 94 skipped, 13 warnings`; `npx tsc --noEmit` passed from the repo root; and `PYTHONPATH=ai-service bash scripts/check_supported_path.sh` passed from the repo root.
+- Phase 20 exhaustive gate: `cd ai-service && PYTHONPATH=. python -m pytest tests/ -x -q --timeout=300` is not clean yet. The current batch fixed the hidden failures/stalls exposed behind `-x` in `test_daemon_recovery.py`, `test_model_lifecycle.py`, `test_selfplay_integration.py`, `test_node_circuit_breaker_integration.py`, `test_policy_equivalence_diagnostic.py`, `test_unified_loop_enhancements.py`, `test_training_pipeline.py`, `test_ssh_distributed_tournament.py`, `test_idle_resource_daemon.py`, and `test_daemon_manager.py`, but the full `tests/` gate still needs a fresh end-to-end rerun before Phase 20 can be marked complete.

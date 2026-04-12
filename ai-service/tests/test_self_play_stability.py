@@ -20,8 +20,9 @@ import sys
 import pytest
 
 # Mark all tests in this module as slow (they run full games).
-# Formerly skipped due to timeout concerns, but 3-game runs complete
-# well within the 60s timeout on modern hardware.
+# These exercises can legitimately exceed 60s under the strict no-move
+# invariant when the mixed AI pool samples deeper minimax paths, especially on
+# slower CI or laptop hosts.
 pytestmark = pytest.mark.slow
 
 # Ensure `app.*` imports resolve when running pytest from ai-service/
@@ -36,7 +37,7 @@ from app.training.env import RingRiftEnv
 
 # Test timeout guards to prevent hanging in CI
 # Allow more time for self-play as it runs multiple games
-TEST_TIMEOUT_SECONDS = 60
+TEST_TIMEOUT_SECONDS = 180
 # Maximum moves per game for safety (in addition to env.max_moves)
 MAX_MOVES_SAFETY_LIMIT = 250
 

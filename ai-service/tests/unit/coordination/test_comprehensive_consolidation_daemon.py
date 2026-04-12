@@ -36,7 +36,7 @@ class TestComprehensiveConsolidationEventSubscriptions:
 
         mock_subscribe.assert_called_once()
         event_type, callback = mock_subscribe.call_args.args
-        assert event_type.value == "consolidation_requested"
+        assert event_type == "consolidation_requested"
         assert callback == daemon._on_consolidation_requested
         assert daemon._subscribed is True
 
@@ -52,6 +52,6 @@ class TestComprehensiveConsolidationEventSubscriptions:
 
         mock_unsubscribe.assert_called_once()
         event_type, callback = mock_unsubscribe.call_args.args
-        assert event_type.value == "consolidation_requested"
+        assert event_type == "consolidation_requested"
         assert callback == daemon._on_consolidation_requested
         assert daemon._subscribed is False
