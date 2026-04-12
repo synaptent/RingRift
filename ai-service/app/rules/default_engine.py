@@ -18,12 +18,14 @@ from .mutators.capture import CaptureMutator
 from .mutators.line import LineMutator
 from .mutators.movement import MovementMutator
 from .mutators.placement import PlacementMutator
+from .mutators.recovery import RecoveryMutator
 from .mutators.territory import TerritoryMutator
 from .mutators.turn import TurnMutator
 from .validators.capture import CaptureValidator
 from .validators.line import LineValidator
 from .validators.movement import MovementValidator
 from .validators.placement import PlacementValidator
+from .validators.recovery import RecoveryValidator
 from .validators.territory import TerritoryValidator
 
 
@@ -67,6 +69,7 @@ class DefaultRulesEngine(RulesEngine):
             CaptureValidator(),
             LineValidator(),
             TerritoryValidator(),
+            RecoveryValidator(),
         ]
         self.mutators: list[Mutator] = [
             PlacementMutator(),
@@ -74,6 +77,7 @@ class DefaultRulesEngine(RulesEngine):
             CaptureMutator(),
             LineMutator(),
             TerritoryMutator(),
+            RecoveryMutator(),
             TurnMutator(),
         ]
 
@@ -343,8 +347,14 @@ class DefaultRulesEngine(RulesEngine):
                 for m in legal
             )
 
-        # Note: RESIGN and TIMEOUT are not valid MoveType enum values.
-        # Game termination is handled at a higher level, not via moves.
+        # RESIGN and TIMEOUT are canonical TS/Python move types, but they are
+        # host-level terminal moves rather than board mutations. Treat them as
+        # valid for the active player in any active phase.
+        if move.type in (MoveType.RESIGN, MoveType.TIMEOUT):
+            return (
+                move.player == state.current_player
+                and state.game_status == GameStatus.ACTIVE
+            )
 
         # Forced no-op placement action is a bookkeeping move that appears in
         # canonical recordings when a player enters RING_PLACEMENT but has no
@@ -367,10 +377,61 @@ class DefaultRulesEngine(RulesEngine):
         if move.type == MoveType.NO_MOVEMENT_ACTION:
             return True
 
+        # Territory bookkeeping moves are synthesized by hosts based on phase
+        # requirements. Validate them against the current phase surface rather
+        # than the lower-level territory validator, which only handles
+        # interactive region/elimination decisions.
+        if move.type == MoveType.NO_TERRITORY_ACTION:
+            from app.game_engine import GameEngine
+
+            if (
+                state.current_phase != GamePhase.TERRITORY_PROCESSING
+                or move.player != state.current_player
+            ):
+                return False
+            requirement = GameEngine.get_phase_requirement(state, move.player)
+            return (
+                requirement is not None
+                and requirement.type
+                == PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
+            )
+
+        # Voluntary territory skip is only valid when the canonical move
+        # generator actually surfaces it for the current actor.
+        if move.type == MoveType.SKIP_TERRITORY_PROCESSING:
+            from app.game_engine import GameEngine
+
+            if (
+                state.current_phase != GamePhase.TERRITORY_PROCESSING
+                or move.player != state.current_player
+            ):
+                return False
+            legal = GameEngine.get_valid_moves(state, move.player)
+            return any(
+                candidate.type == MoveType.SKIP_TERRITORY_PROCESSING
+                for candidate in legal
+            )
+
         # RR-CANON-R073: Post-movement capture is optional; the active player
         # may explicitly decline via SKIP_CAPTURE to proceed to line_processing.
         if move.type == MoveType.SKIP_CAPTURE:
             return state.current_phase == GamePhase.CAPTURE and move.player == state.current_player
+
+        # Recovery skip is surfaced directly by the canonical move generator
+        # when recovery is legal but the player declines it.
+        if move.type == MoveType.SKIP_RECOVERY:
+            from app.game_engine import GameEngine
+
+            if (
+                state.current_phase != GamePhase.MOVEMENT
+                or move.player != state.current_player
+            ):
+                return False
+            legal = GameEngine.get_valid_moves(state, move.player)
+            return any(
+                candidate.type == MoveType.SKIP_RECOVERY
+                for candidate in legal
+            )
 
         # Dispatch based on move type for all other moves
         if move.type in (MoveType.PLACE_RING, MoveType.SKIP_PLACEMENT):
@@ -379,6 +440,9 @@ class DefaultRulesEngine(RulesEngine):
         if move.type == MoveType.MOVE_STACK:
             # MovementValidator
             return self.validators[1].validate(state, move)
+        if move.type == MoveType.RECOVERY_SLIDE:
+            # RecoveryValidator
+            return self.validators[5].validate(state, move)
         if move.type in (
             MoveType.OVERTAKING_CAPTURE,
             MoveType.CHAIN_CAPTURE,
@@ -475,6 +539,8 @@ class DefaultRulesEngine(RulesEngine):
             pass
         elif move.type == MoveType.MOVE_STACK:
             MovementMutator().apply(new_state, move)
+        elif move.type == MoveType.RECOVERY_SLIDE:
+            RecoveryMutator().apply(new_state, move)
         elif move.type in (
             MoveType.OVERTAKING_CAPTURE,
             MoveType.CHAIN_CAPTURE,
@@ -502,6 +568,16 @@ class DefaultRulesEngine(RulesEngine):
                 TerritoryMutator().apply(new_state, move)
         elif move.type == MoveType.FORCED_ELIMINATION:
             GameEngine._apply_forced_elimination(new_state, move)
+        elif move.type in (
+            MoveType.NO_TERRITORY_ACTION,
+            MoveType.SKIP_TERRITORY_PROCESSING,
+            MoveType.SKIP_RECOVERY,
+            MoveType.RESIGN,
+            MoveType.TIMEOUT,
+        ):
+            # Host-level bookkeeping / terminal moves update phase, turn, and
+            # victory state but do not mutate board geometry directly.
+            pass
 
         # --- 6. Turn-level bookkeeping mirroring GameEngine.apply_move ---
         new_state.move_history.append(move)

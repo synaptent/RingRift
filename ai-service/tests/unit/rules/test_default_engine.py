@@ -20,14 +20,17 @@ from app.rules.validators.placement import PlacementValidator
 from app.rules.validators.movement import MovementValidator
 from app.rules.validators.capture import CaptureValidator
 from app.rules.validators.line import LineValidator
+from app.rules.validators.recovery import RecoveryValidator
 from app.rules.validators.territory import TerritoryValidator
 from app.rules.mutators.placement import PlacementMutator
 from app.rules.mutators.movement import MovementMutator
 from app.rules.mutators.capture import CaptureMutator
 from app.rules.mutators.line import LineMutator
+from app.rules.mutators.recovery import RecoveryMutator
 from app.rules.mutators.territory import TerritoryMutator
 from app.rules.mutators.turn import TurnMutator
 from app.models import GamePhase, GameState, GameStatus, Move, MoveType
+from app.game_engine.phase_requirements import PhaseRequirement, PhaseRequirementType
 
 
 class TestDefaultRulesEngineInitialization:
@@ -41,23 +44,25 @@ class TestDefaultRulesEngineInitialization:
     def test_validators_list_created(self):
         """Test validators list is created with correct validators."""
         engine = DefaultRulesEngine()
-        assert len(engine.validators) == 5
+        assert len(engine.validators) == 6
         assert isinstance(engine.validators[0], PlacementValidator)
         assert isinstance(engine.validators[1], MovementValidator)
         assert isinstance(engine.validators[2], CaptureValidator)
         assert isinstance(engine.validators[3], LineValidator)
         assert isinstance(engine.validators[4], TerritoryValidator)
+        assert isinstance(engine.validators[5], RecoveryValidator)
 
     def test_mutators_list_created(self):
         """Test mutators list is created with correct mutators."""
         engine = DefaultRulesEngine()
-        assert len(engine.mutators) == 6
+        assert len(engine.mutators) == 7
         assert isinstance(engine.mutators[0], PlacementMutator)
         assert isinstance(engine.mutators[1], MovementMutator)
         assert isinstance(engine.mutators[2], CaptureMutator)
         assert isinstance(engine.mutators[3], LineMutator)
         assert isinstance(engine.mutators[4], TerritoryMutator)
-        assert isinstance(engine.mutators[5], TurnMutator)
+        assert isinstance(engine.mutators[5], RecoveryMutator)
+        assert isinstance(engine.mutators[6], TurnMutator)
 
     def test_validators_have_validate_method(self):
         """Test all validators have a validate method (Validator interface)."""
@@ -191,6 +196,104 @@ class TestValidateMoveMethods:
 
         result = engine.validate_move(mock_state, mock_move)
         assert result is True
+
+    def test_no_territory_action_requires_matching_phase_requirement(self):
+        """Test NO_TERRITORY_ACTION is validated against the core requirement."""
+        engine = DefaultRulesEngine()
+        mock_state = MagicMock(spec=GameState)
+        mock_state.current_phase = GamePhase.TERRITORY_PROCESSING
+        mock_state.current_player = 1
+
+        mock_move = MagicMock(spec=Move)
+        mock_move.type = MoveType.NO_TERRITORY_ACTION
+        mock_move.player = 1
+
+        requirement = PhaseRequirement(
+            type=PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+            player=1,
+            eligible_positions=[],
+        )
+
+        with patch(
+            "app.game_engine.GameEngine.get_phase_requirement",
+            return_value=requirement,
+        ):
+            result = engine.validate_move(mock_state, mock_move)
+        assert result is True
+
+    def test_skip_territory_processing_requires_canonical_surface(self):
+        """Test SKIP_TERRITORY_PROCESSING is only valid when surfaced by core."""
+        engine = DefaultRulesEngine()
+        mock_state = MagicMock(spec=GameState)
+        mock_state.current_phase = GamePhase.TERRITORY_PROCESSING
+        mock_state.current_player = 1
+
+        mock_move = MagicMock(spec=Move)
+        mock_move.type = MoveType.SKIP_TERRITORY_PROCESSING
+        mock_move.player = 1
+
+        surfaced = MagicMock(spec=Move)
+        surfaced.type = MoveType.SKIP_TERRITORY_PROCESSING
+        surfaced.player = 1
+
+        with patch(
+            "app.game_engine.GameEngine.get_valid_moves",
+            return_value=[surfaced],
+        ):
+            result = engine.validate_move(mock_state, mock_move)
+        assert result is True
+
+    def test_skip_recovery_requires_canonical_surface(self):
+        """Test SKIP_RECOVERY is only valid when surfaced by core."""
+        engine = DefaultRulesEngine()
+        mock_state = MagicMock(spec=GameState)
+        mock_state.current_phase = GamePhase.MOVEMENT
+        mock_state.current_player = 1
+
+        mock_move = MagicMock(spec=Move)
+        mock_move.type = MoveType.SKIP_RECOVERY
+        mock_move.player = 1
+
+        surfaced = MagicMock(spec=Move)
+        surfaced.type = MoveType.SKIP_RECOVERY
+        surfaced.player = 1
+
+        with patch(
+            "app.game_engine.GameEngine.get_valid_moves",
+            return_value=[surfaced],
+        ):
+            result = engine.validate_move(mock_state, mock_move)
+        assert result is True
+
+    def test_resign_valid_for_active_current_player(self):
+        """Test RESIGN is accepted as a canonical terminal move."""
+        engine = DefaultRulesEngine()
+        mock_state = MagicMock(spec=GameState)
+        mock_state.current_phase = GamePhase.MOVEMENT
+        mock_state.current_player = 1
+        mock_state.game_status = GameStatus.ACTIVE
+
+        mock_move = MagicMock(spec=Move)
+        mock_move.type = MoveType.RESIGN
+        mock_move.player = 1
+
+        result = engine.validate_move(mock_state, mock_move)
+        assert result is True
+
+    def test_timeout_invalid_for_non_current_player(self):
+        """Test TIMEOUT remains invalid for non-current players."""
+        engine = DefaultRulesEngine()
+        mock_state = MagicMock(spec=GameState)
+        mock_state.current_phase = GamePhase.CAPTURE
+        mock_state.current_player = 1
+        mock_state.game_status = GameStatus.ACTIVE
+
+        mock_move = MagicMock(spec=Move)
+        mock_move.type = MoveType.TIMEOUT
+        mock_move.player = 2
+
+        result = engine.validate_move(mock_state, mock_move)
+        assert result is False
 
     def test_skip_capture_valid_in_capture_phase(self):
         """Test SKIP_CAPTURE is valid only in CAPTURE phase for current player."""
@@ -552,6 +655,18 @@ class TestValidatorDispatch:
         mock_move.type = MoveType.MOVE_STACK
 
         with patch.object(engine.validators[1], 'validate', return_value=True) as mock_validate:
+            result = engine.validate_move(mock_state, mock_move)
+            mock_validate.assert_called_once_with(mock_state, mock_move)
+            assert result is True
+
+    def test_recovery_slide_uses_recovery_validator(self):
+        """Test RECOVERY_SLIDE dispatches to RecoveryValidator (index 5)."""
+        engine = DefaultRulesEngine()
+        mock_state = MagicMock(spec=GameState)
+        mock_move = MagicMock(spec=Move)
+        mock_move.type = MoveType.RECOVERY_SLIDE
+
+        with patch.object(engine.validators[5], 'validate', return_value=True) as mock_validate:
             result = engine.validate_move(mock_state, mock_move)
             mock_validate.assert_called_once_with(mock_state, mock_move)
             assert result is True
