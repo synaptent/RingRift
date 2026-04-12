@@ -179,7 +179,6 @@ with _w.catch_warnings():
     _w.filterwarnings("ignore", category=DeprecationWarning)
     from app.ai._neural_net_legacy import (
         _MODEL_CACHE,
-        # Main AI class
         NeuralNetAI,
         # Cache functions
         clear_model_cache,

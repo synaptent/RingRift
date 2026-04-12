@@ -249,8 +249,22 @@ class OrphanDetectionDaemon(HandlerBase):
         await self._run_scan()
         self._last_scan_time = time.time()
 
-    # NOTE: _subscribe_to_database_events removed - now using _get_subscriptions()
-    # January 3, 2026: HandlerBase handles event subscription lifecycle automatically
+    async def _subscribe_to_database_events(self) -> None:
+        """Backward-compatible DATABASE_CREATED subscription helper.
+
+        HandlerBase now manages subscriptions through `_get_subscriptions()`, but
+        older tests and callers still invoke this explicit helper.
+        """
+        try:
+            from app.coordination.event_router import DataEventType, subscribe
+        except ImportError:
+            return
+
+        event_type = getattr(DataEventType, "DATABASE_CREATED", None)
+        if event_type is None:
+            return
+
+        subscribe(getattr(event_type, "value", event_type), self._on_database_created)
 
     async def _register_database_from_event(
         self,
@@ -506,22 +520,58 @@ class OrphanDetectionDaemon(HandlerBase):
         await asyncio.to_thread(self._persist_failed_orphan, orphan, last_error)
         return False
 
+    async def _publish_orphan_event(self, event_type: Any, payload: dict[str, Any]) -> None:
+        """Publish an orphan-related event through the current router API.
+
+        Prefers ``get_router().publish(...)`` for backward compatibility with
+        older tests and shims, then falls back to the module-level ``publish``
+        helper used by the current event router.
+        """
+        event_router = sys.modules.get("app.coordination.event_router")
+        if event_router is None:
+            try:
+                import app.coordination.event_router as event_router
+            except ImportError:
+                return
+
+        router_factory = getattr(event_router, "get_router", None)
+        if callable(router_factory):
+            router = router_factory()
+            if router is not None and hasattr(router, "publish"):
+                await router.publish(
+                    event_type=getattr(event_type, "value", event_type),
+                    payload=payload,
+                    source="OrphanDetectionDaemon",
+                )
+                return
+
+        publish = getattr(event_router, "publish", None)
+        if publish is None:
+            return
+
+        publish_result = publish(
+            event_type=event_type,
+            payload=payload,
+            source="OrphanDetectionDaemon",
+        )
+        if hasattr(publish_result, "__await__"):
+            await publish_result
+
     async def _emit_registration_event(self, registered: list[OrphanInfo]) -> None:
         """Emit ORPHAN_GAMES_REGISTERED event."""
         try:
-            from app.coordination.event_router import DataEventType, publish
+            from app.coordination.event_router import DataEventType
 
             total_games = sum(o.game_count for o in registered)
 
-            await publish(
-                event_type=DataEventType.ORPHAN_GAMES_REGISTERED,
-                payload={
+            await self._publish_orphan_event(
+                DataEventType.ORPHAN_GAMES_REGISTERED,
+                {
                     "registered_count": len(registered),
                     "total_games": total_games,
                     "registered_paths": [str(o.path) for o in registered],
                     "timestamp": time.time(),
                 },
-                source="OrphanDetectionDaemon",
             )
             logger.info(f"Emitted ORPHAN_GAMES_REGISTERED: {len(registered)} databases")
 
@@ -533,14 +583,14 @@ class OrphanDetectionDaemon(HandlerBase):
     async def _emit_detection_event(self, orphans: list[OrphanInfo]) -> None:
         """Emit ORPHAN_GAMES_DETECTED event."""
         try:
-            from app.coordination.event_router import DataEventType, publish
+            from app.coordination.event_router import DataEventType
 
             total_games = sum(o.game_count for o in orphans)
             total_bytes = sum(o.file_size_bytes for o in orphans)
 
-            await publish(
-                event_type=DataEventType.ORPHAN_GAMES_DETECTED,
-                payload={
+            await self._publish_orphan_event(
+                DataEventType.ORPHAN_GAMES_DETECTED,
+                {
                     "orphan_count": len(orphans),
                     "total_games": total_games,
                     "total_bytes": total_bytes,
@@ -548,7 +598,6 @@ class OrphanDetectionDaemon(HandlerBase):
                     "board_types": list({o.board_type for o in orphans if o.board_type}),
                     "timestamp": time.time(),
                 },
-                source="OrphanDetectionDaemon",
             )
             logger.info(
                 f"Emitted ORPHAN_GAMES_DETECTED: {len(orphans)} orphans, "

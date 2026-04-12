@@ -575,6 +575,7 @@ class TestHealPartitions:
 
         # Mock successful injections
         healer.inject_peer = AsyncMock(return_value=True)
+        healer._validate_injection_propagated = AsyncMock(return_value=(True, 1.0))
 
         partitions = [
             PartitionInfo(
@@ -597,7 +598,10 @@ class TestHealPartitions:
             "node1": DiscoveredPeer(node_id="node1", addresses=["10.0.0.1"]),
         }
 
-        result = await healer.heal_partitions(partitions, known_peers)
+        try:
+            result = await healer.heal_partitions(partitions, known_peers)
+        finally:
+            await healer.close()
 
         assert result.partitions_found == 2
         assert result.partitions_healed >= 1
@@ -611,6 +615,7 @@ class TestHealPartitions:
 
         healer = PartitionHealer()
         healer.inject_peer = AsyncMock(return_value=True)
+        healer._validate_injection_propagated = AsyncMock(return_value=(True, 1.0))
 
         partitions = [
             PartitionInfo(
@@ -627,7 +632,10 @@ class TestHealPartitions:
             ),
         ]
 
-        result = await healer.heal_partitions(partitions, {})
+        try:
+            result = await healer.heal_partitions(partitions, {})
+        finally:
+            await healer.close()
 
         assert result.duration_ms >= 0
 

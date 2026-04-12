@@ -267,6 +267,10 @@ class PipelineStageMixin(PipelineMixinBase):
                 metadata={"error": getattr(result, "error", "Unknown error")},
             )
 
+    async def _on_training_completed(self, result) -> None:
+        """Backward-compatible alias for the pre-mixin handler name."""
+        await self._on_training_complete(result)
+
     async def _on_training_failed(self, result) -> None:
         """Handle training failure."""
         from app.coordination.data_pipeline_orchestrator import PipelineStage
@@ -330,6 +334,10 @@ class PipelineStageMixin(PipelineMixinBase):
                 success=False,
                 metadata={"error": getattr(result, "error", "Unknown error")},
             )
+
+    async def _on_evaluation_completed(self, result) -> None:
+        """Backward-compatible alias for the pre-mixin handler name."""
+        await self._on_evaluation_complete(result)
 
     # =========================================================================
     # Promotion Stage Handler

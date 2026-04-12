@@ -102,6 +102,51 @@ _WARNED_CHECKPOINT_METADATA: set[str] = set()
 _MODEL_CACHE = _get_model_cache()
 
 
+def _runtime_square_model_classes() -> dict[str, Any]:
+    """Return canonical square architecture classes for runtime loading."""
+    from .neural_net.square_architectures import (
+        RingRiftCNN_v2 as RuntimeRingRiftCNN_v2,
+        RingRiftCNN_v2_Lite as RuntimeRingRiftCNN_v2_Lite,
+        RingRiftCNN_v3 as RuntimeRingRiftCNN_v3,
+        RingRiftCNN_v3_Lite as RuntimeRingRiftCNN_v3_Lite,
+        RingRiftCNN_v4 as RuntimeRingRiftCNN_v4,
+    )
+
+    return {
+        "RingRiftCNN_v2": RuntimeRingRiftCNN_v2,
+        "RingRiftCNN_v2_Lite": RuntimeRingRiftCNN_v2_Lite,
+        "RingRiftCNN_v3": RuntimeRingRiftCNN_v3,
+        "RingRiftCNN_v3_Lite": RuntimeRingRiftCNN_v3_Lite,
+        "RingRiftCNN_v4": RuntimeRingRiftCNN_v4,
+    }
+
+
+def _runtime_hex_model_classes() -> dict[str, Any]:
+    """Return canonical hex architecture classes for runtime loading."""
+    from .neural_net.hex_architectures import (
+        HexNeuralNet_v2 as RuntimeHexNeuralNet_v2,
+        HexNeuralNet_v2_Lite as RuntimeHexNeuralNet_v2_Lite,
+        HexNeuralNet_v3 as RuntimeHexNeuralNet_v3,
+        HexNeuralNet_v3_Lite as RuntimeHexNeuralNet_v3_Lite,
+    )
+
+    mapping: dict[str, Any] = {
+        "HexNeuralNet_v2": RuntimeHexNeuralNet_v2,
+        "HexNeuralNet_v2_Lite": RuntimeHexNeuralNet_v2_Lite,
+        "HexNeuralNet_v3": RuntimeHexNeuralNet_v3,
+        "HexNeuralNet_v3_Lite": RuntimeHexNeuralNet_v3_Lite,
+    }
+    try:
+        from .neural_net.hex_architectures import (
+            HexNeuralNet_v3_Flat as RuntimeHexNeuralNet_v3_Flat,
+        )
+    except ImportError:
+        RuntimeHexNeuralNet_v3_Flat = None
+    if RuntimeHexNeuralNet_v3_Flat is not None:
+        mapping["HexNeuralNet_v3_Flat"] = RuntimeHexNeuralNet_v3_Flat
+    return mapping
+
+
 def _env_flag_enabled(name: str) -> bool:
     """Return True only for explicit truthy env values.
 
@@ -3871,6 +3916,10 @@ class NeuralNetAI(BaseAI):
                         has_v2_policy = any(k in state_dict for k in v2_policy_keys)
                         has_v4_attention = any(k in state_dict for k in v4_attention_patterns)
                         has_nnue = all(k in state_dict for k in nnue_keys)
+                        value_fc1_weight = state_dict.get("value_fc1.weight")
+                        inferred_value_hidden_units = None
+                        if value_fc1_weight is not None and hasattr(value_fc1_weight, "shape"):
+                            inferred_value_hidden_units = int(value_fc1_weight.shape[0])
 
                         if model_class_name is None:
                             if has_v4_attention:
@@ -3883,8 +3932,14 @@ class NeuralNetAI(BaseAI):
                                 )
                             elif has_v3_spatial or has_v3_rank_dist:
                                 # Definitely a V3 model - use spatial policy heads
-                                # Check for lite variant by looking at filter count
-                                is_lite = num_filters <= 96
+                                # Lite/full is determined by FC head width, not filter count.
+                                # Legacy full checkpoints may use narrow filter counts while
+                                # still retaining the full 128-unit heads.
+                                is_lite = (
+                                    inferred_value_hidden_units <= 64
+                                    if inferred_value_hidden_units is not None
+                                    else num_filters <= 96
+                                )
                                 model_class_name = "RingRiftCNN_v3_Lite" if is_lite else "RingRiftCNN_v3"
                                 memory_tier_override = "v3-low" if is_lite else "v3-high"
                                 logger.info(
@@ -3913,7 +3968,11 @@ class NeuralNetAI(BaseAI):
                                 )
                             elif has_v2_policy:
                                 # Definitely a V2 model - use FC policy heads
-                                is_lite = num_filters <= 96
+                                is_lite = (
+                                    inferred_value_hidden_units <= 64
+                                    if inferred_value_hidden_units is not None
+                                    else num_filters <= 96
+                                )
                                 model_class_name = "RingRiftCNN_v2_Lite" if is_lite else "RingRiftCNN_v2"
                                 memory_tier_override = "low" if is_lite else "high"
                                 logger.info(
@@ -3995,13 +4054,7 @@ class NeuralNetAI(BaseAI):
         # instantiate it directly so we can respect a fixed policy_size from the
         # checkpoint (MAX_N head) even on square8. Otherwise fall back to the
         # board-based factory.
-        square_model_classes: dict[str, Any] = {
-            "RingRiftCNN_v2": RingRiftCNN_v2,
-            "RingRiftCNN_v2_Lite": RingRiftCNN_v2_Lite,
-            "RingRiftCNN_v3": RingRiftCNN_v3,
-            "RingRiftCNN_v3_Lite": RingRiftCNN_v3_Lite,
-            "RingRiftCNN_v4": RingRiftCNN_v4,
-        }
+        square_model_classes = _runtime_square_model_classes()
 
         # FIX (Dec 2025): Some hex checkpoints were saved with incorrect model_class
         # metadata (e.g., "RingRiftCNN_v2" instead of "HexNeuralNet_v2"). When loading
@@ -4874,27 +4927,8 @@ class NeuralNetAI(BaseAI):
         )
 
         # Build the model
-        square_model_classes = {
-            "RingRiftCNN_v2": RingRiftCNN_v2,
-            "RingRiftCNN_v2_Lite": RingRiftCNN_v2_Lite,
-            "RingRiftCNN_v3": RingRiftCNN_v3,
-            "RingRiftCNN_v3_Lite": RingRiftCNN_v3_Lite,
-            "RingRiftCNN_v4": RingRiftCNN_v4,
-        }
-
-        # Import V3 flat model for hex boards (has flat policy heads, not spatial)
-        try:
-            from .neural_net.hex_architectures import HexNeuralNet_v3_Flat
-        except ImportError:
-            HexNeuralNet_v3_Flat = None  # May not be available in older versions
-
-        hex_model_classes = {
-            "HexNeuralNet_v2": HexNeuralNet_v2,
-            "HexNeuralNet_v2_Lite": HexNeuralNet_v2_Lite,
-            "HexNeuralNet_v3": HexNeuralNet_v3,
-            "HexNeuralNet_v3_Lite": HexNeuralNet_v3_Lite,
-            "HexNeuralNet_v3_Flat": HexNeuralNet_v3_Flat,
-        }
+        square_model_classes = _runtime_square_model_classes()
+        hex_model_classes = _runtime_hex_model_classes()
 
         if model_class_name in square_model_classes:
             cls = square_model_classes[model_class_name]
@@ -5096,13 +5130,7 @@ class NeuralNetAI(BaseAI):
             if getattr(self.model, "policy_size", None) is not None:
                 policy_size = int(self.model.policy_size)
 
-        square_model_classes: dict[str, Any] = {
-            "RingRiftCNN_v2": RingRiftCNN_v2,
-            "RingRiftCNN_v2_Lite": RingRiftCNN_v2_Lite,
-            "RingRiftCNN_v3": RingRiftCNN_v3,
-            "RingRiftCNN_v3_Lite": RingRiftCNN_v3_Lite,
-            "RingRiftCNN_v4": RingRiftCNN_v4,
-        }
+        square_model_classes = _runtime_square_model_classes()
         cls = square_model_classes.get(model_class)
         if cls is None:
             return False
