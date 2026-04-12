@@ -1,0 +1,45 @@
+[Unit]
+Description=RingRift Minimal AlphaZero Training Loop
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+Environment=TORCH_COMPILE_DISABLE=1
+Environment=RINGRIFT_DISABLE_TORCH_COMPILE=1
+EnvironmentFile=/etc/ringrift/node.conf
+EnvironmentFile=/etc/ringrift/training.conf
+
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
+  /home/ubuntu/ringrift/ai-service/scripts/minimal_alphazero_loop.py \
+  --model ${TRAINING_MODEL} \
+  --work-dir ${TRAINING_WORK_DIR} \
+  --board-type ${TRAINING_BOARD_TYPE} \
+  --num-players ${TRAINING_NUM_PLAYERS} \
+  --iterations ${TRAINING_ITERATIONS} \
+  --games-per-iter ${TRAINING_GAMES_PER_ITER} \
+  --selfplay-budget ${TRAINING_SELFPLAY_BUDGET} \
+  --eval-budget ${TRAINING_EVAL_BUDGET} \
+  --lr ${TRAINING_LR} \
+  --lr-schedule ${TRAINING_LR_SCHEDULE} \
+  --train-lr-scheduler ${TRAINING_TRAIN_LR_SCHEDULER} \
+  --train-window ${TRAINING_TRAIN_WINDOW} \
+  --node-id ${NODE_ID}
+
+Restart=always
+RestartSec=60
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# Kill all children (torch workers, MCTS threads) on stop
+KillMode=control-group
+TimeoutStopSec=120
+
+StandardOutput=append:/home/ubuntu/ringrift/ai-service/logs/training.log
+StandardError=append:/home/ubuntu/ringrift/ai-service/logs/training.log
+
+[Install]
+WantedBy=multi-user.target
