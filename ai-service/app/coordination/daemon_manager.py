@@ -402,8 +402,8 @@ class DaemonManager(DaemonManagerLifecycleMixin, SingletonMixin["DaemonManager"]
 
         Overrides SingletonMixin.reset_instance() to ensure proper cleanup:
         1. Cancels _health_task directly (avoids async task leaks)
-        2. Clears restart state tracking
-        3. Attempts graceful shutdown if event loop available
+        2. Cancels tracked daemon tasks directly
+        3. Clears restart state tracking
 
         December 2025: Enhanced for singleton registry test cleanup.
         """
@@ -419,7 +419,19 @@ class DaemonManager(DaemonManagerLifecycleMixin, SingletonMixin["DaemonManager"]
                         instance._health_task.cancel()
                     instance._health_task = None
 
-                # 2. Clear restart state tracking
+                # 2. Cancel tracked daemon tasks directly instead of spawning
+                # background shutdown work during test fixture setup.
+                if hasattr(instance, "_daemons"):
+                    for info in instance._daemons.values():
+                        task = getattr(info, "task", None)
+                        if task and not task.done():
+                            task.cancel()
+                        info.task = None
+                        if hasattr(info, "state"):
+                            info.state = DaemonState.STOPPED
+                        info.instance = None
+
+                # 3. Clear restart state tracking
                 if hasattr(instance, "_persisted_restart_counts"):
                     instance._persisted_restart_counts.clear()
                 if hasattr(instance, "_restart_timestamps"):
@@ -437,16 +449,10 @@ class DaemonManager(DaemonManagerLifecycleMixin, SingletonMixin["DaemonManager"]
                 if hasattr(instance, "_shutdown_event"):
                     instance._shutdown_event.set()
 
-                # 5. Try graceful shutdown (best effort)
-                try:
-                    loop = asyncio.get_running_loop()
-                    fire_and_forget(
-                        instance.shutdown(),
-                        name="daemon_manager_reset_shutdown",
-                    )
-                except RuntimeError:
-                    # No running loop - sync cleanup already done above
-                    pass
+                if hasattr(instance, "_factories"):
+                    instance._factories.clear()
+                if hasattr(instance, "_daemons"):
+                    instance._daemons.clear()
 
         # Call parent to clear the singleton reference
         super().reset_instance()

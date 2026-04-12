@@ -33,6 +33,7 @@ def config():
         shutdown_timeout=2.0,
         auto_restart_failed=False,  # Disable for predictable tests
         max_restart_attempts=2,
+        enable_coordination_wiring=False,
     )
 
 
@@ -40,7 +41,9 @@ def config():
 def manager(config):
     """Create a fresh DaemonManager for each test."""
     reset_daemon_manager()
-    return DaemonManager(config)
+    instance = DaemonManager(config)
+    yield instance
+    reset_daemon_manager()
 
 
 @pytest.fixture
@@ -135,14 +138,11 @@ class TestDaemonLifecycle:
         assert info.task is not None
 
         # Cleanup
-        await manager.stop(DaemonType.SYNC_COORDINATOR)
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_start_unknown_daemon_fails(self, manager):
         """Should fail to start unregistered daemon."""
-        result = await manager.start(DaemonType.SYNC_COORDINATOR)
-        # Default factories are registered, so this should work
-        # Let's test with a cleared manager
         manager._factories.clear()
         manager._daemons.clear()
 
@@ -160,7 +160,7 @@ class TestDaemonLifecycle:
         assert result is True
 
         # Cleanup
-        await manager.stop(DaemonType.SYNC_COORDINATOR)
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_stop_daemon(self, manager, simple_daemon):
@@ -174,6 +174,7 @@ class TestDaemonLifecycle:
         assert not manager.is_running(DaemonType.SYNC_COORDINATOR)
         info = manager._daemons[DaemonType.SYNC_COORDINATOR]
         assert info.state == DaemonState.STOPPED
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_stop_already_stopped_returns_true(self, manager, simple_daemon):
@@ -182,6 +183,7 @@ class TestDaemonLifecycle:
 
         result = await manager.stop(DaemonType.SYNC_COORDINATOR)
         assert result is True
+        await manager.shutdown()
 
 
 class TestDependencyOrdering:
@@ -207,7 +209,7 @@ class TestDependencyOrdering:
         assert result is True
 
         # Cleanup
-        await manager.stop_all()
+        await manager.shutdown()
 
     def test_sort_by_dependencies(self, manager, simple_daemon):
         """Should sort daemons by dependency order."""
@@ -259,7 +261,7 @@ class TestStartStopAll:
         assert manager.is_running(DaemonType.HEALTH_CHECK)
 
         # Cleanup
-        await manager.stop_all()
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_start_all_specific_types(self, manager, simple_daemon):
@@ -278,7 +280,7 @@ class TestStartStopAll:
         assert not manager.is_running(DaemonType.HEALTH_CHECK)
 
         # Cleanup
-        await manager.stop_all()
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_stop_all(self, manager, simple_daemon):
@@ -296,6 +298,7 @@ class TestStartStopAll:
         assert results[DaemonType.HEALTH_CHECK] is True
         assert not manager.is_running(DaemonType.SYNC_COORDINATOR)
         assert not manager.is_running(DaemonType.HEALTH_CHECK)
+        await manager.shutdown()
 
 
 class TestDaemonStatus:
@@ -321,7 +324,7 @@ class TestDaemonStatus:
         assert "uptime_seconds" in daemon_status
 
         # Cleanup
-        await manager.stop_all()
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_status_summary(self, manager, simple_daemon):
@@ -342,7 +345,7 @@ class TestDaemonStatus:
         assert summary["stopped"] == 1
 
         # Cleanup
-        await manager.stop_all()
+        await manager.shutdown()
 
     def test_is_running(self, manager, simple_daemon):
         """is_running should reflect daemon state."""

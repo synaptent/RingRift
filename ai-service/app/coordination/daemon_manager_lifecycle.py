@@ -456,7 +456,7 @@ class DaemonManagerLifecycleMixin:
             # Start daemon watchdog for active monitoring
             try:
                 from app.coordination.daemon_watchdog import start_watchdog
-                safe_create_task(start_watchdog(), name="daemon_watchdog")
+                await start_watchdog()
                 logger.info("Daemon watchdog started")
             except (ImportError, RuntimeError) as e:
                 logger.warning(f"Failed to start daemon watchdog: {e}")

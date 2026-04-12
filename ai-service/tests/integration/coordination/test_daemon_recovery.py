@@ -14,10 +14,12 @@ Purpose: Ensure production daemons don't crash silently
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from app.coordination.daemon_manager import (
     DaemonInfo,
@@ -42,11 +44,12 @@ def manager_config():
         shutdown_timeout=1.0,
         recovery_cooldown=0.2,  # 200ms cooldown
         auto_restart_failed=True,
+        enable_coordination_wiring=False,
     )
 
 
-@pytest.fixture
-def manager(manager_config):
+@pytest_asyncio.fixture
+async def manager(manager_config):
     """Create fresh DaemonManager for each test with no default factories."""
     RESTART_STATE_FILE.unlink(missing_ok=True)
     DaemonManager.reset_instance()
@@ -57,13 +60,20 @@ def manager(manager_config):
     mgr._persisted_restart_counts.clear()
     mgr._permanently_failed.clear()
     yield mgr
-    # Cleanup - stop any running tasks
+    with contextlib.suppress(Exception):
+        await mgr.shutdown()
     mgr._running = False
     if mgr._shutdown_event:
         mgr._shutdown_event.set()
+    if mgr._health_task and not mgr._health_task.done():
+        mgr._health_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await mgr._health_task
     for info in list(mgr._daemons.values()):
         if info.task and not info.task.done():
             info.task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await info.task
     RESTART_STATE_FILE.unlink(missing_ok=True)
     DaemonManager.reset_instance()
 
