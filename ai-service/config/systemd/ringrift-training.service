@@ -1,6 +1,8 @@
 [Unit]
 Description=RingRift Minimal AlphaZero Training Loop
 After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -31,9 +33,6 @@ ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
 
 Restart=always
 RestartSec=60
-StartLimitIntervalSec=600
-StartLimitBurst=5
-
 # Kill all children (torch workers, MCTS threads) on stop
 KillMode=control-group
 TimeoutStopSec=120
