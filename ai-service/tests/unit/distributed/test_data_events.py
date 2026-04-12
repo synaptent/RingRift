@@ -9,6 +9,7 @@ Tests the event bus functionality including:
 """
 
 import asyncio
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -208,6 +209,71 @@ class TestEventBus:
         )
 
         assert len(received) == 1
+
+    def test_publish_sync_skips_async_handlers(self, event_bus):
+        """Sync publishing should not run async handlers in ad-hoc loops."""
+        sync_received = []
+        async_received = []
+
+        def sync_handler(event):
+            sync_received.append(event)
+
+        async def async_handler(event):
+            async_received.append(event)
+
+        event_bus.subscribe(DataEventType.ELO_UPDATED, sync_handler)
+        event_bus.subscribe(DataEventType.ELO_UPDATED, async_handler)
+
+        event_bus.publish_sync(
+            DataEvent(event_type=DataEventType.ELO_UPDATED),
+            bridge_cross_process=False,
+        )
+
+        assert len(sync_received) == 1
+        assert len(async_received) == 0
+
+    def test_publish_sync_from_thread_skips_async_loop_bound_handlers(self, event_bus):
+        """Threaded sync publishers should not execute async loop-bound callbacks."""
+        sync_received = []
+        async_received = []
+        errors = []
+
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop_bound_lock = asyncio.Lock()
+        finally:
+            asyncio.set_event_loop(None)
+
+        def sync_handler(event):
+            sync_received.append(event)
+
+        async def async_handler(event):
+            async with loop_bound_lock:
+                async_received.append(event)
+
+        event_bus.subscribe(DataEventType.ELO_UPDATED, sync_handler)
+        event_bus.subscribe(DataEventType.ELO_UPDATED, async_handler)
+
+        def publish() -> None:
+            try:
+                event_bus.publish_sync(
+                    DataEvent(event_type=DataEventType.ELO_UPDATED),
+                    bridge_cross_process=False,
+                )
+            except Exception as exc:  # pragma: no cover - defensive capture
+                errors.append(exc)
+
+        thread = threading.Thread(target=publish)
+        thread.start()
+        thread.join(timeout=2)
+
+        assert not thread.is_alive()
+        assert errors == []
+        assert len(sync_received) == 1
+        assert len(async_received) == 0
+
+        loop.close()
 
 
 class TestHealthRecoveryEvents:

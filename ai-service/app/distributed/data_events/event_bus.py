@@ -7,6 +7,7 @@ Extracted from data_events.py for modularity.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from typing import Any, Callable, Coroutine, Optional, Union
 
@@ -34,7 +35,7 @@ class EventBus:
         self._global_subscribers: list[EventCallback] = []
         self._event_history: list[DataEvent] = []
         self._max_history = max_history
-        self._lock = asyncio.Lock()
+        self._state_lock = threading.RLock()
 
         # Subscription registry (December 2025)
         self._warn_unsubscribed = warn_unsubscribed
@@ -104,7 +105,7 @@ class EventBus:
         if isinstance(event, DataEventType):
             event = DataEvent(event_type=event, payload={}, source="unknown")
 
-        async with self._lock:
+        with self._state_lock:
             # Store in history
             self._event_history.append(event)
             if len(self._event_history) > self._max_history:
@@ -177,19 +178,65 @@ class EventBus:
     def publish_sync(self, event: DataEvent, bridge_cross_process: bool = True) -> None:
         """Publish an event synchronously (non-async context).
 
-        Creates a new event loop if needed. Use publish() when possible.
+        In non-async contexts, only synchronous subscribers are invoked.
+        This avoids binding singleton event-bus state to ad-hoc event loops
+        created by worker threads. Use publish() when async subscribers must
+        run.
         """
-        # Bridge immediately in sync context (doesn't need async)
-        if bridge_cross_process:
-            _bridge_to_cross_process(event)
-
         try:
             loop = asyncio.get_running_loop()
-            # Don't bridge again in the async publish
             loop.create_task(self.publish(event, bridge_cross_process=False))
         except RuntimeError:
-            # No running loop - run synchronously
-            asyncio.run(self.publish(event, bridge_cross_process=False))
+            if bridge_cross_process:
+                _bridge_to_cross_process(event)
+
+            with self._state_lock:
+                self._event_history.append(event)
+                if len(self._event_history) > self._max_history:
+                    self._event_history = self._event_history[-self._max_history:]
+                self._published_event_types[event.event_type] = (
+                    self._published_event_types.get(event.event_type, 0) + 1
+                )
+
+            callbacks = list(self._global_subscribers)
+            if event.event_type in self._subscribers:
+                callbacks.extend(self._subscribers[event.event_type])
+
+            if (
+                self._warn_unsubscribed
+                and not callbacks
+                and event.event_type not in self._warned_event_types
+            ):
+                self._warned_event_types.add(event.event_type)
+                print(
+                    f"[EventBus] WARNING: Event {event.event_type.value} published "
+                    f"but has no subscribers. Consider adding a handler."
+                )
+
+            for callback in callbacks:
+                if asyncio.iscoroutinefunction(callback):
+                    continue
+
+                self._total_callbacks_invoked += 1
+                callback_start = time.time()
+                try:
+                    result = callback(event)
+                    if asyncio.iscoroutine(result):
+                        result.close()
+                except Exception as e:
+                    self._total_callback_errors += 1
+                    self._errors_by_type[event.event_type] = (
+                        self._errors_by_type.get(event.event_type, 0) + 1
+                    )
+                    print(f"[EventBus] Error in subscriber for {event.event_type.value}: {e}")
+                finally:
+                    latency_ms = (time.time() - callback_start) * 1000
+                    self._callback_latencies.append(latency_ms)
+                    if len(self._callback_latencies) > self._max_latency_samples:
+                        self._callback_latencies = self._callback_latencies[-self._max_latency_samples:]
+
+            self._total_events_published += 1
+            self._last_event_time = time.time()
 
     def emit(
         self,

@@ -238,7 +238,12 @@ def load_cmaes_weights(path: str = "heuristic_weights_optimized.json") -> dict[s
         if os.path.exists(p):
             with open(p) as f:
                 data = json.load(f)
-                return data.get("weights", data)
+                loaded_weights = data.get("weights", data)
+                canonical_weights = dict(BASE_V1_BALANCED_WEIGHTS)
+                canonical_weights.update(
+                    {str(key): float(value) for key, value in loaded_weights.items()}
+                )
+                return canonical_weights
 
     raise FileNotFoundError(f"Could not find CMA-ES weights file. Tried: {paths_to_try}")
 

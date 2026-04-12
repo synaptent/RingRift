@@ -67,6 +67,10 @@ __all__ = [
     "check_disk_space_available",
     "ensure_disk_space",
     "get_available_disk_space",
+    # Progress reporting utilities
+    "ProgressReporter",
+    "SoakProgressReporter",
+    "OptimizationProgressReporter",
 ]
 
 # =============================================================================
@@ -169,5 +173,20 @@ def __getattr__(name: str):
                 "get_available_disk_space": _gads,
             }
         return _lazy_cache["disk_utils"][name]
+
+    # Progress reporters
+    if name in ("ProgressReporter", "SoakProgressReporter", "OptimizationProgressReporter"):
+        if "progress_reporter" not in _lazy_cache:
+            from app.utils.progress_reporter import (
+                OptimizationProgressReporter as _OptimizationProgressReporter,
+                ProgressReporter as _ProgressReporter,
+                SoakProgressReporter as _SoakProgressReporter,
+            )
+            _lazy_cache["progress_reporter"] = {
+                "ProgressReporter": _ProgressReporter,
+                "SoakProgressReporter": _SoakProgressReporter,
+                "OptimizationProgressReporter": _OptimizationProgressReporter,
+            }
+        return _lazy_cache["progress_reporter"][name]
 
     raise AttributeError(f"module 'app.utils' has no attribute {name!r}")
