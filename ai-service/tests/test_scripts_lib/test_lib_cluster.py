@@ -27,6 +27,7 @@ from scripts.lib.cluster import (
     get_automation,
     get_cluster,
 )
+from scripts.lib.hosts import HostConfig
 
 
 class TestCommandResult:
@@ -233,9 +234,31 @@ class TestClusterNode:
 class TestClusterManager:
     """Tests for ClusterManager class."""
 
-    def test_init_default_nodes(self):
+    @patch("scripts.lib.hosts.get_active_hosts")
+    def test_init_default_nodes(self, mock_get_active_hosts):
+        mock_get_active_hosts.return_value = [
+            HostConfig(
+                name="lambda-gh200-8",
+                ssh_host="192.0.2.8",
+                tailscale_ip="100.121.230.110",
+                ssh_user="ubuntu",
+                ssh_key="~/.ssh/id_cluster",
+                ringrift_path="~/ringrift/ai-service",
+            ),
+            HostConfig(
+                name="hetzner-cpu1",
+                ssh_host="203.0.113.1",
+                tailscale_ip="10.0.0.1",
+                ssh_user="ubuntu",
+                ssh_key="~/.ssh/id_cluster",
+                ringrift_path="~/ringrift/ai-service",
+            ),
+        ]
+
         manager = ClusterManager()
-        assert len(manager.nodes) == len(ClusterManager.DEFAULT_NODES)
+
+        assert len(manager.nodes) == 2
+        assert set(manager.nodes) == {"lambda-gh200-8", "hetzner-cpu1"}
 
     def test_init_custom_nodes(self):
         custom_nodes = [
@@ -247,12 +270,23 @@ class TestClusterManager:
         assert "node1" in manager.nodes
         assert "node2" in manager.nodes
 
-    def test_get_node(self):
+    @patch("scripts.lib.hosts.get_active_hosts")
+    def test_get_node(self, mock_get_active_hosts):
+        mock_get_active_hosts.return_value = [
+            HostConfig(
+                name="lambda-gh200-8",
+                ssh_host="192.0.2.8",
+                tailscale_ip="100.121.230.110",
+                ssh_user="ubuntu",
+                ssh_key="~/.ssh/id_cluster",
+                ringrift_path="~/ringrift/ai-service",
+            ),
+        ]
+
         manager = ClusterManager()
-        # Should have default nodes
-        node = manager.get_node("lambda-gh200-e")
+        node = manager.get_node("lambda-gh200-8")
         assert node is not None
-        assert node.name == "lambda-gh200-e"
+        assert node.name == "lambda-gh200-8"
 
     def test_get_node_not_found(self):
         manager = ClusterManager()

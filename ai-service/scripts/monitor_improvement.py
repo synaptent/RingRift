@@ -30,20 +30,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.lib.state_manager import StateManager
 
-# Import canonical thresholds
-try:
-    from app.config.thresholds import (
-        ARCHIVE_ELO_THRESHOLD,
-        PRODUCTION_ELO_THRESHOLD,
-        PRODUCTION_MIN_GAMES,
-    )
-    BASELINE_ELO = PRODUCTION_ELO_THRESHOLD  # Models above this are considered strong
-    CULL_THRESHOLD = ARCHIVE_ELO_THRESHOLD  # Models below this with 30+ games get culled
-    MIN_GAMES_SIGNIFICANT = PRODUCTION_MIN_GAMES  # Minimum games for statistical significance
-except ImportError:
-    BASELINE_ELO = 1650
-    CULL_THRESHOLD = 1450
-    MIN_GAMES_SIGNIFICANT = 30
+from app.config.thresholds import (
+    ARCHIVE_ELO_THRESHOLD,
+    PRODUCTION_ELO_THRESHOLD,
+    PRODUCTION_MIN_GAMES,
+)
+
+BASELINE_ELO = PRODUCTION_ELO_THRESHOLD  # Models above this are considered strong
+CULL_THRESHOLD = ARCHIVE_ELO_THRESHOLD  # Models below this with 30+ games get culled
+MIN_GAMES_SIGNIFICANT = PRODUCTION_MIN_GAMES  # Minimum games for statistical significance
 CHECK_INTERVAL = 300  # 5 minutes between checks in watch mode
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]

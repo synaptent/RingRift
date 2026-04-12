@@ -27,6 +27,7 @@ import pytest
 from app.coordination.quality_monitor_daemon import (
     QualityMonitorConfig,
     QualityMonitorDaemon,
+    QualityResult,
     QualityState,
     create_quality_monitor,
 )
@@ -482,15 +483,13 @@ class TestEventEmission:
         """Test emitting low quality warning event."""
         daemon = QualityMonitorDaemon()
         daemon._event_cooldown = 0  # Disable cooldown
-
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
+        quality_result = QualityResult(quality_score=0.4, sample_count=10)
 
         with patch.dict(
             "sys.modules",
             {
                 "app.coordination.event_router": MagicMock(
-                    get_router=MagicMock(return_value=mock_router),
+                    publish=AsyncMock(),
                     DataEventType=MagicMock(
                         LOW_QUALITY_DATA_WARNING="LOW_QUALITY_DATA_WARNING"
                     ),
@@ -498,7 +497,7 @@ class TestEventEmission:
             },
         ):
             await daemon._emit_quality_event(
-                quality=0.4,
+                quality_result=quality_result,
                 new_state=QualityState.POOR,
                 old_state=QualityState.GOOD,
             )
@@ -545,7 +544,8 @@ class TestQualityCheck:
 
         quality = await daemon._get_current_quality()
 
-        assert quality == 1.0  # Default when no data
+        assert quality.quality_score == 1.0
+        assert quality.sample_count == 0
 
     @pytest.mark.asyncio
     async def test_get_current_quality_no_databases(self):
@@ -556,7 +556,8 @@ class TestQualityCheck:
 
             quality = await daemon._get_current_quality()
 
-            assert quality == 1.0  # Default when no databases
+            assert quality.quality_score == 1.0
+            assert quality.sample_count == 0
 
 
 # =============================================================================
@@ -605,7 +606,10 @@ class TestOnDemandQualityCheck:
         }
 
         with patch.object(
-            daemon, "_get_current_quality", new_callable=AsyncMock, return_value=0.75
+            daemon,
+            "_get_current_quality",
+            new_callable=AsyncMock,
+            return_value=QualityResult(quality_score=0.75, sample_count=12),
         ):
             with patch.object(daemon, "_emit_quality_event", new_callable=AsyncMock):
                 await daemon._on_quality_check_requested(event)

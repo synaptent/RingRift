@@ -252,6 +252,7 @@ class OrchestratorRegistry(SingletonMixin):
         self._my_id: str | None = None
         self._my_role: OrchestratorRole | None = None
         self._heartbeat_thread: threading.Thread | None = None
+        self._heartbeat_stop_event = threading.Event()
         self._running = False
         self._init_db()
 
@@ -511,6 +512,7 @@ class OrchestratorRegistry(SingletonMixin):
             return
 
         self._running = True
+        self._heartbeat_stop_event.clear()
 
         def heartbeat_loop():
             while self._running and self._my_id:
@@ -524,7 +526,8 @@ class OrchestratorRegistry(SingletonMixin):
                     logger.warning(f"Heartbeat I/O error: {e}")
                 except (ValueError, TypeError) as e:
                     logger.error(f"Heartbeat data error: {e}")
-                time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+                if self._heartbeat_stop_event.wait(timeout=HEARTBEAT_INTERVAL_SECONDS):
+                    break
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
         self._heartbeat_thread.start()
@@ -532,8 +535,9 @@ class OrchestratorRegistry(SingletonMixin):
     def _stop_heartbeat(self):
         """Stop background heartbeat thread."""
         self._running = False
+        self._heartbeat_stop_event.set()
         if self._heartbeat_thread:
-            self._heartbeat_thread.join(timeout=5)
+            self._heartbeat_thread.join(timeout=1)
             self._heartbeat_thread = None
         if self._my_id:
             stale_time = datetime.now() - timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS + 1)

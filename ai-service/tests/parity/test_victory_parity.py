@@ -103,26 +103,16 @@ class TestDeterministicTiebreaker:
     """Tests for the deterministic tiebreaker (lowest player number wins)."""
 
     def test_tiebreaker_returns_lowest_player_number(self) -> None:
-        """When all tiebreak criteria are equal, lowest player number should win.
-
-        This is tested by verifying the MutableGameState implementation.
-        """
+        """When all tiebreak criteria are equal, lowest player number should win."""
         from app.rules.mutable_state import MutableGameState
 
-        # Create a state where we can test the tiebreaker logic
-        # The tiebreaker is triggered when all players are eliminated simultaneously
-        # or when all tiebreak criteria (territory, rings, markers) are equal.
+        state = create_initial_state(BoardType.HEX8, num_players=3)
+        mutable = MutableGameState.from_immutable(state)
 
-        # We verify the tiebreaker exists in the code
-        import inspect
-
-        source = inspect.getsource(MutableGameState._check_victory_conditions)
-        assert "all_player_numbers" in source, (
-            "Deterministic tiebreaker not found in MutableGameState._check_victory_conditions"
-        )
-        assert "min(all_player_numbers)" in source, (
-            "Tiebreaker should use min() to select lowest player number"
-        )
+        # Force the resolver past the "last actor" rung so this test exercises
+        # the final deterministic fallback directly.
+        mutable._active_player = 0
+        assert mutable._resolve_stalemate_tiebreak() == 1
 
 
 class TestBookkeepingMoves:

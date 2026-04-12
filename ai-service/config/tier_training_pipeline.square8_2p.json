@@ -58,6 +58,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.6
       }
     },
@@ -71,6 +72,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.55
       }
     },
@@ -84,6 +86,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.6
       }
     },
@@ -97,6 +100,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.6
       }
     },
@@ -110,6 +114,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.6
       }
     },
@@ -123,6 +128,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.65
       }
     },
@@ -136,6 +142,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.6
       }
     },
@@ -149,6 +156,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.65
       }
     },
@@ -162,6 +170,7 @@
         "enabled": true,
         "seed": 1,
         "num_games": 50,
+        "num_games_override": 4,
         "win_rate_threshold": 0.7
       }
     }

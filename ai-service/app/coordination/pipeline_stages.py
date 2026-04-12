@@ -650,7 +650,7 @@ class PipelineStagesMixin:
 
         except (AttributeError, KeyError, TypeError) as e:
             self._record_error(f"_on_new_games_available: {e}")
-    def _on_orphan_games_detected(self, event) -> None:
+    async def _on_orphan_games_detected(self, event) -> None:
         """Handle ORPHAN_GAMES_DETECTED event - trigger resync and re-export.
 
         Sprint 4 (Jan 2, 2026): Auto-trigger re-export for orphaned games above threshold.
@@ -688,7 +688,8 @@ class PipelineStagesMixin:
 
         except (AttributeError, KeyError, TypeError) as e:
             self._record_error(f"_on_orphan_games_detected: {e}")
-    def _on_orphan_games_registered(self, event) -> None:
+
+    async def _on_orphan_games_registered(self, event) -> None:
         """Handle ORPHAN_GAMES_REGISTERED event - trigger export after registration.
 
         Sprint 4 (Jan 2, 2026): After orphan games are registered, trigger NPZ export

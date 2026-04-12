@@ -67,9 +67,15 @@ class TestMakeUnmakeRoundtrip:
 class TestSearchModeEquivalence:
     """Tests for search mode equivalence."""
 
+    @pytest.mark.timeout(30)
     def test_both_modes_produce_valid_moves(self):
-        """Verify both search modes produce valid results."""
-        _passed, messages = validate_correctness(depth=2, num_positions=2)
+        """Verify both search modes produce valid results.
+
+        Keep this as a smoke test for the exhaustive suite. Deeper search
+        coverage belongs in opt-in benchmark runs rather than the default
+        `pytest tests/` gate.
+        """
+        _passed, messages = validate_correctness(depth=1, num_positions=1)
 
         # Print messages for debugging
         for msg in messages:

@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""
-Tier-based training pipeline for AI difficulty ladder.
+"""Tier-based training pipeline for the supported ladder tiers.
 
-This script trains AI models for specific difficulty tiers (D2-D10)
-using different training modes based on the tier configuration.
+This script trains or stub-trains candidates for the current supported
+difficulty tiers and writes a structured ``training_report.json`` plus a
+lightweight ``status.json`` into the selected run directory.
 
-Usage:
-    python scripts/run_tier_training_pipeline.py --tier D6 --board square8 --num-players 2
-    python scripts/run_tier_training_pipeline.py --tier D8 --config config/tier_training_pipeline.square8_2p.json
+Compatibility notes:
 
-For gating after training, see: python scripts/run_full_tier_gating.py --help
-
-Training modes by tier (configurable):
-    D2-D3: heuristic_cmaes - CMA-ES optimization of heuristic weights
-    D4: search_persona - search persona snapshot (minimax)
-    D5: search_persona - search persona snapshot (minimax)
-    D6: neural - Neural network training (Descent tier)
-    D7: search_persona - search persona snapshot (heuristic-only MCTS)
-    D8-D10: neural - Neural network training with increasing strength
+- ``--run-dir`` is the stable contract used by the gating pipeline and tests.
+- ``--output-dir`` remains supported as the newer "run directory base" form.
+- Demo mode must stay lightweight and avoid heavy subprocess work.
 """
 
 from __future__ import annotations
@@ -103,8 +95,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tier",
         required=True,
-        choices=["D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"],
-        help="Difficulty tier to train (D2=easiest, D10=hardest).",
+        choices=["D2", "D4", "D6", "D8", "D9", "D10"],
+        help="Supported difficulty tier to train.",
     )
     parser.add_argument(
         "--board",
@@ -125,10 +117,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to tier training config JSON (optional).",
     )
     parser.add_argument(
+        "--run-dir",
+        type=Path,
+        help="Exact output directory for training_report.json and status.json.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "runs" / "tier_training",
-        help="Output directory for training artifacts.",
+        help="Base output directory used when --run-dir is not provided.",
     )
     parser.add_argument(
         "--data-path",
@@ -153,6 +150,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run in demo mode with minimal training for testing.",
     )
     parser.add_argument(
+        "--candidate-id",
+        type=str,
+        default=None,
+        help="Optional explicit candidate id.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=123,
@@ -163,6 +166,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Optional timeout for training subprocesses (seconds).",
+    )
+    parser.add_argument(
+        "--pipeline-config",
+        type=Path,
+        default=Path("config") / "tier_training_pipeline.square8_2p.json",
+        help="Pipeline config used for canonical-source preflight.",
+    )
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip canonical training-source preflight.",
     )
     return parser.parse_args(argv)
 
@@ -188,16 +202,243 @@ def load_tier_config(
 
     defaults = {
         "D2": {"training": {"mode": "heuristic_cmaes"}},
-        "D3": {"training": {"mode": "heuristic_cmaes"}},
         "D4": {"training": {"mode": "search_persona"}},
-        "D5": {"training": {"mode": "search_persona"}},
         "D6": {"training": {"mode": "neural"}},
-        "D7": {"training": {"mode": "search_persona"}},
         "D8": {"training": {"mode": "neural"}},
         "D9": {"training": {"mode": "neural"}},
         "D10": {"training": {"mode": "neural"}},
     }
     return defaults.get(tier, {"training": {"mode": "neural"}}), full_config
+
+
+def _resolve_run_dir(args: argparse.Namespace) -> Path:
+    if args.run_dir is not None:
+        return args.run_dir
+    return _build_run_dir(args)
+
+
+def _build_env_summary(args: argparse.Namespace) -> dict[str, Any]:
+    board_type = BOARD_TYPE_BY_ARG[args.board]
+    return {
+        "board_type": board_type.name if hasattr(board_type, "name") else str(board_type),
+        "num_players": args.num_players,
+        "reward_mode": "terminal",
+        "seed": args.seed if args.demo else None,
+    }
+
+
+def _update_status_json(
+    run_dir: Path,
+    tier: str,
+    board: str,
+    num_players: int,
+    candidate_id: str,
+) -> None:
+    status_path = run_dir / "status.json"
+    status: dict[str, Any] = {}
+    if status_path.exists():
+        try:
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            status = {}
+
+    status["tier"] = tier
+    status["board"] = board
+    status["num_players"] = num_players
+    status["candidate_id"] = candidate_id
+
+    training = status.get("training") or {}
+    training["status"] = "completed"
+    training["report_path"] = "training_report.json"
+    status["training"] = training
+
+    automated_gate = status.get("automated_gate") or {}
+    automated_gate.setdefault("status", "not_started")
+    automated_gate.setdefault("eval_json", None)
+    automated_gate.setdefault("promotion_plan", None)
+    status["automated_gate"] = automated_gate
+
+    perf = status.get("perf") or {}
+    perf.setdefault("status", "not_started")
+    perf.setdefault("perf_json", None)
+    status["perf"] = perf
+
+    human = status.get("human_calibration") or {
+        "required": True,
+        "status": "pending",
+        "min_games": 50,
+    }
+    status["human_calibration"] = human
+
+    gating = status.get("gating") or {}
+    gating.setdefault("status", automated_gate["status"])
+    gating.setdefault("report_path", None)
+    status["gating"] = gating
+
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    status_path.write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _run_training_preflight(args: argparse.Namespace) -> None:
+    if args.skip_preflight or args.demo:
+        return
+
+    preflight_script = SCRIPT_DIR / "training_preflight_check.py"
+    if not preflight_script.exists():
+        return
+
+    config_path = args.pipeline_config
+    if not config_path.is_absolute():
+        config_path = PROJECT_ROOT / config_path
+
+    cmd = [
+        sys.executable,
+        str(preflight_script),
+        "--config",
+        str(config_path),
+        "--registry",
+        "TRAINING_DATA_REGISTRY.md",
+    ]
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, text=True)
+    if result.returncode != 0:
+        raise SystemExit(result.returncode)
+
+
+def _normalise_training_payload(
+    payload: dict[str, Any],
+    default_training_params: dict[str, Any],
+    default_metrics: dict[str, Any],
+    default_result: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    training_params = payload.get("training_params")
+    if not isinstance(training_params, dict):
+        training_params = default_training_params
+
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = default_metrics
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        result = dict(default_result)
+        payload_status = payload.get("status")
+        if isinstance(payload_status, str):
+            result["status"] = payload_status
+
+    return training_params, metrics, result
+
+
+def _run_d2_training(
+    args: argparse.Namespace,
+    tier_config: dict[str, Any],
+    full_config: dict[str, Any],
+    candidate_id: str,
+    run_dir: Path,
+) -> dict[str, Any]:
+    if args.demo:
+        return {
+            "training_params": {
+                "mode": "heuristic_stub_demo",
+                "trainer": "heuristic_cmaes",
+                "candidate_profile_id": candidate_id,
+                "seed": args.seed,
+            },
+            "metrics": {
+                "train_epochs_run": 0,
+                "note": "demo mode; no CMA-ES subprocess executed",
+            },
+            "result": {
+                "mode": "heuristic_cmaes",
+                "run_dir": str(run_dir),
+                "success": True,
+            },
+        }
+
+    result = run_heuristic_cmaes(args, tier_config, full_config, run_dir)
+    return {
+        "training_params": {
+            "mode": "heuristic_cmaes",
+            "trainer": "heuristic_cmaes",
+            "candidate_profile_id": candidate_id,
+            "seed": args.seed,
+        },
+        "metrics": {
+            "train_epochs_run": 0,
+            "success": bool(result.get("success")),
+        },
+        "result": result,
+    }
+
+
+def _run_d4_training(
+    args: argparse.Namespace,
+    tier_config: dict[str, Any],
+    candidate_id: str,
+    run_dir: Path,
+) -> dict[str, Any]:
+    result = run_search_persona(args, tier_config, candidate_id, run_dir)
+    persona_config = result.get("persona_config") if isinstance(result.get("persona_config"), dict) else {}
+    return {
+        "training_params": {
+            "mode": "search_persona_demo" if args.demo else "search_persona",
+            "persona_id": candidate_id,
+            "search_type": persona_config.get("search_type", "mcts"),
+            "difficulty": int(args.tier[1:]),
+        },
+        "metrics": {
+            "train_epochs_run": 0,
+            "note": "search persona snapshot written",
+        },
+        "result": result,
+    }
+
+
+def _run_neural_tier_training(
+    args: argparse.Namespace,
+    tier_config: dict[str, Any],
+    candidate_id: str,
+    run_dir: Path,
+) -> dict[str, Any]:
+    train_config = {
+        "board_type": BOARD_TYPE_BY_ARG[args.board].name,
+        "model_id": candidate_id,
+        "batch_size": args.batch_size,
+        "epochs_per_iter": 1 if args.demo else args.epochs,
+        "learning_rate": tier_config.get("training", {}).get("learning_rate", 5e-5),
+    }
+
+    if args.demo:
+        return {
+            "training_params": {
+                "mode": "neural_demo",
+                "train_config": train_config,
+                "logical_difficulty": int(args.tier[1:]),
+            },
+            "metrics": {
+                "train_epochs_run": 1,
+                "loss": None,
+            },
+            "result": {
+                "mode": "neural_demo",
+                "run_dir": str(run_dir),
+                "success": True,
+                "candidate_model_id": candidate_id,
+            },
+        }
+
+    result = run_neural_training(args, tier_config, candidate_id, run_dir)
+    return {
+        "training_params": {
+            "mode": "neural",
+            "train_config": train_config,
+            "logical_difficulty": int(args.tier[1:]),
+        },
+        "metrics": {
+            "train_epochs_run": args.epochs,
+            "success": bool(result.get("success")),
+        },
+        "result": result,
+    }
 
 
 def _resolve_cmaes_workers(training_cfg: dict[str, Any]) -> str | None:
@@ -474,6 +715,7 @@ def run_search_persona(
 def main(argv: list[str] | None = None) -> int:
     """Main entry point for tier training pipeline."""
     args = parse_args(argv)
+    _run_training_preflight(args)
 
     print("=" * 60)
     print("Tier Training Pipeline")
@@ -488,7 +730,9 @@ def main(argv: list[str] | None = None) -> int:
     training_mode = tier_config.get("training", {}).get("mode", "neural")
 
     ladder_cfg = _get_ladder_config(args)
-    if training_mode == "heuristic_cmaes":
+    if args.candidate_id:
+        candidate_id = args.candidate_id
+    elif training_mode == "heuristic_cmaes":
         candidate_id = (
             ladder_cfg.model_id if ladder_cfg and ladder_cfg.model_id else _heuristic_profile_key(args.board, args.num_players)
         )
@@ -497,20 +741,28 @@ def main(argv: list[str] | None = None) -> int:
     else:
         candidate_id = _build_candidate_id(args)
 
-    run_dir = _build_run_dir(args)
+    run_dir = _resolve_run_dir(args)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Training mode: {training_mode}")
     print(f"Candidate ID: {candidate_id}")
 
     if training_mode == "heuristic_cmaes":
-        result = run_heuristic_cmaes(args, tier_config, full_config, run_dir)
+        payload = _run_d2_training(args, tier_config, full_config, candidate_id, run_dir)
     elif training_mode == "search_persona":
-        result = run_search_persona(args, tier_config, candidate_id, run_dir)
+        payload = _run_d4_training(args, tier_config, candidate_id, run_dir)
     else:
-        result = run_neural_training(args, tier_config, candidate_id, run_dir)
+        payload = _run_neural_tier_training(args, tier_config, candidate_id, run_dir)
+
+    training_params, metrics, result = _normalise_training_payload(
+        payload,
+        default_training_params={"mode": training_mode},
+        default_metrics={},
+        default_result={"run_dir": str(run_dir), "success": True},
+    )
 
     training_report = {
-        "tier": args.tier,
+        "tier": args.tier.upper(),
         "candidate_id": candidate_id,
         "candidate_model_id": candidate_id if training_mode == "neural" else None,
         "candidate_profile_id": candidate_id if training_mode == "heuristic_cmaes" else None,
@@ -519,14 +771,26 @@ def main(argv: list[str] | None = None) -> int:
         "training_mode": training_mode,
         "demo": args.demo,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "env": _build_env_summary(args),
+            "training_params": training_params,
+        },
+        "metrics": metrics,
         "result": result,
     }
 
-    if "run_dir" in result:
-        report_path = Path(result["run_dir"]) / "training_report.json"
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump(training_report, f, indent=2)
-        print(f"\nTraining report saved to: {report_path}")
+    report_path = run_dir / "training_report.json"
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(training_report, f, indent=2)
+    print(f"\nTraining report saved to: {report_path}")
+
+    _update_status_json(
+        run_dir=run_dir,
+        tier=args.tier.upper(),
+        board=args.board,
+        num_players=args.num_players,
+        candidate_id=candidate_id,
+    )
 
     print(f"\n{'=' * 60}")
     print(f"Training {'completed successfully' if result.get('success') else 'failed'}")

@@ -15,6 +15,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.config.thresholds import PRODUCTION_ELO_THRESHOLD
+
 # Target Elo ratings from improvement plan
 TARGETS = {
     "square8_2p": 1900,
@@ -25,9 +27,9 @@ TARGETS = {
     "square19_3p": 1700,
     "hexagonal_2p": 1700,
     "hexagonal_3p": 1700,
-    "hex8_4p": 1650,
-    "square8_4p": 1650,
-    "square19_4p": 1650,
+    "hex8_4p": PRODUCTION_ELO_THRESHOLD,
+    "square8_4p": PRODUCTION_ELO_THRESHOLD,
+    "square19_4p": PRODUCTION_ELO_THRESHOLD,
     "hexagonal_4p": 1600,
 }
 

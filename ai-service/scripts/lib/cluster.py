@@ -809,7 +809,11 @@ class ClusterAutomation:
             ) as resp:
                 if resp.status == 200:
                     return "running"
-        except (OSError, TimeoutError, urllib.error.URLError):
+        except Exception:
+            # This probe is advisory only. Any connection/setup/protocol failure
+            # means we could not verify the endpoint, so report it as stopped
+            # instead of letting orchestration crash on an unexpected transport
+            # exception shape.
             pass
         return "stopped"
 

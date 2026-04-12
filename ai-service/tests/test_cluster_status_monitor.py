@@ -30,6 +30,14 @@ from app.coordination.cluster_status_monitor import (
 )
 
 
+def _mock_ssh_result(*, success: bool, stdout: str = "", stderr: str = "") -> MagicMock:
+    result = MagicMock()
+    result.success = success
+    result.stdout = stdout
+    result.stderr = stderr
+    return result
+
+
 # =============================================================================
 # NodeStatus Dataclass Tests
 # =============================================================================
@@ -289,10 +297,10 @@ class TestConnectivity:
                 }
             }
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
+        mock_client = MagicMock()
+        mock_client.is_alive.return_value = True
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             result = monitor._check_connectivity("test-node")
 
         assert result is True
@@ -308,10 +316,10 @@ class TestConnectivity:
                 }
             }
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
+        mock_client = MagicMock()
+        mock_client.is_alive.return_value = False
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             result = monitor._check_connectivity("test-node")
 
         assert result is False
@@ -322,10 +330,10 @@ class TestConnectivity:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        with patch(
-            "subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd="ssh", timeout=5),
-        ):
+        mock_client = MagicMock()
+        mock_client.is_alive.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=5)
+
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             result = monitor._check_connectivity("test-node")
 
         assert result is False
@@ -360,14 +368,16 @@ class TestTrainingStatus:
                 }
             }
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        # Output must have 11+ fields and contain 'python' (lowercase)
-        mock_result.stdout = (
+        run_result = _mock_ssh_result(
+            success=True,
+            stdout=(
             "ubuntu   12345 50.0 10.0 123456 12345 pts/0 S+ 12:34 0:05 python -m app.training.train\n"
+            ),
         )
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             status = monitor._check_training_status("test-node")
 
         assert status["active"] is True
@@ -379,11 +389,11 @@ class TestTrainingStatus:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
+        run_result = _mock_ssh_result(success=True, stdout="")
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             status = monitor._check_training_status("test-node")
 
         assert status["active"] is False
@@ -395,7 +405,10 @@ class TestTrainingStatus:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        with patch("subprocess.run", side_effect=Exception("SSH error")):
+        mock_client = MagicMock()
+        mock_client.run.side_effect = Exception("SSH error")
+
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             status = monitor._check_training_status("test-node")
 
         assert status["active"] is False
@@ -420,11 +433,14 @@ class TestDiskUsage:
                 }
             }
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "/dev/sda1 500G 350G 150G 70% /home"
+        run_result = _mock_ssh_result(
+            success=True,
+            stdout="/dev/sda1 500G 350G 150G 70% /home",
+        )
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             usage = monitor._check_disk_usage("test-node")
 
         assert usage["percent"] == 70.0
@@ -437,10 +453,11 @@ class TestDiskUsage:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
+        run_result = _mock_ssh_result(success=False)
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             usage = monitor._check_disk_usage("test-node")
 
         assert usage["percent"] == 0.0
@@ -461,11 +478,14 @@ class TestGPUMetrics:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "85, 65536, 81920"  # util%, mem_used_mib, mem_total_mib
+        run_result = _mock_ssh_result(
+            success=True,
+            stdout="85, 65536, 81920",
+        )
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             metrics = monitor._check_gpu_metrics("test-node")
 
         assert metrics["utilization_percent"] == 85.0
@@ -478,11 +498,11 @@ class TestGPUMetrics:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
+        run_result = _mock_ssh_result(success=False, stdout="")
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             metrics = monitor._check_gpu_metrics("test-node")
 
         assert metrics["utilization_percent"] == 0.0
@@ -801,11 +821,11 @@ class TestEdgeCases:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "invalid output"
+        run_result = _mock_ssh_result(success=True, stdout="invalid output")
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             usage = monitor._check_disk_usage("test-node")
 
         assert usage["percent"] == 0.0
@@ -816,11 +836,11 @@ class TestEdgeCases:
             monitor = ClusterMonitor()
             monitor._hosts = {"test-node": {"tailscale_ip": "100.1.2.3"}}
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "not,valid,numbers"
+        run_result = _mock_ssh_result(success=True, stdout="not,valid,numbers")
+        mock_client = MagicMock()
+        mock_client.run.return_value = run_result
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch.object(monitor, "_get_ssh_client", return_value=mock_client):
             metrics = monitor._check_gpu_metrics("test-node")
 
         assert metrics["utilization_percent"] == 0.0

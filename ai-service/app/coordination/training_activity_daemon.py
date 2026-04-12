@@ -152,6 +152,16 @@ class TrainingActivityDaemon(HandlerBase):
             logger.info(f"[{self.name}] Triggering final sync before shutdown")
             await self._trigger_priority_sync("termination")
 
+    async def _on_graceful_shutdown(self) -> None:
+        """Backward-compatible shutdown hook used by legacy integration tests.
+
+        TrainingActivityDaemon now relies on HandlerBase's `_on_stop()` lifecycle
+        hook, but some integration surfaces still exercise the previous
+        `_on_graceful_shutdown()` contract directly. Keep both names wired to the
+        same behavior until those callers are fully migrated.
+        """
+        await self._on_stop()
+
     async def _run_cycle(self) -> None:
         """Main daemon cycle - check for training activity."""
         self._last_check_time = time.time()

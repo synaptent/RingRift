@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from app.config.thresholds import PRODUCTION_ELO_THRESHOLD
+
 # Targets from improvement plan
 ELO_TARGETS = {
     "square8_2p": 1900,
@@ -31,9 +33,9 @@ ELO_TARGETS = {
     "square19_3p": 1700,
     "hexagonal_2p": 1700,
     "hexagonal_3p": 1700,
-    "hex8_4p": 1650,
-    "square8_4p": 1650,
-    "square19_4p": 1650,
+    "hex8_4p": PRODUCTION_ELO_THRESHOLD,
+    "square8_4p": PRODUCTION_ELO_THRESHOLD,
+    "square19_4p": PRODUCTION_ELO_THRESHOLD,
     "hexagonal_4p": 1600,
 }
 
