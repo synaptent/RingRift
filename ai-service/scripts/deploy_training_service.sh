@@ -20,6 +20,9 @@ NODES=(
   "100.127.168.116|square8_2p|square8|2|100|128|128|5e-5|fixed|none|3|data/minimal_loop_square8_2p"
   "100.86.51.4|square8_3p|square8|3|200|128|128|5e-5|fixed|none|5|data/minimal_loop_square8_3p"
   "100.100.19.96|square8_4p|square8|4|200|128|128|5e-5|fixed|none|5|data/minimal_loop_square8_4p"
+  "100.106.87.89|hex8_3p|hex8|3|100|128|128|5e-5|fixed|none|5|data/minimal_loop_hex8_3p"
+  "100.98.19.73|hex8_4p|hex8|4|100|128|128|5e-5|fixed|none|5|data/minimal_loop_hex8_4p"
+  "100.91.39.59|square19_2p|square19|2|50|128|128|5e-5|fixed|none|5|data/minimal_loop_square19_2p"
 )
 
 ONLY=""
@@ -76,13 +79,22 @@ TRAINING_TRAIN_WINDOW=${tw}
   # 2. Ensure logs directory exists
   ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'mkdir -p ~/ringrift/ai-service/logs'
 
-  # 3. Stop existing training (nohup or systemd)
-  echo "  Stopping existing training..."
+  # 3. Stop existing training AND competing P2P/selfplay processes
+  echo "  Stopping existing processes..."
   ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
     sudo systemctl stop ringrift-training 2>/dev/null || true
+    sudo systemctl stop ringrift-p2p 2>/dev/null || true
+    sudo systemctl disable ringrift-p2p 2>/dev/null || true
     pkill -9 -f minimal_alphazero_loop 2>/dev/null || true
     pkill -9 -f minimal_loop_supervisor 2>/dev/null || true
+    pkill -9 -f p2p_orchestrator 2>/dev/null || true
+    pkill -9 -f run_gpu_selfplay 2>/dev/null || true
+    pkill -9 -f generate_gumbel_selfplay 2>/dev/null || true
+    pkill -9 -f "selfplay.py" 2>/dev/null || true
+    pkill -9 -f run_self_play_soak 2>/dev/null || true
   ' 2>/dev/null || true
+  # Wait for GPU memory to free
+  sleep 3
 
   # 4. Write training.conf
   echo "  Writing training.conf..."
