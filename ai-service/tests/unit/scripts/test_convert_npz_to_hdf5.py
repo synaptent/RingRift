@@ -13,12 +13,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-# Check if h5py is available
-try:
-    import h5py
-    HAS_H5PY = True
-except ImportError:
-    HAS_H5PY = False
+h5py = pytest.importorskip("h5py", reason="h5py not installed")
 
 # Import conversion functions
 from scripts.convert_npz_to_hdf5 import (
@@ -83,8 +78,6 @@ def sample_npz_file(sample_npz_data: dict[str, np.ndarray], tmp_path: Path) -> P
     np.savez(npz_path, **sample_npz_data)
     return npz_path
 
-
-@pytest.mark.skipif(not HAS_H5PY, reason="h5py not installed")
 class TestConvertNpzToHdf5:
     """Test cases for NPZ to HDF5 conversion."""
 

@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -301,7 +302,11 @@ class CoordinationFeatureRegistry:
         try:
             import importlib
 
-            module = importlib.import_module(spec.module_path)
+            # Feature probing should not surface deprecation noise just because a
+            # compatibility module still exists during a transition window.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                module = importlib.import_module(spec.module_path)
 
             exports: dict[str, Any] = {}
             for export_name in spec.exports:
