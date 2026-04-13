@@ -230,8 +230,6 @@ PY
       install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-training.service" "ringrift-training.service"
       ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
         sudo systemctl stop ringrift-selfplay-worker ringrift-evaluator 2>/dev/null || true
-        pkill -f policy_selfplay_worker.py 2>/dev/null || true
-        pkill -f evaluator_worker.py 2>/dev/null || true
         sudo systemctl daemon-reload
         sudo systemctl enable ringrift-training
         sudo systemctl restart ringrift-training
@@ -271,8 +269,6 @@ PY
       install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-selfplay-worker.service" "ringrift-selfplay-worker.service"
       ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
         sudo systemctl stop ringrift-training ringrift-evaluator 2>/dev/null || true
-        pkill -f minimal_alphazero_loop.py 2>/dev/null || true
-        pkill -f evaluator_worker.py 2>/dev/null || true
         sudo systemctl daemon-reload
         sudo systemctl enable ringrift-selfplay-worker
         sudo systemctl restart ringrift-selfplay-worker
@@ -297,8 +293,6 @@ PY
       install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-evaluator.service" "ringrift-evaluator.service"
       ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
         sudo systemctl stop ringrift-training ringrift-selfplay-worker 2>/dev/null || true
-        pkill -f minimal_alphazero_loop.py 2>/dev/null || true
-        pkill -f policy_selfplay_worker.py 2>/dev/null || true
         sudo systemctl daemon-reload
         sudo systemctl enable ringrift-evaluator
         sudo systemctl restart ringrift-evaluator

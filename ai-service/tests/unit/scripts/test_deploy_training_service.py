@@ -34,3 +34,6 @@ def test_script_references_role_manifest_and_new_services() -> None:
     assert "ringrift-selfplay-worker.service" in script_text
     assert "ringrift-evaluator.service" in script_text
     assert "disable ringrift-p2p" not in script_text
+    assert "pkill -f policy_selfplay_worker.py" not in script_text
+    assert "pkill -f evaluator_worker.py" not in script_text
+    assert "pkill -f minimal_alphazero_loop.py" not in script_text
