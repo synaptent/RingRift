@@ -68,7 +68,7 @@ It is not required to understand the core system or reproduce the main training 
 
 It should also not be treated as disposable. The current infrastructure strategy is to keep the minimal loop as the reproducible proof harness while reusing audited pieces of the broader coordinator/P2P stack where they satisfy the current rules, data, and evaluation contracts. See [docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md](/Users/armand/Development/RingRift/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md).
 
-As of April 10, 2026:
+As of April 13, 2026:
 
 - the P2P orchestrator main file is down to `2591` LOC
 - its behavior is split across `21` mixins totaling `12618` LOC
@@ -86,18 +86,18 @@ If you are approaching RingRift as an engineer or researcher, the most useful pa
 5. [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
 6. [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
 7. [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
-8. [`docs/CURRENT_STATUS.md`](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md)
+8. [`docs/RESEARCH_SNAPSHOT.md`](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
 
 ## Current Training Shape
 
 The published results come from a small set of board/player configurations rather than every possible setup in the repo.
 
-As of April 10, 2026:
+As of April 13, 2026:
 
-- `hex8_2p` is the strongest result but appears plateaued
-- `square8_2p` is the second clear improvement path, though its node is currently down
-- `square8_3p` is alive but regressing under seat-fair evaluation
-- `square8_4p` is still baseline and operationally down
+- `hex8_2p` is the strongest result at `1979.8` and remains the main headline path
+- `square8_2p` is the second clear improvement path at `1601.8`
+- `square8_3p` now has one corrected-threshold multiplayer promotion, but the evidence is still weak
+- `square8_4p` is still baseline and unproven
 
 Large-board and some multiplayer configurations remain slower and less mature.
 

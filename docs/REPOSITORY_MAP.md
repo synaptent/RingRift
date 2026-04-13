@@ -25,8 +25,8 @@ If you want to understand the project quickly, read these in order:
 2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
 3. [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
 4. [ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-5. [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md)
-6. [DEVELOPER_GUIDE.md](/Users/armand/Development/RingRift/docs/DEVELOPER_GUIDE.md)
+5. [DEVELOPER_GUIDE.md](/Users/armand/Development/RingRift/docs/DEVELOPER_GUIDE.md)
+6. [INDEX.md](/Users/armand/Development/RingRift/docs/INDEX.md)
 
 ## Supported Path
 
@@ -102,10 +102,12 @@ The important distinction is not “delete versus keep.” It is “source of tr
 ### I want to reproduce the training evidence
 
 1. [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-2. [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md)
+2. [RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
 3. [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
 4. [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
 5. [`docs/data/training_status.json`](/Users/armand/Development/RingRift/docs/data/training_status.json)
+
+Use [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md) only if you need the preserved April 10 owner-facing operational memo.
 
 ### I want to operate or extend the cluster
 

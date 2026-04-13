@@ -8,8 +8,8 @@ This is the quickest practical path for a developer who wants to run RingRift lo
 2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
 3. [ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
 4. [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-5. [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md)
-6. [REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
+5. [REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
+6. [INDEX.md](/Users/armand/Development/RingRift/docs/INDEX.md)
 
 ## Start The Product
 
@@ -144,6 +144,8 @@ If you are changing operational tooling:
 - [REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
 - [PART3_INFRASTRUCTURE_ROADMAP.md](/Users/armand/Development/RingRift/docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
 - [TRAINING_INFRASTRUCTURE_STRATEGY.md](/Users/armand/Development/RingRift/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)
+
+Use [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md) only if you specifically need the preserved April 10 owner memo rather than the current supported state.
 
 ## Practical Rule
 

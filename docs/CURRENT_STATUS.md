@@ -1,12 +1,18 @@
-# Current Status
+# Current Status (Historical Snapshot)
 
-Last updated: 2026-04-10.
+Historical snapshot date: April 10, 2026.
 
-Note: this file is a point-in-time operational memo. For the current April 13 research state and supported public claims, use [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md) first.
+This file is preserved as an owner-facing operational memo from that date. It is not the live status entrypoint.
+
+For the current supported public claims and April 13 research state, use:
+
+- [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+- [RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
+- [docs/data/training_status.json](/Users/armand/Development/RingRift/docs/data/training_status.json)
 
 This is an owner-facing snapshot for Armand. It is not a marketing document.
 
-## Snapshot Sources
+## April 10 Snapshot Sources
 
 - Training nodes: `npm --silent run training:status -- --json --ssh`
 - Product health: `npm --silent run smoke:product`
@@ -15,7 +21,7 @@ This is an owner-facing snapshot for Armand. It is not a marketing document.
 
 The machine-readable training snapshot is checked in at [`docs/data/training_status.json`](/Users/armand/Development/RingRift/docs/data/training_status.json).
 
-## Training Results
+## April 10 Training Results
 
 | Config       | Iteration |      Elo | Promotions | Latest Evidence                                            | Status                                      |
 | ------------ | --------: | -------: | ---------: | ---------------------------------------------------------- | ------------------------------------------- |
@@ -24,7 +30,7 @@ The machine-readable training snapshot is checked in at [`docs/data/training_sta
 | `square8_3p` |      `13` | `1534.9` |        `1` | Recent seat-fair evals rejected at `22%`, `24%`, and `22%` | Regressing; weak evidence                   |
 | `square8_4p` |       `5` | `1500.0` |        `0` | Latest completed eval was about `46%`                      | No proven improvement                       |
 
-## Infrastructure Health
+## April 10 Infrastructure Health
 
 | Node                          | Config       | SSH Probe | Loop  | Supervisor | Heartbeat File | Read                              |
 | ----------------------------- | ------------ | --------- | ----- | ---------- | -------------- | --------------------------------- |
@@ -33,7 +39,7 @@ The machine-readable training snapshot is checked in at [`docs/data/training_sta
 | `gh200-12` / `100.86.51.4`    | `square8_3p` | OK        | Alive | Alive      | `unknown`      | Live process, but weak evaluation |
 | `gh200-10` / `100.100.19.96`  | `square8_4p` | OK        | Dead  | Dead       | `unknown`      | Needs restart/debug               |
 
-## Product Health
+## April 10 Product Health
 
 The current product smoke against `https://ringrift.ai` passed on April 10, 2026:
 
@@ -43,7 +49,7 @@ The current product smoke against `https://ringrift.ai` passed on April 10, 2026
 - replay-store smoke succeeded and the smoke replay was explicitly excluded from training
 - local `canonical_hex8_2p` model loaded successfully through the Python AI service
 
-## CI Status
+## April 10 CI Status
 
 Local verification is green:
 
@@ -63,7 +69,7 @@ The doc state should therefore be read as: local quality gates are strong, but r
 - The Phase 8 verification gate passed after the test-infrastructure cleanup, so the decomposed legacy surface is substantially more auditable than it was at the start of Part 3.
 - The minimal loop remains the supported training harness; the legacy coordinator/P2P stack is being kept and cleaned up for reuse, not for ownership of the core research claims.
 
-## What Works
+## What Worked In This Snapshot
 
 - Production sandbox AI can route through the Python AI service and use neural-backed Gumbel MCTS.
 - Product smoke coverage exists and currently passes.
@@ -71,14 +77,14 @@ The doc state should therefore be read as: local quality gates are strong, but r
 - Replay-data provenance and validation are inspectable without direct SQL work.
 - The P2P orchestrator and the largest coordination modules are now behind passing size and contract checks.
 
-## What Is Broken Or Unproven
+## What Was Broken Or Unproven In This Snapshot
 
 - `square8_2p` and `square8_4p` are not currently running.
 - Supervisor heartbeat age reporting still returns `unknown` even on live nodes.
 - `square8_3p` remains alive but is failing seat-fair evaluation badly enough that it should not be treated as a strong result.
 - Remote GitHub Actions are currently failing on `main`.
 
-## Next Actions
+## Next Actions From This Snapshot
 
 - Fix the remote `Supported Path` and `ci.yml` failures on `main`.
 - Restart or diagnose `square8_2p` and `square8_4p`.

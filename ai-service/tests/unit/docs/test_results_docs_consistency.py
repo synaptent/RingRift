@@ -61,3 +61,13 @@ def test_public_results_docs_match_results_snapshot() -> None:
 
         assert results_best_elo == research_best_elo == brief_best_elo == snapshot_best_elo
         assert results_promotions == research_promotions == brief_promotions == snapshot_promotions
+
+
+def test_current_status_doc_is_explicitly_historical() -> None:
+    text = (DOCS_ROOT / "CURRENT_STATUS.md").read_text(encoding="utf-8")
+
+    assert "# Current Status (Historical Snapshot)" in text
+    assert "Historical snapshot date: April 10, 2026." in text
+    assert "RESULTS.md" in text
+    assert "RESEARCH_SNAPSHOT.md" in text
+    assert "training_status.json" in text

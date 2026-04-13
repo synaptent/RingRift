@@ -32,7 +32,7 @@ The strongest evidence is still `hex8_2p`, and `square8_2p` remains important be
 - Latest milestone: iteration `33` promoted on the fixed-learning-rate minimal-loop line
 - Interpretation: strong iterative improvement from the `1500` baseline to a checkpoint family that is now within one more promotion of the `2000` Elo headline
 
-The older checked-in April 10 snapshot still stops at `1967.6`, but the current live cluster line advanced once more to `1979.8`. That does not change the scientific interpretation: the path is real, but it is also clearly in the plateau regime where uninterrupted runtime matters more than more infrastructure churn.
+The scientific interpretation is unchanged by the extra promotion: the path is real, but it is also clearly in the plateau regime where uninterrupted runtime matters more than more infrastructure churn.
 
 ### `square8_2p`
 

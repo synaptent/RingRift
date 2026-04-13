@@ -157,20 +157,20 @@ See `runbooks/` for 25+ specific runbooks covering:
 
 ## Planning & Status
 
-| Document                                                   | Purpose                    | Status    |
-| ---------------------------------------------------------- | -------------------------- | --------- |
-| `CURRENT_STATUS.md`                                        | Owner-facing current state | Active    |
-| `RESULTS.md`                                               | Current evidence summary   | Active    |
-| `ARCHITECTURE_OVERVIEW.md`                                 | External architecture view | Active    |
-| `architecture/PART3_INFRASTRUCTURE_ROADMAP.md`             | Current cleanup roadmap    | Active    |
-| `archive/planning/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md` | Historical action plan     | Reference |
-| `archive/historical/CURRENT_STATE_ASSESSMENT.md`           | Project state summary      | Reference |
-| `planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md`               | NN self-play loop plan     | Active    |
-| `planning/SELFPLAY_LOOP_CLOSURE_PLAN.md`                   | Self-play bottleneck plan  | Active    |
-| `../PROJECT_GOALS.md`                                      | High-level goals           | Active    |
-| `../TODO.md`                                               | Active task tracker        | Active    |
-| `../KNOWN_ISSUES.md`                                       | Known issues tracker       | Active    |
-| `production/RELEASE_NOTES_v0.1.0-beta.md`                  | Release notes draft        | Draft     |
+| Document                                                   | Purpose                              | Status    |
+| ---------------------------------------------------------- | ------------------------------------ | --------- |
+| `CURRENT_STATUS.md`                                        | Historical owner-facing ops snapshot | Reference |
+| `RESULTS.md`                                               | Current evidence summary             | Active    |
+| `ARCHITECTURE_OVERVIEW.md`                                 | External architecture view           | Active    |
+| `architecture/PART3_INFRASTRUCTURE_ROADMAP.md`             | Current cleanup roadmap              | Active    |
+| `archive/planning/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md` | Historical action plan               | Reference |
+| `archive/historical/CURRENT_STATE_ASSESSMENT.md`           | Project state summary                | Reference |
+| `planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md`               | NN self-play loop plan               | Active    |
+| `planning/SELFPLAY_LOOP_CLOSURE_PLAN.md`                   | Self-play bottleneck plan            | Active    |
+| `../PROJECT_GOALS.md`                                      | High-level goals                     | Active    |
+| `../TODO.md`                                               | Active task tracker                  | Active    |
+| `../KNOWN_ISSUES.md`                                       | Known issues tracker                 | Active    |
+| `production/RELEASE_NOTES_v0.1.0-beta.md`                  | Release notes draft                  | Draft     |
 
 ---
 
