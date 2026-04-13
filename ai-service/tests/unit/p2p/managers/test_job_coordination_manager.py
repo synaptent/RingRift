@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -100,3 +101,67 @@ class TestScheduleDiverseSelfplay:
             result = await manager.schedule_diverse_selfplay_on_node("gh200-8")
 
         assert result is None
+
+
+class TestLocalSelfplayGating:
+    """Tests for local selfplay spawn policy enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_start_local_job_returns_none_when_role_disallows_selfplay(self) -> None:
+        """Trainer-role nodes must not spawn local selfplay jobs through the manager."""
+        orchestrator = MagicMock()
+        orchestrator.node_id = "gh200-9"
+        orchestrator._start_local_job = AsyncMock()
+        manager = JobCoordinationManager(orchestrator=orchestrator)
+
+        with patch(
+            "app.config.node_roles.node_allows_work_type",
+            return_value=False,
+        ) as mock_gate:
+            result = await manager._start_local_job(
+                "gpu_selfplay",
+                board_type="square19",
+                num_players=3,
+                engine_mode="gpu",
+            )
+
+        assert result is None
+        orchestrator._start_local_job.assert_not_called()
+        mock_gate.assert_called_once_with(
+            "gh200-9",
+            "selfplay",
+            config_key="square19_3p",
+        )
+
+    @pytest.mark.asyncio
+    async def test_local_gpu_auto_scale_returns_zero_when_role_disallows_selfplay(self) -> None:
+        """Trainer-role nodes must skip local GPU autoscale selfplay starts entirely."""
+        orchestrator = MagicMock()
+        orchestrator.node_id = "gh200-9"
+        orchestrator.self_info = SimpleNamespace(
+            has_gpu=True,
+            disk_percent=0.0,
+            training_jobs=0,
+            memory_percent=0.0,
+            gpu_percent=5.0,
+            gpu_name="GH200",
+        )
+        manager = JobCoordinationManager(orchestrator=orchestrator)
+
+        with patch(
+            "app.config.node_roles.node_allows_work_type",
+            return_value=False,
+        ) as mock_gate, patch.object(
+            manager,
+            "_start_local_job",
+            AsyncMock(),
+        ) as mock_start:
+            result = await manager.local_gpu_auto_scale()
+
+        assert result == 0
+        mock_start.assert_not_called()
+        mock_gate.assert_called_once_with(
+            "gh200-9",
+            "selfplay",
+            config_key=None,
+        )

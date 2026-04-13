@@ -268,6 +268,19 @@ class JobCoordinationManager:
             return self._orchestrator._check_yaml_gpu_config()
         return False
 
+    def _local_selfplay_allowed(self, *, config_key: str | None = None) -> bool:
+        """Return whether manifest policy allows local selfplay on this node."""
+        try:
+            from app.config.node_roles import node_allows_work_type
+        except ImportError:
+            return True
+
+        return node_allows_work_type(
+            self._node_id,
+            "selfplay",
+            config_key=config_key,
+        )
+
     def _pick_weighted_config(self) -> dict | None:
         """Pick a weighted selfplay config from the scheduler.
 
@@ -317,6 +330,12 @@ class JobCoordinationManager:
                 job_type_enum = job_type
         except ImportError:
             job_type_enum = job_type
+
+        job_type_value = str(getattr(job_type_enum, "value", job_type_enum) or "").lower()
+        config_key = f"{board_type}_{num_players}p" if board_type else None
+        if "selfplay" in job_type_value and not self._local_selfplay_allowed(config_key=config_key):
+            logger.debug("Local selfplay not allowed on %s by node role policy", self._node_id)
+            return None
 
         if hasattr(self._orchestrator, "_start_local_job"):
             return await self._orchestrator._start_local_job(
@@ -410,6 +429,10 @@ class JobCoordinationManager:
 
         node = self._self_info
         if not node:
+            return 0
+
+        if not self._local_selfplay_allowed():
+            self._local_gpu_idle_since = 0
             return 0
 
         # Skip if not a GPU node
