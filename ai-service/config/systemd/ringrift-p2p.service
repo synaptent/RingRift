@@ -5,7 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExitType=cgroup
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/ringrift/ai-service
@@ -33,9 +32,10 @@ CPUQuota=50%
 LimitNPROC=8192
 TasksMax=200000
 
-# Watchdog
-WatchdogSec=300
-NotifyAccess=all
+# April 2026: systemd watchdog is not reliable across the mixed fleet.
+# Some GH200 nodes either lack the notifier dependency or fail to emit
+# keepalives consistently, which causes systemd to abort the orchestrator
+# every 5 minutes and destabilize otherwise-healthy trainer nodes.
 
 [Install]
 WantedBy=multi-user.target
