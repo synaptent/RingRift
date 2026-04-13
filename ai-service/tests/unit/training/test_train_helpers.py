@@ -32,6 +32,20 @@ from app.training.heuristic_tuning import (
 from app.training.train import seed_all_legacy
 
 
+def _assert_has_weight_profiles() -> None:
+    assert HEURISTIC_WEIGHT_PROFILES, "Expected canonical heuristic weight profiles"
+
+
+def _assert_has_tier_specs() -> None:
+    assert HEURISTIC_TIER_SPECS, "Expected canonical heuristic tier specs"
+
+
+def _assert_has_balanced_profile() -> None:
+    assert "heuristic_v1_balanced" in HEURISTIC_WEIGHT_PROFILES, (
+        "Expected heuristic_v1_balanced profile"
+    )
+
+
 class TestFlattenHeuristicWeights:
     """Tests for _flatten_heuristic_weights()."""
 
@@ -91,8 +105,7 @@ class TestFlattenHeuristicWeights:
 
     def test_flatten_with_real_profile(self):
         """Test flattening with a real registered profile."""
-        if not HEURISTIC_WEIGHT_PROFILES:
-            pytest.skip("No heuristic weight profiles defined")
+        _assert_has_weight_profiles()
 
         # Use first available profile
         profile_id = next(iter(HEURISTIC_WEIGHT_PROFILES.keys()))
@@ -161,8 +174,7 @@ class TestGetHeuristicTierById:
 
     def test_get_existing_tier(self):
         """Test retrieving an existing tier spec."""
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No heuristic tier specs defined")
+        _assert_has_tier_specs()
 
         # Use first available tier
         expected_spec = HEURISTIC_TIER_SPECS[0]
@@ -185,8 +197,7 @@ class TestGetHeuristicTierById:
 
     def test_error_lists_available_tiers(self):
         """Test that error message includes available tier IDs."""
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No heuristic tier specs defined")
+        _assert_has_tier_specs()
 
         with pytest.raises(ValueError) as exc_info:
             _get_heuristic_tier_by_id("bogus")
@@ -595,8 +606,7 @@ class TestRunCmaesHeuristicOptimization:
 
     def test_unknown_base_profile_raises_error(self):
         """Test that unknown base_profile_id raises ValueError."""
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No tier specs defined")
+        _assert_has_tier_specs()
 
         tier_id = HEURISTIC_TIER_SPECS[0].id
 
@@ -609,14 +619,11 @@ class TestRunCmaesHeuristicOptimization:
 
     def test_returns_expected_report_structure(self):
         """Test that optimization returns expected report structure."""
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No tier specs defined")
+        _assert_has_tier_specs()
 
         tier_spec = HEURISTIC_TIER_SPECS[0]
 
-        # Use a real profile name
-        if "heuristic_v1_balanced" not in HEURISTIC_WEIGHT_PROFILES:
-            pytest.skip("heuristic_v1_balanced profile not defined")
+        _assert_has_balanced_profile()
 
         # Mock the evaluation to avoid running actual games
         mock_result = {
@@ -656,13 +663,11 @@ class TestRunCmaesHeuristicOptimization:
 
     def test_history_tracks_generation_progress(self):
         """Test that history tracks best/mean fitness per generation."""
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No tier specs defined")
+        _assert_has_tier_specs()
 
         tier_spec = HEURISTIC_TIER_SPECS[0]
 
-        if "heuristic_v1_balanced" not in HEURISTIC_WEIGHT_PROFILES:
-            pytest.skip("heuristic_v1_balanced profile not defined")
+        _assert_has_balanced_profile()
 
         mock_result = {
             "games_played": 10,
@@ -693,13 +698,11 @@ class TestRunCmaesHeuristicOptimization:
 
     def test_best_result_tracked(self):
         """Test that the overall best result is tracked correctly."""
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No tier specs defined")
+        _assert_has_tier_specs()
 
         tier_spec = HEURISTIC_TIER_SPECS[0]
 
-        if "heuristic_v1_balanced" not in HEURISTIC_WEIGHT_PROFILES:
-            pytest.skip("heuristic_v1_balanced profile not defined")
+        _assert_has_balanced_profile()
 
         # Return varying results to ensure best is tracked
         call_count = [0]

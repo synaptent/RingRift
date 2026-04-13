@@ -246,22 +246,17 @@ class TestAdversarialGeneratorImport:
 
     def test_generator_importable(self):
         """Test AdversarialGenerator can be imported."""
-        try:
-            from app.training.adversarial_positions import AdversarialGenerator
-            assert AdversarialGenerator is not None
-        except ImportError:
-            pytest.skip("AdversarialGenerator not yet implemented")
+        from app.training.adversarial_positions import AdversarialGenerator
+
+        assert AdversarialGenerator is not None
 
     def test_generator_instantiation(self):
         """Test AdversarialGenerator can be instantiated."""
-        try:
-            from app.training.adversarial_positions import AdversarialGenerator
+        from app.training.adversarial_positions import AdversarialGenerator
 
-            # May require model_path
+        try:
             generator = AdversarialGenerator()
             assert generator is not None
-        except ImportError:
-            pytest.skip("AdversarialGenerator not yet implemented")
         except TypeError:
             # May require model_path argument
             pass

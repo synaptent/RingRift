@@ -10,9 +10,17 @@ Tests the CMA-ES heuristic weight optimization:
 Created Dec 2025 as part of Phase 3 test coverage improvement.
 """
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from app.training.tier_eval_config import HEURISTIC_TIER_SPECS
+
+
+def _assert_has_tier_specs() -> None:
+    assert HEURISTIC_TIER_SPECS, "Expected canonical heuristic tier specs"
 
 
 # =============================================================================
@@ -212,10 +220,8 @@ class TestGetHeuristicTierById:
     def test_lookup_existing_tier(self):
         """Test looking up an existing tier."""
         from app.training.heuristic_tuning import _get_heuristic_tier_by_id
-        from app.training.tier_eval_config import HEURISTIC_TIER_SPECS
 
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No heuristic tier specs defined")
+        _assert_has_tier_specs()
 
         first_tier = HEURISTIC_TIER_SPECS[0]
         result = _get_heuristic_tier_by_id(first_tier.id)
@@ -283,10 +289,8 @@ class TestRunCmaesValidation:
     def test_unknown_base_profile_raises(self):
         """Test that unknown base profile raises ValueError."""
         from app.training.heuristic_tuning import run_cmaes_heuristic_optimization
-        from app.training.tier_eval_config import HEURISTIC_TIER_SPECS
 
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No heuristic tier specs defined")
+        _assert_has_tier_specs()
 
         tier_id = HEURISTIC_TIER_SPECS[0].id
 
@@ -312,10 +316,9 @@ class TestEvaluateHeuristicCandidate:
     def test_evaluate_returns_fitness_and_result(self, mock_eval):
         """Test that evaluation returns fitness and raw result."""
         from app.training.heuristic_tuning import evaluate_heuristic_candidate
-        from app.training.tier_eval_config import HEURISTIC_TIER_SPECS, HeuristicTierSpec
+        from app.training.tier_eval_config import HeuristicTierSpec
 
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No heuristic tier specs defined")
+        _assert_has_tier_specs()
 
         # Mock the evaluation result
         mock_eval.return_value = {
@@ -345,10 +348,8 @@ class TestEvaluateHeuristicCandidate:
     def test_fitness_calculation(self, mock_eval):
         """Test fitness calculation from results."""
         from app.training.heuristic_tuning import evaluate_heuristic_candidate
-        from app.training.tier_eval_config import HEURISTIC_TIER_SPECS
 
-        if not HEURISTIC_TIER_SPECS:
-            pytest.skip("No heuristic tier specs defined")
+        _assert_has_tier_specs()
 
         # 100% win rate
         mock_eval.return_value = {
