@@ -39,6 +39,15 @@ The game rules are defined in `src/shared/engine/`. The Python `ai-service` **mi
 2. Update Python to match
 3. Run parity tests to verify they agree
 
+## Where To Start Reading
+
+If you are orienting in the repo rather than changing one known file, start here:
+
+- `AGENTS.md` for repository invariants and TS↔Python parity rules
+- `docs/architecture/OVERVIEW.md` for current architecture entrypoints
+- `scripts/README.md` for top-level operational scripts
+- `ai-service/scripts/README.md` for Python training/runtime scripts
+
 ## Quick Start Commands
 
 ```bash
@@ -69,6 +78,7 @@ The live training path is now narrower than the historical automation surface.
 - P2P remains active on all nodes as the control plane for sync, health, and job coordination.
 - The current supported trainer baseline uses fixed learning rate `5e-5`.
 - `hex8_2p` has reached `1979.8` Elo on the current minimal-loop path.
+- The core Python `tests/unit + tests/contracts` surface is in the `33k+` passing range locally.
 
 ## Cluster Automation
 

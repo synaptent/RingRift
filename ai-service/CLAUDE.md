@@ -13,7 +13,7 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | **Policy Selfplay**       | GREEN    | 2 selfplay-worker nodes generating policy-bearing Gumbel JSONL              |
 | **Supplemental Pipeline** | PROVING  | Worker shard landing proven on trainers; trainer merge occurs on next cycle |
 | **Evaluator**             | ACTIVE   | 1 dedicated evaluator node in the fleet                                     |
-| **Code Quality**          | VERIFIED | 33k+ Python tests, package-surface cleanup, role-based autonomy runtime     |
+| **Code Quality**          | VERIFIED | 33k+ Python tests, cycle-free import audit, role-based autonomy runtime     |
 
 **Key Metrics:**
 
@@ -22,6 +22,14 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 - fixed learning rate `5e-5` is the current proven baseline on the supported path
 - `hex8_2p` reached `1979.8` Elo on the current minimal-loop line
 - 33k+ Python tests in the core suite
+
+## Where To Start Reading
+
+For current-state orientation, use these entrypoints first:
+
+- `../AGENTS.md` for repository invariants and canonical rules/parity expectations
+- `../docs/architecture/OVERVIEW.md` for current architecture docs
+- `scripts/README.md` for supported Python operational scripts
 
 ## Project Overview
 
