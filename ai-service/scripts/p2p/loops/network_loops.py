@@ -72,6 +72,26 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _infer_node_capabilities(node_id: str, has_gpu: bool, memory_gb: int) -> list[str]:
+    """Infer peer capabilities while respecting manifest-backed node roles."""
+    try:
+        from app.config.node_roles import capabilities_for_policy, get_node_workload_policy
+
+        policy = get_node_workload_policy(node_id=node_id)
+        return capabilities_for_policy(
+            policy,
+            has_gpu=has_gpu,
+            memory_gb=memory_gb,
+        )
+    except Exception:
+        capabilities = ["selfplay"]
+        if has_gpu:
+            capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
+        if memory_gb >= 64:
+            capabilities.append("large_boards")
+        return capabilities
+
+
 @dataclass
 class IpDiscoveryConfig:
     """Configuration for IP discovery loop."""
@@ -1384,15 +1404,13 @@ class HeartbeatLoop(BaseLoop):
                 # Emit HOST_ONLINE for newly discovered peers
                 if is_first_contact:
                     self._peers_discovered += 1
-                    # Dec 30, 2025: All nodes get selfplay capability as base
-                    # This ensures nodes can receive work from the scheduler
-                    capabilities = ["selfplay"]
-                    if getattr(info, "has_gpu", False):
-                        gpu_type = getattr(info, "gpu_type", "") or "gpu"
-                        # GPU nodes can also do training, cmaes, gauntlet, and tournament
-                        capabilities.extend(["training", "cmaes", "gauntlet", "tournament", gpu_type])
-                    else:
-                        capabilities.append("cpu")
+                    capabilities = list(getattr(info, "capabilities", None) or [])
+                    if not capabilities:
+                        capabilities = _infer_node_capabilities(
+                            getattr(info, "node_id", ""),
+                            bool(getattr(info, "has_gpu", False)),
+                            int(getattr(info, "memory_gb", 0) or 0),
+                        )
                     await self._emit_host_online(info.node_id, capabilities)
                     logger.info(f"[Heartbeat] First-contact peer: {info.node_id}")
 

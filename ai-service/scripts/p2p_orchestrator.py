@@ -1050,30 +1050,24 @@ class P2POrchestrator(
         cpu_count = int(os.cpu_count() or 0)
         memory_gb = self._detect_memory()
 
-        # Detect coordinator mode
+        # Detect coordinator mode from explicit process env. Manifest-backed node
+        # roles remain the single source of truth for workload capabilities.
         is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
-
-        if not is_coordinator:
-            try:
-                from app.config.cluster_config import load_cluster_config
-                config = load_cluster_config()
-                nodes = getattr(config, "hosts_raw", {}) or {}
-                node_cfg = nodes.get(self.node_id, {})
-                if node_cfg.get("role") == "coordinator":
-                    is_coordinator = True
-                elif node_cfg.get("selfplay_enabled") is False and node_cfg.get("training_enabled") is False:
-                    is_coordinator = True
-            except Exception:
-                pass
 
         if is_coordinator:
             capabilities = []
         else:
-            capabilities = ["selfplay"]
-            if has_gpu:
-                capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
-            if memory_gb >= 64:
-                capabilities.append("large_boards")
+            from app.config.node_roles import (
+                capabilities_for_policy,
+                get_local_node_workload_policy,
+            )
+
+            policy = get_local_node_workload_policy(node_id=self.node_id)
+            capabilities = capabilities_for_policy(
+                policy,
+                has_gpu=has_gpu,
+                memory_gb=memory_gb,
+            )
 
         info = NodeInfo(
             node_id=self.node_id,
@@ -1117,6 +1111,7 @@ class P2POrchestrator(
         has_gpu: bool,
         memory_gb: int = 0,
         gpu_name: str = "",
+        node_id: str | None = None,
     ) -> list[str]:
         """Infer capabilities from hardware info.
 
@@ -1132,12 +1127,22 @@ class P2POrchestrator(
         Returns:
             List of inferred capabilities
         """
-        capabilities = ["selfplay"]  # All nodes can at least do CPU selfplay
-        if has_gpu:
-            capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
-        if memory_gb >= 64:
-            capabilities.append("large_boards")
-        return capabilities
+        try:
+            from app.config.node_roles import capabilities_for_policy, get_node_workload_policy
+
+            policy = get_node_workload_policy(node_id=node_id)
+            return capabilities_for_policy(
+                policy,
+                has_gpu=has_gpu,
+                memory_gb=memory_gb,
+            )
+        except Exception:
+            capabilities = ["selfplay"]
+            if has_gpu:
+                capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
+            if memory_gb >= 64:
+                capabilities.append("large_boards")
+            return capabilities
 
     def _register_self_in_peers(self) -> None:
         """Register this node in the peers dict.

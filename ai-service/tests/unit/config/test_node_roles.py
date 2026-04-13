@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config.node_roles import (
+    capabilities_for_policy,
     clear_node_role_manifest_cache,
     get_node_workload_policy,
     node_allows_work_type,
@@ -201,3 +202,81 @@ class TestNodeWorkloadPolicy:
             cluster_config_path=cluster_path,
             role_config_path=tmp_path / "missing-node-roles.yaml",
         )
+
+    def test_capabilities_for_policy_blocks_trainer_selfplay(self, tmp_path: Path) -> None:
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+        roles_path = tmp_path / "node_roles.yaml"
+
+        _write_text(
+            cluster_path,
+            """
+            hosts:
+              gh200-8:
+                role: gpu_training_selfplay
+                gpu: GH200 (96 GB)
+                gpu_vram_gb: 96
+                selfplay_enabled: true
+                training_enabled: true
+            """,
+        )
+        _write_text(
+            roles_path,
+            """
+            nodes:
+              gh200-8:
+                role: trainer
+                target_config: hex8_2p
+            """,
+        )
+
+        policy = get_node_workload_policy(
+            "lambda-gh200-8",
+            cluster_config_path=cluster_path,
+            role_config_path=roles_path,
+        )
+
+        assert capabilities_for_policy(policy, has_gpu=True, memory_gb=96) == [
+            "training",
+            "cmaes",
+            "gauntlet",
+            "tournament",
+            "large_boards",
+        ]
+
+    def test_capabilities_for_policy_disables_manifest_selfplay_worker_p2p_lane(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+        roles_path = tmp_path / "node_roles.yaml"
+
+        _write_text(
+            cluster_path,
+            """
+            hosts:
+              gh200-11:
+                role: gpu_selfplay
+                gpu: GH200 (96 GB)
+                gpu_vram_gb: 96
+                selfplay_enabled: true
+                training_enabled: false
+            """,
+        )
+        _write_text(
+            roles_path,
+            """
+            nodes:
+              gh200-11:
+                role: selfplay-worker
+                target_config: hex8_2p
+                feeds_trainer: gh200-8
+            """,
+        )
+
+        policy = get_node_workload_policy(
+            "gh200-11",
+            cluster_config_path=cluster_path,
+            role_config_path=roles_path,
+        )
+
+        assert capabilities_for_policy(policy, has_gpu=True, memory_gb=96) == []

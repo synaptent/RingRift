@@ -671,6 +671,7 @@ class HeartbeatManager:
                             has_gpu=has_gpu,
                             memory_gb=memory_gb,
                             gpu_name=getattr(peer_info, "gpu_name", "") or "",
+                            node_id=getattr(peer_info, "node_id", None),
                         )
                         peer_info.capabilities = inferred_caps
                         logger.info(

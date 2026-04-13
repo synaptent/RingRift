@@ -664,6 +664,36 @@ class TestHeartbeatLoop:
 
         assert loop._heartbeats_sent == 0
 
+    @pytest.mark.asyncio
+    async def test_first_contact_uses_advertised_capabilities_without_selfplay_fallback(self):
+        """First-contact events should preserve role-gated capabilities."""
+        info = MagicMock(
+            node_id="lambda-gh200-8",
+            host="10.0.0.8",
+            port=8770,
+            capabilities=["training", "gauntlet"],
+            has_gpu=True,
+            memory_gb=96,
+            last_heartbeat=0.0,
+            role=MagicMock(),
+        )
+        emit_host_online = AsyncMock()
+        update_peer = AsyncMock()
+        send_heartbeat = AsyncMock(return_value=info)
+        loop = self._create_loop(
+            get_known_peers=lambda: ["10.0.0.8:8770"],
+            send_heartbeat_to_peer=send_heartbeat,
+            update_peer=update_peer,
+            emit_host_online=emit_host_online,
+        )
+
+        await loop._run_once()
+
+        emit_host_online.assert_awaited_once_with(
+            "lambda-gh200-8",
+            ["training", "gauntlet"],
+        )
+
 
 # =============================================================================
 # VoterHeartbeatConfig Tests

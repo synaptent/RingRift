@@ -11,6 +11,7 @@ in tests/unit/p2p/.
 
 from __future__ import annotations
 
+import os
 import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -18,6 +19,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 pytestmark = pytest.mark.timeout(30)
+
+
+def _write_text(path, content: str) -> None:
+    path.write_text(content.strip() + "\n", encoding="utf-8")
 
 # =============================================================================
 # Test Constants and Configuration
@@ -89,6 +94,117 @@ class TestModuleImports:
         assert state_manager is not None
         assert job_manager is not None
         assert selfplay_scheduler is not None
+
+
+class TestCapabilityInference:
+    """Tests for manifest-aware capability inference in P2P script helpers."""
+
+    def test_infer_capabilities_from_hardware_respects_trainer_role(self, tmp_path):
+        from app.config.node_roles import clear_node_role_manifest_cache
+        from scripts.p2p_orchestrator import P2POrchestrator
+
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+        roles_path = tmp_path / "node_roles.yaml"
+
+        _write_text(
+            cluster_path,
+            """
+            hosts:
+              gh200-8:
+                role: gpu_training_selfplay
+                gpu: GH200 (96 GB)
+                gpu_vram_gb: 96
+                selfplay_enabled: true
+                training_enabled: true
+            """,
+        )
+        _write_text(
+            roles_path,
+            """
+            nodes:
+              gh200-8:
+                role: trainer
+                target_config: hex8_2p
+            """,
+        )
+
+        clear_node_role_manifest_cache()
+        with patch.dict(
+            os.environ,
+            {
+                "RINGRIFT_CLUSTER_CONFIG_PATH": str(cluster_path),
+                "RINGRIFT_NODE_ROLE_CONFIG": str(roles_path),
+            },
+            clear=False,
+        ):
+            capabilities = P2POrchestrator._infer_capabilities_from_hardware(
+                has_gpu=True,
+                memory_gb=96,
+                node_id="lambda-gh200-8",
+            )
+
+        clear_node_role_manifest_cache()
+        assert capabilities == [
+            "training",
+            "cmaes",
+            "gauntlet",
+            "tournament",
+            "large_boards",
+        ]
+
+    def test_nodeinfo_from_dict_respects_manifest_policy(self, tmp_path):
+        from app.config.node_roles import clear_node_role_manifest_cache
+        from scripts.p2p.models import NodeInfo
+
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+        roles_path = tmp_path / "node_roles.yaml"
+
+        _write_text(
+            cluster_path,
+            """
+            hosts:
+              gh200-11:
+                role: gpu_selfplay
+                gpu: GH200 (96 GB)
+                gpu_vram_gb: 96
+                selfplay_enabled: true
+                training_enabled: false
+            """,
+        )
+        _write_text(
+            roles_path,
+            """
+            nodes:
+              gh200-11:
+                role: selfplay-worker
+                target_config: hex8_2p
+                feeds_trainer: gh200-8
+            """,
+        )
+
+        clear_node_role_manifest_cache()
+        with patch.dict(
+            os.environ,
+            {
+                "RINGRIFT_CLUSTER_CONFIG_PATH": str(cluster_path),
+                "RINGRIFT_NODE_ROLE_CONFIG": str(roles_path),
+            },
+            clear=False,
+        ):
+            info = NodeInfo.from_dict(
+                {
+                    "node_id": "gh200-11",
+                    "host": "10.0.0.11",
+                    "port": 8770,
+                    "role": "follower",
+                    "has_gpu": True,
+                    "memory_gb": 96,
+                    "capabilities": [],
+                }
+            )
+
+        clear_node_role_manifest_cache()
+        assert info.capabilities == []
 
 
 # =============================================================================

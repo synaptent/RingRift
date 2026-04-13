@@ -27,6 +27,8 @@ DEFAULT_NODE_ROLE_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" /
 POLICY_ONLY_SELFPLAY_PROFILES = frozenset({"policy-gumbel", "policy-training"})
 DISABLED_SELFPLAY_PROFILES = frozenset({"disabled", "none"})
 SELFPLAY_WORK_TYPES = frozenset({"selfplay"})
+GPU_WORKLOAD_CAPABILITIES = ("training", "cmaes", "gauntlet", "tournament")
+EVALUATION_CAPABILITIES = ("gauntlet", "tournament")
 
 _ROLE_MANIFEST_CACHE: dict[str, Any] | None = None
 _ROLE_MANIFEST_CACHE_MTIME: float | None = None
@@ -237,6 +239,55 @@ def node_allows_work_type(
         role_config_path=role_config_path,
     )
     return policy_allows_work_type(policy, work_type, config_key=config_key)
+
+
+def capabilities_for_policy(
+    policy: NodeWorkloadPolicy,
+    *,
+    has_gpu: bool | None = None,
+    memory_gb: int = 0,
+) -> list[str]:
+    """Translate a workload policy into advertised P2P capabilities.
+
+    Manifest-managed nodes are constrained by the resolved policy. Unresolved
+    nodes keep the historical fail-open capability set for backward
+    compatibility.
+    """
+
+    effective_has_gpu = policy.has_gpu if has_gpu is None else bool(has_gpu)
+
+    if not policy.p2p_enabled:
+        return []
+
+    if not policy.resolved:
+        capabilities = ["selfplay"]
+        if effective_has_gpu:
+            capabilities.extend(GPU_WORKLOAD_CAPABILITIES)
+        if memory_gb >= 64:
+            capabilities.append("large_boards")
+        return capabilities
+
+    capabilities: list[str] = []
+    if policy.selfplay_enabled:
+        capabilities.append("selfplay")
+
+    if policy.training_enabled:
+        capabilities.append("training")
+        if effective_has_gpu:
+            capabilities.extend(cap for cap in GPU_WORKLOAD_CAPABILITIES if cap != "training")
+    elif policy.evaluation_enabled:
+        capabilities.extend(EVALUATION_CAPABILITIES)
+
+    if memory_gb >= 64 and capabilities:
+        capabilities.append("large_boards")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for capability in capabilities:
+        if capability and capability not in seen:
+            deduped.append(capability)
+            seen.add(capability)
+    return deduped
 
 
 def _resolve_cluster_config_path(

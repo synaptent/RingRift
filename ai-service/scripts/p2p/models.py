@@ -627,15 +627,23 @@ class NodeInfo:
         # Jan 24, 2026: Visible peers count for connectivity scoring
         d.setdefault('visible_peers', 0)
 
-        # Dec 30, 2025: Capability inference - if capabilities empty, infer from has_gpu
-        # This ensures nodes get work even if they didn't explicitly advertise capabilities
+        # Respect manifest-backed workload policy even when older peers omit
+        # capabilities in heartbeat payloads.
         if not d.get('capabilities'):
-            if d.get('has_gpu'):
-                # GPU nodes can do selfplay, training, cmaes, gauntlet, and tournament
-                d['capabilities'] = ['selfplay', 'training', 'cmaes', 'gauntlet', 'tournament']
-            else:
-                # CPU nodes can at least do selfplay (heuristic-based)
-                d['capabilities'] = ['selfplay']
+            try:
+                from app.config.node_roles import capabilities_for_policy, get_node_workload_policy
+
+                policy = get_node_workload_policy(node_id=d.get('node_id'))
+                d['capabilities'] = capabilities_for_policy(
+                    policy,
+                    has_gpu=bool(d.get('has_gpu', False)),
+                    memory_gb=int(d.get('memory_gb', 0) or 0),
+                )
+            except Exception:
+                if d.get('has_gpu'):
+                    d['capabilities'] = ['selfplay', 'training', 'cmaes', 'gauntlet', 'tournament']
+                else:
+                    d['capabilities'] = ['selfplay']
 
         # Ignore unknown keys for rolling upgrades.
         allowed = {f.name for f in dataclass_fields(cls)}
