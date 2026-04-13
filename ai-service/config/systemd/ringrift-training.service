@@ -29,6 +29,7 @@ ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
   --lr-schedule ${TRAINING_LR_SCHEDULE} \
   --train-lr-scheduler ${TRAINING_TRAIN_LR_SCHEDULER} \
   --train-window ${TRAINING_TRAIN_WINDOW} \
+  --supplemental-data-dir ${TRAINING_SUPPLEMENTAL_DATA_DIR} \
   --node-id ${NODE_ID}
 
 Restart=always

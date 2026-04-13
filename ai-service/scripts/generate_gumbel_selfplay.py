@@ -38,10 +38,13 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import json
 import logging
+import math
 import os
 import random
+import socket
 import sys
 import time
 import uuid
@@ -83,6 +86,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_MODEL_SHA_CACHE: dict[str, str] = {}
 
 # All 12 board/player configurations
 ALL_CONFIGS = [
@@ -169,6 +174,7 @@ class GumbelSelfplayConfig:
     verbose: bool = False
     # Neural net settings
     nn_model_id: str = ""  # Empty = use default for board
+    opponent_type: str = "selfplay"
     use_gpu: bool = True
     allow_fresh_weights: bool = False  # Allow random weights if no checkpoint
     # GPU tree provides 10-20x speedup for MCTS search
@@ -304,6 +310,7 @@ def serialize_move(
     phase: str | None = None,
     move_number: int | None = None,
     search_stats: dict | None = None,
+    policy_target: bool | None = None,
 ) -> dict[str, Any]:
     """Serialize a Move to JSON-compatible dict with optional MCTS info."""
     move_data = move.model_dump(by_alias=True, exclude_none=True, mode="json")
@@ -326,7 +333,46 @@ def serialize_move(
     if search_stats:
         move_data["search_stats"] = search_stats
 
+    if policy_target is not None:
+        move_data["policy_target"] = bool(policy_target)
+
     return move_data
+
+
+def _resolve_model_sha(model_ref: str) -> str:
+    model_path = str(model_ref or "").strip()
+    if not model_path:
+        return ""
+    cached = _MODEL_SHA_CACHE.get(model_path)
+    if cached is not None:
+        return cached
+
+    path = Path(model_path)
+    if not path.exists() or not path.is_file():
+        _MODEL_SHA_CACHE[model_path] = ""
+        return ""
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    sha = digest.hexdigest()
+    _MODEL_SHA_CACHE[model_path] = sha
+    return sha
+
+
+def _policy_entropy_bits(mcts_policy: dict[str, float]) -> float:
+    probs = [float(prob) for prob in mcts_policy.values() if float(prob) > 0]
+    if len(probs) <= 1:
+        return 0.0
+    total = sum(probs)
+    if total <= 0:
+        return 0.0
+    entropy = 0.0
+    for prob in probs:
+        normalized = prob / total
+        entropy -= normalized * math.log2(normalized)
+    return max(entropy, 0.0)
 
 
 def extract_policy_from_gumbel(ai: Any, legal_moves: list[Move]) -> dict[str, float]:
@@ -479,8 +525,13 @@ def generate_game(
         )
         # move_count is 0-indexed during loop, but moveNumber should be 1-indexed for consistency
         move_data = serialize_move(
-            selected_move, mcts_policy, value, phase=phase, move_number=move_count + 1,
-            search_stats=search_stats
+            selected_move,
+            mcts_policy,
+            value,
+            phase=phase,
+            move_number=move_count + 1,
+            search_stats=search_stats,
+            policy_target=bool(mcts_policy and len(mcts_policy) > 1),
         )
         moves_data.append(move_data)
 
@@ -627,7 +678,12 @@ def run_parity_validation(result: GameResult, config: GumbelSelfplayConfig) -> b
         return False
 
 
-def save_game_to_jsonl(result: GameResult, output_path: Path) -> None:
+def save_game_to_jsonl(
+    result: GameResult,
+    output_path: Path,
+    *,
+    config: GumbelSelfplayConfig | None = None,
+) -> None:
     """Append game result to JSONL file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -637,6 +693,17 @@ def save_game_to_jsonl(result: GameResult, output_path: Path) -> None:
         initial_state_dict = result.initial_state.model_dump(
             by_alias=True, exclude_none=True, mode="json"
         )
+
+    model_ref = str(getattr(config, "nn_model_id", "") or "").strip()
+    policy_entropies: list[float] = []
+    policy_target_moves = 0
+    for move_data in result.moves:
+        if not isinstance(move_data, dict):
+            continue
+        mcts_policy = move_data.get("mcts_policy")
+        if move_data.get("policy_target", True) and isinstance(mcts_policy, dict):
+            policy_target_moves += 1
+            policy_entropies.append(_policy_entropy_bits(mcts_policy))
 
     game_data = {
         "game_id": result.game_id,
@@ -650,6 +717,20 @@ def save_game_to_jsonl(result: GameResult, output_path: Path) -> None:
         "parity_ok": result.parity_ok,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "initial_state": initial_state_dict,
+        "policy_target_moves": policy_target_moves,
+        "policy_entropy_mean": (
+            sum(policy_entropies) / len(policy_entropies) if policy_entropies else 0.0
+        ),
+        "provenance": {
+            "source": "gumbel_selfplay",
+            "engine_mode": "gumbel-mcts",
+            "model_ref": model_ref,
+            "model_sha": _resolve_model_sha(model_ref),
+            "simulation_budget": int(getattr(config, "simulation_budget", 0) or 0),
+            "node_id": socket.gethostname(),
+            "opponent_type": str(getattr(config, "opponent_type", "selfplay") or "selfplay"),
+            "temperature": float(getattr(config, "temperature", 1.0) or 0.0),
+        },
     }
 
     with open(output_path, "a") as f:
@@ -794,7 +875,7 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
                 # Continue to save - don't skip
 
             # Save game
-            save_game_to_jsonl(result, output_path)
+            save_game_to_jsonl(result, output_path, config=config)
             if db:
                 save_game_to_db(result, db)
 

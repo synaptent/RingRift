@@ -1,0 +1,45 @@
+[Unit]
+Description=RingRift Policy Selfplay Worker
+After=network.target ringrift-p2p.service
+Wants=ringrift-p2p.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+Environment=TORCH_COMPILE_DISABLE=1
+Environment=RINGRIFT_DISABLE_TORCH_COMPILE=1
+EnvironmentFile=/etc/ringrift/node.conf
+EnvironmentFile=/etc/ringrift/selfplay.conf
+
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
+  /home/ubuntu/ringrift/ai-service/scripts/policy_selfplay_worker.py \
+  --config-key ${SELFPLAY_CONFIG_KEY} \
+  --board-type ${SELFPLAY_BOARD_TYPE} \
+  --num-players ${SELFPLAY_NUM_PLAYERS} \
+  --model ${SELFPLAY_MODEL} \
+  --batch-games ${SELFPLAY_BATCH_GAMES} \
+  --simulation-budget ${SELFPLAY_SIMULATION_BUDGET} \
+  --raw-output-dir ${SELFPLAY_RAW_OUTPUT_DIR} \
+  --supplemental-output-dir ${SELFPLAY_SUPPLEMENTAL_OUTPUT_DIR} \
+  --state-dir ${SELFPLAY_STATE_DIR} \
+  --sleep-seconds ${SELFPLAY_SLEEP_SECONDS} \
+  --remote-host ${SELFPLAY_REMOTE_HOST} \
+  --remote-dir ${SELFPLAY_REMOTE_DIR} \
+  --remote-user ${SELFPLAY_REMOTE_USER} \
+  --remote-key ${SELFPLAY_REMOTE_SSH_KEY} \
+  --remote-port ${SELFPLAY_REMOTE_PORT} \
+  --opponent-type ${SELFPLAY_OPPONENT_TYPE}
+
+Restart=always
+RestartSec=30
+KillMode=control-group
+TimeoutStopSec=120
+
+StandardOutput=append:/home/ubuntu/ringrift/ai-service/logs/selfplay_worker.log
+StandardError=append:/home/ubuntu/ringrift/ai-service/logs/selfplay_worker.log
+
+[Install]
+WantedBy=multi-user.target

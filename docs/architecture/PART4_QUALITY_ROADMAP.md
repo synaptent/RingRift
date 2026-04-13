@@ -54,11 +54,11 @@ With Phase 1 green, the highest-ROI execution lane is no longer generic suite bu
 
 | Lane Phase | Focus                            | Target Outcome                                                                                   | Status      |
 | ---------- | -------------------------------- | ------------------------------------------------------------------------------------------------ | ----------- |
-| A1         | Role policy and workload gating  | Declarative trainer/selfplay/evaluator/sync roles override legacy host-role drift                | In progress |
-| A2         | Policy-bearing selfplay only     | Dedicated selfplay workers generate only Gumbel/MCTS policy targets for primary training input   | Pending     |
-| A3         | Ingestion without loop drift     | External selfplay lands in trainer-visible data flow without breaking minimal-loop NPZ windowing | Pending     |
-| A4         | Role-aware deploy/runtime        | Deploy/systemd surfaces read the same role manifest and stop doing ad hoc kill/disable logic     | Pending     |
-| A5         | Evaluator and hard-position loop | Dedicated evaluator node produces calibrated Elo, hard positions, and promotion diagnostics      | Pending     |
+| A1         | Role policy and workload gating  | Declarative trainer/selfplay/evaluator/sync roles override legacy host-role drift                | Complete    |
+| A2         | Policy-bearing selfplay only     | Dedicated selfplay workers generate only Gumbel/MCTS policy targets for primary training input   | In progress |
+| A3         | Ingestion without loop drift     | External selfplay lands in trainer-visible data flow without breaking minimal-loop NPZ windowing | In progress |
+| A4         | Role-aware deploy/runtime        | Deploy/systemd surfaces read the same role manifest and stop doing ad hoc kill/disable logic     | In progress |
+| A5         | Evaluator and hard-position loop | Dedicated evaluator node produces calibrated Elo, hard positions, and promotion diagnostics      | In progress |
 
 ## Execution Order
 
@@ -123,6 +123,38 @@ Target:
 - resolve effective node policy from host inventory + role overlay in one helper module
 - enforce trainer/selfplay/evaluator behavior at local selfplay eligibility, remote selfplay eligibility, and node job preference boundaries
 - stop policy-only selfplay workers from being silently upgraded back into mixed/diverse/heuristic modes by higher-level config selectors
+
+### Autonomy Phase A2: Policy-Bearing Selfplay Only
+
+Target:
+
+- make policy-bearing Gumbel/MCTS selfplay a first-class worker path instead of an incidental byproduct of mixed P2P jobs
+- attach provenance needed for downstream training and audit: model SHA, simulation budget, node ID, and opponent type
+- ensure non-search moves can be recorded without being silently converted into policy targets
+
+### Autonomy Phase A3: Ingestion Without Loop Drift
+
+Target:
+
+- ingest external policy-bearing selfplay through a dedicated supplemental path rather than `iter_*.npz` namespace injection
+- validate completion rate, policy entropy, and value-target variance before a shard becomes trainer-visible
+- dedupe games and preserve supplemental provenance in sidecars and NPZ metadata
+
+### Autonomy Phase A4: Role-Aware Deploy/Runtime
+
+Target:
+
+- make deploy and systemd surfaces consume the same role manifest as the P2P workload gate
+- keep `ringrift-p2p.service` enabled on trainer, selfplay-worker, and evaluator nodes instead of using broad kill/disable logic
+- add explicit `ringrift-selfplay-worker.service` and `ringrift-evaluator.service` alongside the existing training service
+
+### Autonomy Phase A5: Evaluator and Hard-Position Loop
+
+Target:
+
+- reserve a dedicated evaluator runtime path that can periodically run the existing distributed evaluator stack
+- separate evaluation cadence from trainer/selfplay cadence so calibration does not compete with policy-data generation
+- use the evaluator lane as the eventual home for hard-position and promotion-diagnostic datasets
 
 ### Phase 3: Remaining Active Monolith Reduction
 
@@ -210,3 +242,14 @@ Then update:
 - Autonomy Phase A1 targeted verification: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/config/test_node_roles.py tests/unit/p2p/test_selfplay_job_configs.py tests/unit/p2p/managers/test_work_discovery_manager.py tests/unit/p2p/loops/test_autonomous_queue_loop.py -q --timeout=120` passed at `131 passed`.
 - Autonomy Phase A1 targeted verification: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/p2p/managers/test_job_orchestration_manager.py -q --timeout=120` passed at `53 passed`.
 - Autonomy Phase A1 confirmation: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` passed at `33142 passed, 94 skipped, 21 warnings in 1457.81s (0:24:17)`.
+- Autonomy Phase A2 progress: `scripts/generate_gumbel_selfplay.py` now emits per-move `policy_target` markers plus top-level provenance for model SHA, simulation budget, node ID, opponent type, and aggregate policy-entropy stats so policy-bearing selfplay is explicit instead of implicit.
+- Autonomy Phase A2 progress: added `scripts/policy_selfplay_worker.py` as a continuous Gumbel/MCTS worker path that generates raw JSONL batches and immediately hands them to the ingestion pipeline instead of relying on broad P2P SQLite side effects.
+- Autonomy Phase A3 progress: added `scripts/ingest_policy_selfplay.py` and rewrote `scripts/ingest_p2p_selfplay.sh` so external selfplay is deduped, quality-gated, converted to supplemental NPZ shards, and optionally synced to trainers without touching the minimal loop `iter_*.npz` namespace.
+- Autonomy Phase A3 progress: `scripts/jsonl_to_npz.py` now skips `policy_target=false` moves, and `scripts/minimal_alphazero_loop.py` now accepts `--supplemental-data-dir` and merges recent supplemental shards during the combine step instead of relying on lexical filename injection.
+- Autonomy Phase A4 progress: replaced the ad hoc cluster-wide training deploy with a role-aware `scripts/deploy_training_service.sh` that reads `config/node_roles.yaml`, writes per-role config under `/etc/ringrift`, keeps `ringrift-p2p.service` enabled, and installs `ringrift-training.service`, `ringrift-selfplay-worker.service`, or `ringrift-evaluator.service` as appropriate.
+- Autonomy Phase A4 progress: removed the broad `ExecStopPost` `pkill` from `config/systemd/ringrift-p2p.service` so P2P restarts do not accidentally kill independent selfplay-worker runtimes that are no longer in the P2P control group.
+- Autonomy Phase A5 progress: added `scripts/evaluator_worker.py` plus `config/systemd/ringrift-evaluator.service` so evaluator cadence can be scheduled separately from trainer and selfplay-worker nodes.
+- Autonomy Phase A2/A3 targeted verification: `cd ai-service && PYTHONPATH=. python -m py_compile scripts/generate_gumbel_selfplay.py scripts/jsonl_to_npz.py scripts/minimal_alphazero_loop.py scripts/ingest_policy_selfplay.py scripts/policy_selfplay_worker.py scripts/evaluator_worker.py` passed.
+- Autonomy Phase A2/A4 targeted verification: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/scripts/test_minimal_alphazero_loop.py tests/contracts/test_training_pipeline_contracts.py tests/unit/scripts/test_ingest_policy_selfplay.py tests/unit/scripts/test_deploy_training_service.py -q --timeout=120` passed at `14 passed in 3.97s`.
+- Autonomy Phase A4 targeted verification: `cd ai-service && bash scripts/deploy_training_service.sh --dry-run` confirmed manifest-driven trainer, selfplay-worker, and evaluator deployment while keeping `ringrift-p2p.service` enabled.
+- Autonomy Phase A2-A4 broad verification sample: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` ran cleanly through `3121 passed, 7 skipped` before manual interruption at `143.11s`, with no failures in the modified training-path surfaces.

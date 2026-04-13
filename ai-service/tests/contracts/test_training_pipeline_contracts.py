@@ -65,6 +65,8 @@ def test_npz_export_produces_expected_schema(tmp_path: Path, monkeypatch) -> Non
         move = legal_moves[0]
         move_payload = move.model_dump(by_alias=True, exclude_none=True, mode="json")
         move_payload.setdefault("mcts_policy", {"0": 1.0})
+        if len(moves) % 3 == 0:
+            move_payload["policy_target"] = False
         moves.append(move_payload)
         state, _reward, done, _info = env.step(move)
         if done:
@@ -100,6 +102,7 @@ def test_npz_export_produces_expected_schema(tmp_path: Path, monkeypatch) -> Non
 
     assert stats.games_processed == 1
     assert stats.positions_extracted > 0
+    assert stats.positions_extracted < len(moves)
     assert npz_path.exists()
 
     expected_keys = {

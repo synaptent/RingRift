@@ -31,6 +31,7 @@ def _run_loop_once(
     *,
     extra_args: list[str],
     existing_npz_markers: list[float] | None = None,
+    supplemental_markers: list[float] | None = None,
 ):
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -40,6 +41,12 @@ def _run_loop_once(
     if existing_npz_markers:
         for index, marker in enumerate(existing_npz_markers, start=1):
             _write_iteration_npz(work_dir / f"iter_{index:03d}.npz", marker)
+
+    supplemental_dir = tmp_path / "supplemental"
+    if supplemental_markers:
+        supplemental_dir.mkdir()
+        for index, marker in enumerate(supplemental_markers, start=1):
+            _write_iteration_npz(supplemental_dir / f"supplemental_{index:03d}.npz", marker)
 
     heartbeats: list[dict] = []
     train_calls: list[dict] = []
@@ -139,6 +146,11 @@ def _run_loop_once(
             "--skip-quality-check",
             "--skip-probes",
             "--skip-quality-gate",
+            *(
+                ["--supplemental-data-dir", str(supplemental_dir)]
+                if supplemental_markers
+                else []
+            ),
             *extra_args,
         ],
     )
@@ -263,6 +275,24 @@ def test_loop_allows_explicit_training_scheduler_override(monkeypatch, tmp_path)
 
     assert result["train_calls"][0]["train_lr_scheduler"] == "step"
     assert result["metrics"][0]["train_lr_scheduler"] == "step"
+
+
+def test_loop_merges_supplemental_npz_without_touching_iteration_namespace(monkeypatch, tmp_path):
+    result = _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        extra_args=[
+            "--train-window",
+            "2",
+        ],
+        existing_npz_markers=[1.0, 2.0],
+        supplemental_markers=[9.0],
+    )
+
+    assert len(result["train_calls"]) == 1
+    train_call = result["train_calls"][0]
+    assert train_call["npz_name"] == "combined_003.npz"
+    assert train_call["markers"] == [2.0, 3.0, 9.0]
 
 
 def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):

@@ -1,0 +1,32 @@
+[Unit]
+Description=RingRift Evaluator Worker
+After=network.target ringrift-p2p.service
+Wants=ringrift-p2p.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+Environment=RINGRIFT_DISABLE_TORCH_COMPILE=1
+EnvironmentFile=/etc/ringrift/node.conf
+EnvironmentFile=/etc/ringrift/evaluator.conf
+
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
+  /home/ubuntu/ringrift/ai-service/scripts/evaluator_worker.py \
+  --interval ${EVALUATOR_INTERVAL_SECONDS} \
+  --workers ${EVALUATOR_WORKERS} \
+  --board ${EVALUATOR_BOARD_FILTER} \
+  --fast
+
+Restart=always
+RestartSec=60
+KillMode=control-group
+TimeoutStopSec=120
+
+StandardOutput=append:/home/ubuntu/ringrift/ai-service/logs/evaluator.log
+StandardError=append:/home/ubuntu/ringrift/ai-service/logs/evaluator.log
+
+[Install]
+WantedBy=multi-user.target

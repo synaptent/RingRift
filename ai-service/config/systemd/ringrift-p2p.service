@@ -16,14 +16,13 @@ RestartSec=10
 StandardOutput=append:/root/ringrift/ai-service/logs/p2p.log
 StandardError=append:/root/ringrift/ai-service/logs/p2p.log
 
-# Mar 27, 2026: Kill ALL descendant processes on stop/restart.
-# Previous behavior left orphan selfplay processes (28+ procs × 80 threads each)
-# that accumulated across P2P restarts until the node hit NPROC limits
-# ("Resource temporarily unavailable" on gh200-12, required reboot).
+# Mar 27, 2026: Kill descendant processes via systemd cgroup only.
+# A later broad ExecStopPost pkill pattern also matched independent role
+# services (policy selfplay workers), so the cgroup boundary is the safe and
+# sufficient cleanup mechanism here.
 KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=30
-ExecStopPost=/bin/bash -c 'pkill -9 -f "selfplay|gumbel_mcts|run_gpu_selfplay|generate_gumbel" 2>/dev/null || true'
 
 # Resource limits — orchestrator itself is light but its children use GPU
 # MemoryMax removed: was 2G which caused OOM kills that left orphans

@@ -132,6 +132,21 @@ def _get_phase_str(state: GameState) -> str:
     return str(phase)
 
 
+def _should_train_on_move(move_dict: dict[str, Any] | Any) -> bool:
+    """Return whether a move should produce a policy training sample.
+
+    New worker-generated mixed-opponent JSONL can mark non-search-controlled
+    moves with ``policy_target=false`` so they remain part of the replay trace
+    without polluting the policy head with invented hard labels.
+    """
+
+    if not isinstance(move_dict, dict):
+        return True
+    if "policy_target" not in move_dict:
+        return True
+    return bool(move_dict.get("policy_target"))
+
+
 def _complete_remaining_phases(
     state: GameState,
     target_player: int,
@@ -424,6 +439,17 @@ def _process_gpu_selfplay_record(
                 current_state = GameEngine.apply_move(current_state, move, trace_mode=True)
             except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
                 break  # Stop on error
+            continue
+
+        if not _should_train_on_move(move_dict):
+            try:
+                base_features, _ = encoder._extract_features(current_state)
+                history_frames.append(base_features)
+                if len(history_frames) > history_length + 1:
+                    history_frames.pop(0)
+                current_state = GameEngine.apply_move(current_state, move, trace_mode=True)
+            except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
+                break
             continue
 
         try:
@@ -1389,6 +1415,14 @@ def process_jsonl_file(
                     # Sample every N moves
                     if sample_every > 1 and (move_idx % sample_every) != 0:
                         # Still need to apply move and update history
+                        base_features, _ = encoder._extract_features(current_state)
+                        history_frames.append(base_features)
+                        if len(history_frames) > history_length + 1:
+                            history_frames.pop(0)
+                        current_state = GameEngine.apply_move(current_state, move, trace_mode=gpu_selfplay_mode)
+                        continue
+
+                    if not _should_train_on_move(move_dict):
                         base_features, _ = encoder._extract_features(current_state)
                         history_frames.append(base_features)
                         if len(history_frames) > history_length + 1:
