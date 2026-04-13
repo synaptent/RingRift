@@ -71,14 +71,14 @@ def safe_emit_event(
         except RuntimeError:
             loop = None
 
-        async def _emit():
-            await _publish(event_type=event_type, payload=payload, source=source)
-
         if loop is not None:
             # Async context - fire and forget
-            from app.core.async_context import fire_and_forget
-
-            fire_and_forget(_emit(), name=f"safe_emit_{event_type}")
+            emit_coro = _publish(event_type=event_type, payload=payload, source=source)
+            try:
+                fire_and_forget(emit_coro, name=f"safe_emit_{event_type}")
+            except Exception:
+                emit_coro.close()
+                raise
         else:
             # Sync context: schedule on known running router loop when possible.
             # This avoids cross-loop lock errors when called from worker threads.
@@ -86,7 +86,16 @@ def safe_emit_event(
 
             if main_loop is not None:
                 # Schedule onto a running loop from this sync thread.
-                future = asyncio.run_coroutine_threadsafe(_emit(), main_loop)
+                emit_coro = _publish(
+                    event_type=event_type,
+                    payload=payload,
+                    source=source,
+                )
+                try:
+                    future = asyncio.run_coroutine_threadsafe(emit_coro, main_loop)
+                except Exception:
+                    emit_coro.close()
+                    raise
 
                 # Ensure background failures are visible even if caller ignores return.
                 def _log_emit_failure(done_future: concurrent.futures.Future) -> None:
@@ -105,7 +114,9 @@ def safe_emit_event(
                 future.add_done_callback(_log_emit_failure)
             else:
                 # No running loop anywhere — safe to create one
-                asyncio.run(_emit())
+                asyncio.run(
+                    _publish(event_type=event_type, payload=payload, source=source)
+                )
 
         return True
 
