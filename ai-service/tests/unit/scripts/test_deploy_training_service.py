@@ -47,3 +47,4 @@ def test_p2p_service_enables_lock_recovery_flags() -> None:
     service_text = P2P_SERVICE_PATH.read_text()
     assert "--kill-duplicates" in service_text
     assert "--force-takeover" in service_text
+    assert "fuser -k 8770/tcp 8772/tcp" in service_text

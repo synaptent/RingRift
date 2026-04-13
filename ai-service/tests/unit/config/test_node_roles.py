@@ -56,7 +56,7 @@ class TestNodeWorkloadPolicy:
         assert policy.job_preference == "training_only"
         assert policy.allowed_config_keys == ("hex8_2p",)
 
-    def test_selfplay_worker_manifest_uses_policy_gumbel_profile(self, tmp_path: Path) -> None:
+    def test_selfplay_worker_manifest_disables_p2p_selfplay_lane(self, tmp_path: Path) -> None:
         cluster_path = tmp_path / "distributed_hosts.yaml"
         roles_path = tmp_path / "node_roles.yaml"
 
@@ -91,10 +91,10 @@ class TestNodeWorkloadPolicy:
 
         assert policy.resolved is True
         assert policy.role == "selfplay-worker"
-        assert policy.selfplay_enabled is True
+        assert policy.selfplay_enabled is False
         assert policy.training_enabled is False
-        assert policy.selfplay_profile == "policy-gumbel"
-        assert policy.job_preference == "gpu_only"
+        assert policy.selfplay_profile == "disabled"
+        assert policy.job_preference == "disabled"
         assert policy.allowed_config_keys == ("hex8_2p",)
         assert policy.feeds_trainer == "gh200-8"
 

@@ -121,6 +121,12 @@ def get_node_workload_policy(
         if override_role:
             policy_values = _defaults_for_role(override_role, has_gpu=has_gpu)
         policy_values = _apply_explicit_overrides(policy_values, override_cfg)
+        if override_role == "selfplay-worker":
+            # Manifest-managed selfplay workers use the dedicated
+            # ringrift-selfplay-worker.service path. Keep P2P running for sync
+            # and health, but do not advertise fallback selfplay capacity.
+            policy_values["selfplay_enabled"] = False
+            policy_values["selfplay_profile"] = "disabled"
 
     role = str(policy_values["role"])
     selfplay_enabled = bool(policy_values["selfplay_enabled"])

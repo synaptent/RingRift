@@ -10,6 +10,7 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/ringrift/ai-service
 Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
 EnvironmentFile=-/etc/ringrift/node.conf
+ExecStartPre=/bin/bash -lc '/usr/bin/sudo -n fuser -k 8770/tcp 8772/tcp 2>/dev/null || true'
 ExecStartPre=/bin/bash -c 'cd /home/ubuntu/ringrift && git pull origin main 2>/dev/null || true'
 ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python scripts/p2p_orchestrator.py --node-id ${NODE_ID} --port 8770 --advertise-host ${ADVERTISE_HOST} --peers ${PEER_LIST} --ringrift-path /home/ubuntu/ringrift --kill-duplicates --force-takeover
 Restart=always
