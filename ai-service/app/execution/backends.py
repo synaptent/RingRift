@@ -509,7 +509,7 @@ class SSHBackend(OrchestratorBackend):
 
         # Selfplay is CPU-bound - prioritize hosts with low CPU utilization
         try:
-            from app.coordination import get_hosts_for_cpu_tasks
+            from app.coordination.resource_targets import get_hosts_for_cpu_tasks
             cpu_hosts = get_hosts_for_cpu_tasks(
                 [w.name for w in available],
                 max_cpu_util=80.0,  # Only use hosts with <80% CPU
@@ -606,7 +606,7 @@ class SSHBackend(OrchestratorBackend):
         # Prefer non-GPU workers to keep GPUs free for training
         # Use resource-aware selection if available
         try:
-            from app.coordination import get_hosts_for_cpu_tasks
+            from app.coordination.resource_targets import get_hosts_for_cpu_tasks
             cpu_hosts = get_hosts_for_cpu_tasks(
                 [w.name for w in available],
                 max_cpu_util=70.0,
@@ -688,7 +688,7 @@ class SSHBackend(OrchestratorBackend):
 
         # Select GPU worker with lowest GPU utilization
         try:
-            from app.coordination import get_hosts_for_gpu_tasks
+            from app.coordination.resource_targets import get_hosts_for_gpu_tasks
             gpu_hosts = get_hosts_for_gpu_tasks(
                 [w.name for w in gpu_workers],
                 max_gpu_util=85.0,  # Only consider hosts with <85% GPU util

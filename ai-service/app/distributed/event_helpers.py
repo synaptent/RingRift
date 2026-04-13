@@ -5,10 +5,10 @@ DEPRECATION NOTICE (December 2025):
     For new code, prefer the unified event router which consolidates all
     3 event systems (EventBus, StageEventBus, CrossProcessEventQueue):
 
-        from app.coordination import (
+        from app.coordination.event_router import (
             get_event_router,
-            router_publish_event,  # async
-            publish_event_sync,    # sync
+            publish as router_publish_event,  # async
+            publish_sync as publish_event_sync,  # sync
             subscribe_event,
         )
 

@@ -20,7 +20,7 @@ DEPRECATION NOTICE:
             ...
 
         # NEW:
-        from app.coordination import (
+        from app.coordination.orchestrator_registry import (
             OrchestratorRole,
             acquire_orchestrator_role,
             release_orchestrator_role,

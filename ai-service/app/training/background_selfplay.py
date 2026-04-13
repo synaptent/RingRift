@@ -29,10 +29,8 @@ from app.utils.paths import AI_SERVICE_ROOT
 
 # Import coordination for task limits
 try:
-    from app.coordination import (
-        TaskType,
-    )
     from app.coordination.helpers import can_spawn_safe
+    from app.coordination.types import TaskType
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False

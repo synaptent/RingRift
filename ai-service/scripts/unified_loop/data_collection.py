@@ -87,12 +87,9 @@ except ImportError:
 
 # Coordination features
 try:
-    from app.coordination import (
-        TransferPriority,
-        release_bandwidth,
-        request_bandwidth,
-        sync_lock,
-    )
+    from app.coordination.sync_bandwidth import release_bandwidth, request_bandwidth
+    from app.coordination.sync_mutex import sync_lock
+    from app.coordination.types import TransferPriority
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False

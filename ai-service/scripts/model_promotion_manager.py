@@ -81,9 +81,6 @@ else:
 import contextlib
 
 from app.coordination.helpers import (
-    OrchestratorRole,
-    TaskCoordinator,
-    TaskType,
     can_spawn_safe,
     get_registry_safe,
     has_coordination,
@@ -91,10 +88,14 @@ from app.coordination.helpers import (
 
 HAS_COORDINATION = has_coordination()
 
-# For backwards compatibility
-if HAS_COORDINATION:
-    from app.coordination import can_spawn_safe, get_registry
-else:
+try:
+    from app.coordination.orchestrator_registry import OrchestratorRole, get_registry
+    from app.coordination.task_coordinator import TaskCoordinator
+    from app.coordination.types import TaskType
+except ImportError:
+    OrchestratorRole = None
+    TaskCoordinator = None
+    TaskType = None
     get_registry = get_registry_safe
 
 # Import canonical config helpers

@@ -7,7 +7,7 @@
 
     For automated continuous sync::
 
-        from app.coordination import AutoSyncDaemon
+        from app.coordination.auto_sync_daemon import AutoSyncDaemon
         daemon = AutoSyncDaemon()
         await daemon.start()
 
@@ -75,7 +75,7 @@ from app.config.ports import P2P_DEFAULT_PORT
 warnings.warn(
     "UnifiedDataSyncService is deprecated and will be archived in Q2 2026. "
     "Use AutoSyncDaemon for automated sync or SyncFacade for direct sync:\n"
-    "  from app.coordination import AutoSyncDaemon\n"
+    "  from app.coordination.auto_sync_daemon import AutoSyncDaemon\n"
     "  daemon = AutoSyncDaemon()\n"
     "  await daemon.start()\n"
     "Or for one-time sync:\n"
