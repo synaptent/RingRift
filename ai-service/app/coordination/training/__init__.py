@@ -11,9 +11,21 @@ Usage:
     from app.coordination.training.scheduler import PriorityJobScheduler
 """
 
-# Lazy imports to avoid circular dependencies
-def __getattr__(name):
-    if name in ("orchestrator", "scheduler"):
-        import importlib
+from __future__ import annotations
+
+import importlib
+
+_SUBMODULES = ("orchestrator", "scheduler")
+
+__all__ = list(_SUBMODULES)
+
+
+def __getattr__(name: str):
+    """Resolve the documented training package submodules lazily."""
+    if name in _SUBMODULES:
         return importlib.import_module(f".{name}", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

@@ -87,6 +87,12 @@ from app.coordination.selfplay.allocation_events import (
 # Lazy import for SelfplayScheduler to avoid circular imports
 # When quality_signal_handler.py imports from this package, the scheduler
 # hasn't been fully loaded yet
+_LAZY_EXPORTS = (
+    "SelfplayScheduler",
+    "get_selfplay_scheduler",
+    "reset_selfplay_scheduler",
+)
+
 if TYPE_CHECKING:
     from app.coordination.selfplay_scheduler import (
         SelfplayScheduler,
@@ -97,7 +103,7 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str):
     """Lazy import for SelfplayScheduler and related functions."""
-    if name in ("SelfplayScheduler", "get_selfplay_scheduler", "reset_selfplay_scheduler"):
+    if name in _LAZY_EXPORTS:
         from app.coordination.selfplay_scheduler import (
             SelfplayScheduler,
             get_selfplay_scheduler,
@@ -109,6 +115,10 @@ def __getattr__(name: str):
             "reset_selfplay_scheduler": reset_selfplay_scheduler,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
 
 
 __all__ = [

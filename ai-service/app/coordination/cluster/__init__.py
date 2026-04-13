@@ -13,9 +13,29 @@ Usage:
     from app.coordination.cluster.sync import SyncScheduler
 """
 
-# Lazy imports to avoid circular dependencies
-def __getattr__(name):
-    if name in ("health", "sync", "transport", "p2p"):
-        import importlib
-        return importlib.import_module(f".{name}", __name__)
+from __future__ import annotations
+
+import importlib
+
+_SUBMODULES = {
+    "health": ".health",
+    "sync": ".sync",
+    "transport": "app.coordination.cluster_transport",
+    "p2p": "app.coordination.p2p_backend",
+}
+
+__all__ = list(_SUBMODULES)
+
+
+def __getattr__(name: str):
+    """Resolve the documented cluster package submodules lazily."""
+    if name in _SUBMODULES:
+        module_path = _SUBMODULES[name]
+        if module_path.startswith("."):
+            return importlib.import_module(module_path, __name__)
+        return importlib.import_module(module_path)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
