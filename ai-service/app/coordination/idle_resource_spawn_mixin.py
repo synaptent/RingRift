@@ -7,7 +7,7 @@ import logging
 import time
 
 from app.coordination.event_utils import parse_config_key
-from app.coordination.idle_resource_daemon import (
+from app.coordination.idle_resource_shared import (
     ClusterNode,
     HAS_BACKPRESSURE,
     HAS_CIRCUIT_BREAKER,

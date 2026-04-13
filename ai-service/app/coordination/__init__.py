@@ -97,11 +97,19 @@ def _load_export(name: str) -> object:
     return value
 
 
+def _resolve_export(name: str) -> object:
+    """Resolve one exported symbol and bind it into module globals."""
+
+    value = _load_export(name)
+    globals()[name] = value
+    return value
+
+
 def __getattr__(name: str) -> object:
     """Resolve historical package re-exports lazily."""
 
     if name in _EXPORT_NAME_TO_MODULE:
-        return _load_export(name)
+        return _resolve_export(name)
     if name in {"core_utils", "core_events"}:
         value = importlib.import_module(f"app.coordination.{name}")
         _LAZY_EXPORT_CACHE[name] = value
@@ -229,6 +237,16 @@ def initialize_all_coordinators(
     }
     errors = {}
     instances = {}
+
+    wire_task_events = _resolve_export("wire_task_events")
+    wire_resource_events = _resolve_export("wire_resource_events")
+    wire_cache_events = _resolve_export("wire_cache_events")
+    wire_selfplay_events = _resolve_export("wire_selfplay_events")
+    wire_pipeline_events = _resolve_export("wire_pipeline_events")
+    wire_optimization_events = _resolve_export("wire_optimization_events")
+    wire_metrics_events = _resolve_export("wire_metrics_events")
+    get_event_coordinator_stats = _resolve_export("get_event_coordinator_stats")
+    start_event_coordinator = _resolve_export("start_event_coordinator")
 
     # Define init functions that return (instance, subscribed)
     def init_task_lifecycle():
@@ -401,6 +419,15 @@ def get_all_coordinator_status() -> dict:
     Returns:
         Dict with status from each orchestrator
     """
+    get_selfplay_orchestrator = _resolve_export("get_selfplay_orchestrator")
+    get_pipeline_orchestrator = _resolve_export("get_pipeline_orchestrator")
+    get_task_lifecycle_coordinator = _resolve_export("get_task_lifecycle_coordinator")
+    get_optimization_coordinator = _resolve_export("get_optimization_coordinator")
+    get_metrics_orchestrator = _resolve_export("get_metrics_orchestrator")
+    get_resource_coordinator = _resolve_export("get_resource_coordinator")
+    get_cache_orchestrator = _resolve_export("get_cache_orchestrator")
+    get_event_coordinator_stats = _resolve_export("get_event_coordinator_stats")
+
     return {
         "selfplay": get_selfplay_orchestrator().get_status(),
         "pipeline": get_pipeline_orchestrator().get_status(),
@@ -426,6 +453,13 @@ def get_system_health() -> dict:
     coordinator_health = {}
     total_score = 0.0
     coordinator_count = 0
+    get_selfplay_orchestrator = _resolve_export("get_selfplay_orchestrator")
+    get_pipeline_orchestrator = _resolve_export("get_pipeline_orchestrator")
+    get_task_lifecycle_coordinator = _resolve_export("get_task_lifecycle_coordinator")
+    get_optimization_coordinator = _resolve_export("get_optimization_coordinator")
+    get_metrics_orchestrator = _resolve_export("get_metrics_orchestrator")
+    get_resource_coordinator = _resolve_export("get_resource_coordinator")
+    get_cache_orchestrator = _resolve_export("get_cache_orchestrator")
 
     def _get_health_score(name: str, status: dict) -> float:
         """Calculate health score for a coordinator."""
@@ -691,6 +725,13 @@ async def _emit_coordinator_heartbeats(interval_seconds: float = 30.0) -> None:
     import logging
 
     logger = logging.getLogger(__name__)
+    get_selfplay_orchestrator = _resolve_export("get_selfplay_orchestrator")
+    get_pipeline_orchestrator = _resolve_export("get_pipeline_orchestrator")
+    get_task_lifecycle_coordinator = _resolve_export("get_task_lifecycle_coordinator")
+    get_optimization_coordinator = _resolve_export("get_optimization_coordinator")
+    get_metrics_orchestrator = _resolve_export("get_metrics_orchestrator")
+    get_resource_coordinator = _resolve_export("get_resource_coordinator")
+    get_cache_orchestrator = _resolve_export("get_cache_orchestrator")
 
     _heartbeat_running = True
     logger.info(f"[HeartbeatManager] Started with {interval_seconds}s interval")
