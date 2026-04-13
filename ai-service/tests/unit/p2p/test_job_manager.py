@@ -178,6 +178,7 @@ class TestSelfplayJobExecution:
             ai_service = Path(tmpdir) / "ai-service" / "scripts"
             ai_service.mkdir(parents=True)
             (ai_service / "run_gpu_selfplay.py").write_text("# mock")
+            (ai_service / "generate_gumbel_selfplay.py").write_text("# mock")
 
             # Run and check output dir uses normalized name
             with patch('asyncio.create_subprocess_exec') as mock_exec:
@@ -197,6 +198,12 @@ class TestSelfplayJobExecution:
 
                 # Verify the call was made
                 assert mock_exec.called
+                args = mock_exec.call_args.args
+                assert args[1].endswith((
+                    "run_gpu_selfplay.py",
+                    "generate_gumbel_selfplay.py",
+                ))
+                assert any("hex_2p" in str(part) for part in args)
 
     @pytest.mark.asyncio
     async def test_run_gpu_selfplay_chooses_hybrid_for_search_modes(self):
