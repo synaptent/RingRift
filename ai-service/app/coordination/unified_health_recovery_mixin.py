@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from app.coordination.unified_health_manager import (
+from app.coordination.unified_health_shared import (
     CircuitState,
     ErrorRecord,
     ErrorSeverity,

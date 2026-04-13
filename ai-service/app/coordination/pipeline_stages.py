@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
-from app.coordination.data_pipeline_orchestrator import (
+from app.coordination.pipeline_shared import (
     IterationRecord,
     MAX_STAGE_RETRIES,
     PipelineStage,

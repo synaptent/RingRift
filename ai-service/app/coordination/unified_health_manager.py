@@ -68,15 +68,25 @@ from typing import TYPE_CHECKING, Any
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_utils import make_config_key
 from app.coordination.handler_base import HandlerBase
-from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
-
-# Event emission for node health feedback loops (Phase 21.2 - Dec 2025)
-try:
-    from app.coordination.event_router import emit_node_overloaded
-    HAS_NODE_EVENTS = True
-except ImportError:
-    emit_node_overloaded = None
-    HAS_NODE_EVENTS = False
+from app.coordination.unified_health_shared import (
+    CircuitState,
+    ErrorRecord,
+    ErrorSeverity,
+    HAS_NODE_EVENTS,
+    HealthStats,
+    JobRecoveryAction,
+    NodeHealthState,
+    NodeRecoveryState,
+    RecoveryAction,
+    RecoveryAttempt,
+    RecoveryResult,
+    RecoveryStatus,
+    SystemHealthConfig,
+    SystemHealthLevel,
+    SystemHealthScore,
+    emit_node_overloaded,
+)
+from app.distributed.circuit_breaker import CircuitBreaker
 
 if TYPE_CHECKING:
     pass
@@ -88,22 +98,6 @@ logger = logging.getLogger(__name__)
 # Enums (consolidated from both modules)
 # =============================================================================
 
-# December 2025: Import ErrorSeverity from canonical source
-from app.coordination.types import ErrorSeverity
-
-# ErrorSeverity is now imported from app.coordination.types
-# Canonical values: INFO, WARNING, ERROR, CRITICAL
-
-
-class SystemHealthLevel(Enum):
-    """System health levels for aggregate scoring."""
-
-    HEALTHY = "healthy"  # 80-100
-    DEGRADED = "degraded"  # 60-79
-    UNHEALTHY = "unhealthy"  # 40-59
-    CRITICAL = "critical"  # 0-39
-
-
 class PipelineState(Enum):
     """Pipeline operational state."""
 
@@ -111,89 +105,6 @@ class PipelineState(Enum):
     PAUSED = "paused"
     RECOVERING = "recovering"
 
-
-class RecoveryStatus(Enum):
-    """Recovery attempt status."""
-
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class JobRecoveryAction(str, Enum):
-    """Types of job-level recovery actions.
-
-    NOTE (Dec 2025): Renamed from RecoveryAction to avoid collision with
-    SystemRecoveryAction in recovery_orchestrator.py and NodeRecoveryAction
-    in node_recovery_daemon.py which have different semantics.
-    """
-
-    RESTART_JOB = "restart_job"
-    KILL_JOB = "kill_job"
-    RESTART_NODE_SERVICES = "restart_node_services"
-    REBOOT_NODE = "reboot_node"
-    REMOVE_NODE = "remove_node"
-    ESCALATE_HUMAN = "escalate_human"
-    NONE = "none"
-
-
-# Backward-compat alias (deprecated)
-RecoveryAction = JobRecoveryAction
-
-
-class RecoveryResult(str, Enum):
-    """Result of a recovery attempt."""
-
-    SUCCESS = "success"
-    FAILED = "failed"
-    ESCALATED = "escalated"
-    SKIPPED = "skipped"
-
-
-# =============================================================================
-# Data Classes (consolidated from both modules)
-# =============================================================================
-
-
-@dataclass
-class ErrorRecord:
-    """Record of an error occurrence."""
-
-    error_id: str
-    component: str
-    error_type: str
-    message: str
-    node_id: str = ""
-    severity: ErrorSeverity = ErrorSeverity.ERROR
-    timestamp: float = field(default_factory=time.time)
-    context: dict[str, Any] = field(default_factory=dict)
-    recovered: bool = False
-    recovery_time: float = 0.0
-
-
-@dataclass
-class RecoveryAttempt:
-    """Record of a recovery attempt."""
-
-    recovery_id: str
-    error_id: str
-    component: str
-    node_id: str
-    strategy: str
-    status: RecoveryStatus = RecoveryStatus.PENDING
-    started_at: float = field(default_factory=time.time)
-    completed_at: float = 0.0
-    success: bool = False
-    message: str = ""
-    attempt_number: int = 1
-
-    @property
-    def duration(self) -> float:
-        """Get recovery duration in seconds."""
-        if self.completed_at > 0:
-            return self.completed_at - self.started_at
-        return time.time() - self.started_at
 
 
 @dataclass
@@ -208,72 +119,6 @@ class RecoveryEvent:
     reason: str
     error: str | None = None
     duration_seconds: float = 0.0
-
-
-@dataclass
-class NodeRecoveryState:
-    """Track recovery state for a node.
-
-    December 2025: Renamed from NodeHealthState to avoid collision with
-    the NodeHealthState enum in node_status.py which represents health grades
-    (HEALTHY, DEGRADED, UNHEALTHY, etc.). This dataclass tracks recovery
-    attempts and failure counts, not health grades.
-
-    December 2025 Wave 2: Extended with additional fields for coordinator
-    lifecycle tracking (heartbeats, responsiveness).
-    """
-
-    node_id: str
-    is_online: bool = True
-    recovery_attempts: int = 0
-    last_attempt_time: float = 0.0
-    consecutive_failures: int = 0
-    is_escalated: bool = False
-    last_escalation_time: float = 0.0
-    offline_since: float = 0.0
-    # December 2025 Wave 2: Coordinator lifecycle tracking
-    last_heartbeat: float = 0.0
-    last_health_update: float = 0.0
-
-    @property
-    def is_healthy(self) -> bool:
-        """Alias for is_online (backward compat)."""
-        return self.is_online
-
-    @is_healthy.setter
-    def is_healthy(self, value: bool) -> None:
-        """Set is_online via is_healthy alias."""
-        self.is_online = value
-
-    @property
-    def is_responsive(self) -> bool:
-        """Node is responsive if online and recently sent heartbeat."""
-        if not self.is_online:
-            return False
-        if self.last_heartbeat == 0.0:
-            return True  # No heartbeat tracking yet, assume responsive
-        return (time.time() - self.last_heartbeat) < 120.0  # 2 min threshold
-
-    @is_responsive.setter
-    def is_responsive(self, value: bool) -> None:
-        """Setting responsive to False marks node offline."""
-        if not value:
-            self.is_online = False
-
-    @property
-    def failure_count(self) -> int:
-        """Alias for consecutive_failures (backward compat)."""
-        return self.consecutive_failures
-
-    @failure_count.setter
-    def failure_count(self, value: int) -> None:
-        """Set consecutive_failures via failure_count alias."""
-        self.consecutive_failures = value
-
-
-# Backward-compat alias (deprecated - use NodeRecoveryState)
-NodeHealthState = NodeRecoveryState
-
 
 @dataclass
 class JobHealthState:
@@ -334,95 +179,6 @@ class RecoveryConfig:
 
     # Enabled flag
     enabled: bool = True
-
-
-@dataclass
-class SystemHealthConfig:
-    """Configuration for system health monitoring (from system_health_monitor.py)."""
-
-    # Check interval
-    check_interval_seconds: int = 30
-
-    # Health score thresholds
-    healthy_threshold: int = 80
-    degraded_threshold: int = 60
-    unhealthy_threshold: int = 40
-
-    # Pause triggers
-    pause_health_threshold: int = 40
-    pause_node_offline_percent: float = 0.5  # 50%
-    pause_error_burst_count: int = 10
-    pause_error_burst_window: int = 300  # 5 min (see TIMEOUTS.PAUSE_ERROR_BURST_WINDOW)
-
-    # Critical circuits that trigger immediate pause if broken
-    critical_circuits: list[str] = field(
-        default_factory=lambda: ["training", "evaluation", "promotion"]
-    )
-
-    # Resume thresholds (hysteresis)
-    resume_health_threshold: int = 60
-    resume_delay_seconds: int = 120  # 2 min (see TIMEOUTS.RESUME_DELAY_SECONDS)
-
-    # Expected nodes (0 = auto-discover)
-    expected_nodes: int = 0
-
-    # Component weights for score calculation
-    node_weight: float = 0.40
-    circuit_weight: float = 0.25
-    error_weight: float = 0.20
-    recovery_weight: float = 0.15
-
-
-@dataclass
-class SystemHealthScore:
-    """Aggregate system health score (from system_health_monitor.py)."""
-
-    score: int  # 0-100
-    level: SystemHealthLevel
-    components: dict[str, float] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
-
-    # Component scores (0-100 each)
-    node_availability: float = 100.0
-    circuit_health: float = 100.0
-    error_rate: float = 100.0  # Inverted: 100 = no errors
-    recovery_success: float = 100.0
-
-    # Pause triggers
-    pause_triggers: list[str] = field(default_factory=list)
-
-
-@dataclass
-class HealthStats:
-    """Aggregate health statistics (consolidated)."""
-
-    # Error stats
-    total_errors: int = 0
-    errors_by_severity: dict[str, int] = field(default_factory=dict)
-    errors_by_component: dict[str, int] = field(default_factory=dict)
-    errors_by_node: dict[str, int] = field(default_factory=dict)
-
-    # Recovery stats
-    recovery_attempts: int = 0
-    successful_recoveries: int = 0
-    failed_recoveries: int = 0
-    recovery_rate: float = 0.0
-    avg_recovery_time: float = 0.0
-
-    # Circuit breaker stats
-    circuit_breakers_open: int = 0
-    open_circuits: list[str] = field(default_factory=list)
-
-    # Node health stats
-    nodes_tracked: int = 0
-    nodes_online: int = 0
-    nodes_offline: int = 0
-    escalated_nodes: list[str] = field(default_factory=list)
-
-    # Job health stats
-    jobs_tracked: int = 0
-
-
 # =============================================================================
 # UnifiedHealthManager
 # =============================================================================
