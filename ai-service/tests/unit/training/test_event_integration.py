@@ -992,7 +992,7 @@ class TestSyncPublishers:
         """Test synchronous composite elo updated publishing."""
         from app.training.event_integration import publish_composite_elo_updated_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1014,7 +1014,7 @@ class TestSyncPublishers:
         """Test synchronous training started publishing."""
         from app.training.event_integration import publish_training_started_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1031,7 +1031,7 @@ class TestSyncPublishers:
         """Test synchronous step completed publishing."""
         from app.training.event_integration import publish_step_completed_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1048,7 +1048,7 @@ class TestSyncPublishers:
         """Test synchronous checkpoint saved publishing."""
         from app.training.event_integration import publish_checkpoint_saved_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1671,7 +1671,7 @@ class TestSyncPublishersEdgeCases:
         """Test sync publishing with extra kwargs."""
         from app.training.event_integration import publish_training_started_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1692,7 +1692,7 @@ class TestSyncPublishersEdgeCases:
         """Test step completed sync with optional kwargs."""
         from app.training.event_integration import publish_step_completed_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1715,7 +1715,7 @@ class TestSyncPublishersEdgeCases:
         """Test checkpoint sync with optional kwargs."""
         from app.training.event_integration import publish_checkpoint_saved_sync
 
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_instance.publish_sync.return_value = 1
             mock_bus.return_value = mock_instance
@@ -1761,7 +1761,7 @@ class TestWiringEdgeCases:
         result.failed_baselines = []
 
         # Call the wired function
-        with patch("app.training.event_integration.get_event_bus") as mock_bus:
+        with patch("app.training.event_integration._get_or_create_event_bus") as mock_bus:
             mock_instance = MagicMock()
             mock_bus.return_value = mock_instance
 
