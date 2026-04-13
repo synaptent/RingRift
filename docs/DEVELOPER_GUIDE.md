@@ -138,8 +138,8 @@ If you are changing operational tooling:
 
 ## Docs That Matter
 
-- [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md)
 - [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+- [RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
 - [ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
 - [REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
 - [PART3_INFRASTRUCTURE_ROADMAP.md](/Users/armand/Development/RingRift/docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)

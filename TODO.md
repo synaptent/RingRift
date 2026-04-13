@@ -1,52 +1,50 @@
 # RingRift Task Tracker
 
-**Last Updated:** 2026-04-10
-**Project Health:** technically credible, operationally mixed
-**Current Focus:** finish the Part 3 cleanup so the legacy infrastructure is diagnosable and reusable without displacing the supported minimal loop
+**Last Updated:** 2026-04-13
+**Project Health:** technically credible, cleanup-oriented
+**Current Focus:** raise repo quality without destabilizing the supported minimal loop or duplicating stale status narratives
 
-## Current Training Snapshot
+## Current Research And Runtime Sources
 
-Source:
+Do not treat this tracker as a duplicate status dashboard. Use the canonical sources instead:
 
-```bash
-npm --silent run training:status -- --json --ssh > docs/data/training_status.json
-```
+- [RESULTS.md](docs/RESULTS.md) for current supported public claims and headline Elo
+- [RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md) for the short shareable state
+- [`docs/data/training_status.json`](docs/data/training_status.json) for the checked-in machine-readable runtime snapshot
+- [CURRENT_STATUS.md](docs/CURRENT_STATUS.md) only for the preserved April 10 owner-facing operational memo
 
-| Config       | Node                          | Latest Iteration | Evidence                                                                      | Process Status            | Read                                           |
-| ------------ | ----------------------------- | ---------------: | ----------------------------------------------------------------------------- | ------------------------- | ---------------------------------------------- |
-| `hex8_2p`    | `gh200-8` / `100.121.230.110` |             `32` | `1967.6` Elo, `6` promotions, latest eval rejected at `40%` after `50` games  | Loop and supervisor alive | Strongest result, but clearly plateaued        |
-| `square8_2p` | `gh200-9` / `100.127.168.116` |             `31` | `1601.8` Elo, `2` promotions, latest promotion came at `60%` after `50` games | Loop and supervisor dead  | Real 2P improvement, but currently not running |
-| `square8_3p` | `gh200-12` / `100.86.51.4`    |             `13` | `1534.9` Elo, `1` promotion, recent seat-fair evals at `22-24%` win rate      | Loop and supervisor alive | Regressing; not trustworthy as a strong result |
-| `square8_4p` | `gh200-10` / `100.100.19.96`  |              `5` | `1500.0` Elo, `0` promotions, latest eval around `46%`                        | Loop and supervisor dead  | No proven improvement                          |
+## What Is Proven Right Now
 
-## What Is Proven
+- `hex8_2p` is the strongest result at `1979.8` Elo with `7` promotions.
+- `square8_2p` is the second clean improvement path at `1601.8` Elo with `2` promotions.
+- `square8_3p` has `1` multiplayer promotion at `1534.9`, but the evidence is still weak.
+- The supported claim remains narrow: only a small subset of configs has strong improvement evidence.
 
-- The supported minimal loop remains the training path to trust for reproducible results.
-- `hex8_2p` and `square8_2p` both have genuine promotion evidence above the `1500` baseline.
-- Production smoke currently passes end to end against `ringrift.ai`, including server health, sandbox AI move generation, replay submission, and local `canonical_hex8_2p` model loadability.
-- Training observability now exists in repo via `training:status`, `training:dashboard`, `training:validate-db`, and `training:provenance`.
-- The P2P orchestrator size target has been achieved: `2591` LOC in the main file with `21` extracted mixins totaling `12618` LOC.
+## Active Priorities
 
-## What Is Not Yet Trustworthy
+- keep the supported minimal loop stable and avoid infrastructure churn that resets selfplay progress
+- continue the in-repo cleanup program in [docs/CODEBASE_QUALITY_PROGRAM.md](docs/CODEBASE_QUALITY_PROGRAM.md)
+- keep reducing source-of-truth drift across docs, snapshots, and public entrypoints
+- continue contracting `ai-service/app/coordination` toward a smaller public API surface
+- add lightweight guards so stale docs and snapshots fail fast instead of drifting silently
 
-- `square8_3p` is still regressing under seat-fair evaluation.
-- `square8_4p` has not shown improvement above baseline.
-- Two of the four active training nodes are currently down.
-- The latest remote GitHub Actions status on `main` is red: both `Supported Path` and `ci.yml` failed on commit `bb4c99be1`, even though the local Phase 8 verification passed.
-- Supervisor heartbeat files still report `unknown` age on the nodes that are alive, so the operational story is improved but not finished.
+## What Remains Unproven Or Weak
 
-## Immediate Priorities
+- multiplayer evidence is still weak outside the single `square8_3p` promotion
+- larger boards remain slower and less mature
+- `square8_4p` has not demonstrated improvement above baseline
+- the coordination and legacy operational surface is still much harder to understand than the supported path
 
-- P0: Diagnose the failing GitHub Actions runs on `main` and get the remote CI surface green again.
-- P0: Restart or debug `square8_2p` and `square8_4p`.
-- P0: Keep `ai-service/scripts/minimal_alphazero_loop.py` stable; infrastructure cleanup must not leak into the supported loop.
-- P1: Finish the remaining Part 3 cleanup phases in order, updating the roadmap after each.
-- P1: Keep training-data provenance gates mandatory before any human/sandbox replay data enters exports.
+## Execution Rule
+
+When a doc and a snapshot disagree, fix the source-of-truth boundary first instead of updating more summaries by hand.
 
 ## Reference Docs
 
-- [CURRENT_STATUS.md](docs/CURRENT_STATUS.md)
 - [RESULTS.md](docs/RESULTS.md)
+- [RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md)
 - [ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md)
+- [CODEBASE_QUALITY_PROGRAM.md](docs/CODEBASE_QUALITY_PROGRAM.md)
+- [CURRENT_STATUS.md](docs/CURRENT_STATUS.md)
 - [PART3_INFRASTRUCTURE_ROADMAP.md](docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
 - [TRAINING_INFRASTRUCTURE_STRATEGY.md](docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)

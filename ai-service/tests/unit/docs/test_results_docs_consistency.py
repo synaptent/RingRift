@@ -71,3 +71,14 @@ def test_current_status_doc_is_explicitly_historical() -> None:
     assert "RESULTS.md" in text
     assert "RESEARCH_SNAPSHOT.md" in text
     assert "training_status.json" in text
+
+
+def test_todo_routes_readers_to_current_sources() -> None:
+    text = (REPO_ROOT / "TODO.md").read_text(encoding="utf-8")
+
+    assert "**Last Updated:** 2026-04-13" in text
+    assert "Current Research And Runtime Sources" in text
+    assert "RESULTS.md" in text
+    assert "RESEARCH_SNAPSHOT.md" in text
+    assert "CODEBASE_QUALITY_PROGRAM.md" in text
+    assert "## Current Training Snapshot" not in text
