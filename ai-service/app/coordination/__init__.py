@@ -617,18 +617,19 @@ async def shutdown_all_coordinators(
             )
 
     shutdown_order = [
-        ("optimization", get_optimization_coordinator),
-        ("metrics", get_metrics_orchestrator),
-        ("pipeline", get_pipeline_orchestrator),
-        ("selfplay", get_selfplay_orchestrator),
-        ("cache", get_cache_orchestrator),
-        ("resources", get_resource_coordinator),
-        ("task_lifecycle", get_task_lifecycle_coordinator),
+        ("optimization", "get_optimization_coordinator"),
+        ("metrics", "get_metrics_orchestrator"),
+        ("pipeline", "get_pipeline_orchestrator"),
+        ("selfplay", "get_selfplay_orchestrator"),
+        ("cache", "get_cache_orchestrator"),
+        ("resources", "get_resource_coordinator"),
+        ("task_lifecycle", "get_task_lifecycle_coordinator"),
     ]
 
-    async def _shutdown_coordinator(name: str, getter) -> tuple:
+    async def _shutdown_coordinator(name: str, getter_name: str) -> tuple:
         """Shutdown a single coordinator with timeout."""
         try:
+            getter = _resolve_export(getter_name)
             coord = getter()
 
             if hasattr(coord, "shutdown") and asyncio.iscoroutinefunction(coord.shutdown):

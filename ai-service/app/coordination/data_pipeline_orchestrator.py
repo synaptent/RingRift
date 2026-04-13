@@ -104,7 +104,6 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -121,12 +120,9 @@ from app.coordination.protocols import (
 from app.coordination.event_utils import parse_config_key
 from app.coordination.pipeline_shared import (
     IterationRecord,
-    MAX_STAGE_RETRIES,
     OperationMode,
     PipelineStage,
     PipelineStats,
-    STAGE_RETRY_BACKOFF_MULTIPLIER,
-    STAGE_RETRY_DELAY_SECONDS,
     StageTransition,
 )
 

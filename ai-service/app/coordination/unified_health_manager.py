@@ -61,7 +61,7 @@ import time
 import warnings
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -72,7 +72,6 @@ from app.coordination.unified_health_shared import (
     CircuitState,
     ErrorRecord,
     ErrorSeverity,
-    HAS_NODE_EVENTS,
     HealthStats,
     JobRecoveryAction,
     NodeHealthState,
@@ -84,7 +83,6 @@ from app.coordination.unified_health_shared import (
     SystemHealthConfig,
     SystemHealthLevel,
     SystemHealthScore,
-    emit_node_overloaded,
 )
 from app.distributed.circuit_breaker import CircuitBreaker
 
@@ -2183,6 +2181,7 @@ __all__ = [
     "HealthStats",
     "JobHealthState",
     "NodeHealthState",
+    "NodeRecoveryState",
     "RecoveryAttempt",
     "RecoveryConfig",
     "RecoveryEvent",
