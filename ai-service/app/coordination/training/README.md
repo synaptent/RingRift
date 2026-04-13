@@ -10,50 +10,29 @@ This package manages the training phase of the self-improvement loop:
 - ELO-based curriculum weighting
 - Training slot coordination across cluster
 
-## Modules
+## Public API
 
-### `orchestrator.py` - TrainingOrchestrator
-
-Coordinates training jobs across the cluster:
+Use the package-level exports instead of the removed compatibility shims:
 
 ```python
-from app.coordination.training import TrainingOrchestrator
-
-orchestrator = TrainingOrchestrator()
-await orchestrator.start()
-
-# Submit training job
-job_id = await orchestrator.submit_training(
-    board_type="hex8",
-    num_players=2,
-    npz_path="data/training/hex8_2p.npz"
+from app.coordination.training import (
+    TrainingCoordinator,
+    PriorityJobScheduler,
+    UnifiedScheduler,
 )
 ```
 
-**Features**:
+### `TrainingCoordinator`
 
-- NFS lock coordination for shared storage
-- Circuit breaker protection
-- Integration with `DataPipelineOrchestrator` events
+Coordinates cluster training jobs and training-slot lifecycle.
 
-### `scheduler.py` - TrainingScheduler
+### `PriorityJobScheduler`
 
-Priority-based job scheduling:
+Ranks pending training work using curriculum weights and freshness signals.
 
-```python
-from app.coordination.training import TrainingScheduler
+### `UnifiedScheduler`
 
-scheduler = TrainingScheduler()
-
-# Get next config to train based on priorities
-next_config = scheduler.get_next_training_config(
-    curriculum_weights={
-        "hex8_2p": 1.5,
-        "square8_2p": 1.0,
-        "square19_2p": 0.5
-    }
-)
-```
+Provides the higher-level scheduling facade used by coordination services.
 
 **Priority factors**:
 
@@ -66,7 +45,7 @@ next_config = scheduler.get_next_training_config(
 
 ### Event Subscriptions
 
-The orchestrator subscribes to:
+The training coordination layer subscribes to:
 
 - `NPZ_EXPORT_COMPLETE` - Trigger training after export
 - `TRAINING_BLOCKED_BY_QUALITY` - Handle quality gate blocks
@@ -74,7 +53,7 @@ The orchestrator subscribes to:
 
 ### Event Emissions
 
-Emits:
+The canonical training modules emit:
 
 - `TRAINING_STARTED` - Training job began
 - `TRAINING_COMPLETE` - Training finished successfully
@@ -96,4 +75,6 @@ training:
 
 - `../data_pipeline_orchestrator.py` - Pipeline stage coordination
 - `../training_coordinator.py` - Cluster-wide training coordination
+- `../job_scheduler.py` - Priority scheduling implementation
+- `../unified_scheduler.py` - Scheduler facade
 - `../../training/train.py` - Actual training implementation

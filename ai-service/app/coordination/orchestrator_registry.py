@@ -1613,7 +1613,7 @@ def auto_register_known_coordinators() -> dict[str, bool]:
         },
         {
             "name": "sync_scheduler",
-            "module": "app.coordination.sync_coordinator",
+            "module": "app.coordination.deprecated._deprecated_sync_coordinator",
             "getter": "get_sync_coordinator",
         },
         {

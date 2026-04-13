@@ -24,18 +24,26 @@ The following modules have been moved here from the parent directory:
 
 Import from `app.coordination.deprecated.*` will emit deprecation warnings.
 
-## Deprecated Re-export Modules (December 28, 2025)
+## Removed Compatibility Shims (April 2026)
 
-The following modules are pure re-exports that now emit deprecation warnings.
-They remain functional for backward compatibility but will be removed in Q2 2026.
+The following re-export shims were deleted after internal callers were moved to
+their canonical modules.
 
-| Module                                   | Canonical Imports                                          | Notes             |
-| ---------------------------------------- | ---------------------------------------------------------- | ----------------- |
-| `app.coordination.queue_populator`       | `unified_queue_populator`                                  | ~58 LOC re-export |
-| `app.coordination.training.scheduler`    | `job_scheduler`, `duration_scheduler`, `unified_scheduler` | ~74 LOC re-export |
-| `app.coordination.training.orchestrator` | `training_coordinator`, `selfplay_orchestrator`            | ~73 LOC re-export |
-| `app.coordination.cluster.sync`          | `sync_coordinator`, `sync_bandwidth`, `sync_mutex`         | ~74 LOC re-export |
-| `app.core.singleton_mixin`               | `app.coordination.singleton_mixin`                         | ~72 LOC re-export |
+| Removed Module                           | Canonical Imports                                          |
+| ---------------------------------------- | ---------------------------------------------------------- |
+| `app.coordination.base_handler`          | `app.coordination.handler_base`                            |
+| `app.coordination.training.scheduler`    | `job_scheduler`, `duration_scheduler`, `unified_scheduler` |
+| `app.coordination.training.orchestrator` | `training_coordinator`, `selfplay_orchestrator`            |
+| `app.coordination.cluster.sync`          | `sync_coordinator`, `sync_bandwidth`, `sync_mutex`         |
+
+## Deprecated Re-export Modules
+
+The following compatibility modules still exist, but are slated for removal.
+
+| Module                             | Canonical Imports                  | Notes             |
+| ---------------------------------- | ---------------------------------- | ----------------- |
+| `app.coordination.queue_populator` | `unified_queue_populator`          | ~58 LOC re-export |
+| `app.core.singleton_mixin`         | `app.coordination.singleton_mixin` | ~72 LOC re-export |
 
 ### Deprecation Warning Format
 
@@ -68,27 +76,12 @@ See `archive/deprecated_coordination/README.md` for historical migration guides 
 ### Migration Examples
 
 ```python
-# Old (deprecated) - emits DeprecationWarning
-from app.coordination.training.scheduler import PriorityJobScheduler
+# Old (removed)
+from app.coordination.training import PriorityJobScheduler, TrainingCoordinator
 
 # New (canonical)
-from app.coordination.job_scheduler import PriorityJobScheduler
-```
-
-```python
-# Old (deprecated) - emits DeprecationWarning
-from app.coordination.training.orchestrator import TrainingCoordinator
-
-# New (canonical)
-from app.coordination.training_coordinator import TrainingCoordinator
-```
-
-```python
-# Old (deprecated) - emits DeprecationWarning
-from app.coordination.cluster.sync import SyncScheduler
-
-# New (canonical)
-from app.coordination.sync_coordinator import SyncScheduler
+from app.coordination.training import PriorityJobScheduler, TrainingCoordinator
+from app.coordination.cluster import SyncScheduler
 ```
 
 ## Consolidation Summary
@@ -140,20 +133,20 @@ from app.coordination.cluster import UnifiedHealthManager
 
 ### Sync Modules
 
-| Old Location               | New Location   |
-| -------------------------- | -------------- |
-| `sync_coordinator.py`      | `cluster.sync` |
-| `sync_bandwidth.py`        | `cluster.sync` |
-| `sync_base.py`             | `cluster.sync` |
-| `sync_mutex.py`            | `cluster.sync` |
-| `transfer_verification.py` | `cluster.sync` |
+| Old Location               | New Location               |
+| -------------------------- | -------------------------- |
+| `sync_coordinator.py`      | `sync_facade`              |
+| `sync_bandwidth.py`        | `sync_facade` or transport |
+| `sync_base.py`             | `sync_facade` or transport |
+| `sync_mutex.py`            | `sync_mutex`               |
+| `transfer_verification.py` | `transfer_verification`    |
 
 ```python
 # Old import
 from app.coordination.sync_coordinator import SyncScheduler
 
 # New import
-from app.coordination.cluster.sync import SyncScheduler
+from app.coordination.sync_facade import sync
 ```
 
 ### Event Modules
@@ -209,7 +202,8 @@ The original module files remain in place and continue to work. The new package 
 2. Better discoverability through grouped functionality
 3. Reduced confusion from overlapping modules
 
-Eventually, deprecation warnings will be added to the original modules directing users to the new locations.
+Only a small set of legacy wrappers remain. New code should import from the
+canonical modules or package-level APIs directly.
 
 ## Modules Not Yet Consolidated
 

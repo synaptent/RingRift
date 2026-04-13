@@ -195,12 +195,13 @@ coordinator = SyncCoordinator()
 **New:**
 
 ```python
-from app.coordination.sync_coordinator import SyncScheduler
-scheduler = SyncScheduler()  # Same class, new canonical name
+from app.coordination.sync_facade import sync
 
-# Or use the helper functions
-from app.coordination import get_sync_scheduler
-scheduler = get_sync_scheduler()
+await sync("models", targets=["all"])
+
+# For low-level transport execution use:
+from app.distributed.sync_coordinator import SyncCoordinator
+coordinator = SyncCoordinator.get_instance()
 ```
 
 ### 5. Health Scoring

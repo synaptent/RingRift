@@ -14,7 +14,7 @@ Modules WITHOUT Direct Tests (by design):
 5. `_exports_orchestrators.py` - Internal exports (tested via consumers)
 6. `_exports_sync.py` - Internal exports (tested via consumers)
 7. `_exports_utils.py` - Internal exports (tested via consumers)
-8. `base_handler.py` - Deprecated shim (minimal code, tested via HandlerBase)
+8. `handler_base.py` - Canonical handler API (tested directly)
 
 These export modules are pure re-exports with no logic - they're tested
 transitively when their consumers import from them. Adding direct tests

@@ -336,7 +336,7 @@ COORDINATOR_REGISTRY: dict[str, CoordinatorSpec] = {
     "sync_coordinator": CoordinatorSpec(
         name="sync_coordinator",
         display_name="SyncCoordinator",
-        module_path="app.coordination.cluster.sync",
+        module_path="app.coordination.deprecated._deprecated_sync_coordinator",
         pattern=InitPattern.WIRE,
         func_name="wire_sync_events",
         extra_wiring=("app.coordination.sync_router", "get_sync_router"),
@@ -745,7 +745,7 @@ _CRITICAL_MODULES = [
     # Pipeline actions (required for automation)
     ("app.coordination.pipeline_actions", "Pipeline triggers"),
     # Core coordinators
-    ("app.coordination.sync_coordinator", "Sync scheduling"),
+    ("app.coordination.deprecated._deprecated_sync_coordinator", "Sync scheduling"),
     ("app.coordination.training_coordinator", "Training management"),
 ]
 
