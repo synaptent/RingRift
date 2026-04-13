@@ -6,7 +6,8 @@ import threading
 import time
 from typing import Any
 
-from app.coordination.resource_optimizer import (
+from app.coordination.resource_optimizer_shared import (
+    ClusterState,
     PID_KD,
     PID_KI,
     PID_KP,
@@ -14,7 +15,6 @@ from app.coordination.resource_optimizer import (
     TARGET_UTIL_MIN,
     TARGET_UTIL_OPTIMAL,
     UTILIZATION_UPDATE_INTERVAL,
-    ClusterState,
 )
 
 
