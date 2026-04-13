@@ -25,12 +25,13 @@ def test_dry_run_is_role_aware() -> None:
     assert "ringrift-training.service" in result.stdout
     assert "ringrift-selfplay-worker.service" in result.stdout
     assert "ringrift-evaluator.service" in result.stdout
-    assert "keep ringrift-p2p.service enabled" in result.stdout
+    assert "install the current ringrift-p2p.service and keep it enabled" in result.stdout
 
 
 def test_script_references_role_manifest_and_new_services() -> None:
     script_text = SCRIPT_PATH.read_text()
     assert "config/node_roles.yaml" in script_text
+    assert "config/systemd/ringrift-p2p.service" in script_text
     assert "ringrift-selfplay-worker.service" in script_text
     assert "ringrift-evaluator.service" in script_text
     assert "disable ringrift-p2p" not in script_text

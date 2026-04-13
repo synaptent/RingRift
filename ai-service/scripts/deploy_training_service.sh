@@ -181,7 +181,7 @@ while IFS= read -r row; do
 import json, sys
 row = json.loads(sys.argv[1])
 print("  [dry-run] Would update code on remote node")
-print("  [dry-run] Would keep ringrift-p2p.service enabled")
+print("  [dry-run] Would install the current ringrift-p2p.service and keep it enabled")
 role = row["role"]
 spec = row.get("trainer_spec", {})
 if role == "trainer":
@@ -201,6 +201,7 @@ PY
   echo "  Updating code..."
   ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'cd ~/ringrift && git fetch origin && git checkout -f origin/main --detach >/dev/null 2>&1 || true'
   ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'mkdir -p ~/ringrift/ai-service/logs ~/ringrift/ai-service/logs/selfplay'
+  install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-p2p.service" "ringrift-p2p.service"
 
   case "${role}" in
     trainer)
