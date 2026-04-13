@@ -20,6 +20,10 @@ nodes:
     target_config: square8_2p
 
   gh200-10:
+    role: trainer
+    target_config: hex8_3p
+
+  vultr-a100-20gb:
     role: evaluator
     assigned_configs:
       - hex8_2p
