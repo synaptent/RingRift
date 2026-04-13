@@ -200,7 +200,7 @@ PY
 
   echo "  Updating code..."
   ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'cd ~/ringrift && git fetch origin && git checkout -f origin/main --detach >/dev/null 2>&1 || true'
-  ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'mkdir -p ~/ringrift/ai-service/logs ~/ringrift/ai-service/logs/selfplay'
+  ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'mkdir -p ~/ringrift/ai-service/logs ~/ringrift/ai-service/logs/selfplay && sudo chown -R ubuntu:ubuntu ~/ringrift/ai-service/logs'
   install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-p2p.service" "ringrift-p2p.service"
 
   case "${role}" in

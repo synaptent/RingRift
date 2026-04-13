@@ -6,6 +6,7 @@ from pathlib import Path
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = AI_SERVICE_ROOT / "scripts" / "deploy_training_service.sh"
+P2P_SERVICE_PATH = AI_SERVICE_ROOT / "config" / "systemd" / "ringrift-p2p.service"
 
 
 def test_dry_run_is_role_aware() -> None:
@@ -33,9 +34,16 @@ def test_script_references_role_manifest_and_new_services() -> None:
     assert "config/node_roles.yaml" in script_text
     assert "config/systemd/ringrift-p2p.service" in script_text
     assert 'ssh -n "${SSH_OPTS[@]}"' in script_text
+    assert "sudo chown -R ubuntu:ubuntu ~/ringrift/ai-service/logs" in script_text
     assert "ringrift-selfplay-worker.service" in script_text
     assert "ringrift-evaluator.service" in script_text
     assert "disable ringrift-p2p" not in script_text
     assert "pkill -f policy_selfplay_worker.py" not in script_text
     assert "pkill -f evaluator_worker.py" not in script_text
     assert "pkill -f minimal_alphazero_loop.py" not in script_text
+
+
+def test_p2p_service_enables_lock_recovery_flags() -> None:
+    service_text = P2P_SERVICE_PATH.read_text()
+    assert "--kill-duplicates" in service_text
+    assert "--force-takeover" in service_text
