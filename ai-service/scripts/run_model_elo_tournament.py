@@ -121,17 +121,15 @@ HAS_COORDINATION = has_coordination()
 
 # For backwards compatibility
 if HAS_COORDINATION:
-    from app.coordination import (
+    from app.coordination.duration_scheduler import (
         can_schedule_task,
-        can_spawn,
         estimate_task_duration,
-        get_registry,
         record_task_completion,
         register_running_task,
     )
+    from app.coordination.orchestrator_registry import get_registry
 else:
     get_registry = get_registry_safe
-    can_spawn = can_spawn_safe
     can_schedule_task = None
     estimate_task_duration = None
     register_running_task = None

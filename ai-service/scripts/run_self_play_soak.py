@@ -114,17 +114,19 @@ logger = logging.getLogger(__name__)
 
 # Import coordination for task limits and duration tracking
 try:
-    from app.coordination import (
-        TaskType,
-        can_spawn_safe,
+    from app.coordination.duration_scheduler import (
         record_task_completion,
         register_running_task,
     )
+    from app.coordination.helpers import can_spawn_safe
+    from app.coordination.types import TaskType
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False
     TaskType = None
     can_spawn_safe = None
+    record_task_completion = None
+    register_running_task = None
 
 
 def _load_gpu_imports() -> bool:

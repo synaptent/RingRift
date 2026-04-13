@@ -494,7 +494,7 @@ def _get_batch_extractor(extract_type: str) -> Callable[[dict], Any] | None:
 
     # Try event_utils first (has dataclass extractors)
     try:
-        from app.coordination import event_utils
+        import app.coordination.event_utils as event_utils
 
         if hasattr(event_utils, func_name):
             return getattr(event_utils, func_name)
@@ -503,7 +503,7 @@ def _get_batch_extractor(extract_type: str) -> Callable[[dict], Any] | None:
 
     # Try event_handler_utils
     try:
-        from app.coordination import event_handler_utils
+        import app.coordination.event_handler_utils as event_handler_utils
 
         if hasattr(event_handler_utils, func_name):
             return getattr(event_handler_utils, func_name)
