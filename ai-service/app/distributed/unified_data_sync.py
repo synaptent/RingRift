@@ -255,8 +255,15 @@ def release_bandwidth(host: str) -> None:
 
 get_registry = get_registry_safe
 
-def publish_cross_process_event(event_type: str, payload: dict | None = None):
-    publish_event_safe(event_type, payload)
+def publish_cross_process_event(
+    event_type: str,
+    payload: dict | None = None,
+    source: str | None = None,
+):
+    event_payload = dict(payload or {})
+    if source is not None and "source" not in event_payload:
+        event_payload["source"] = source
+    return publish_event_safe(event_type, event_payload)
 
 # Circuit breaker still has its own import (not in helpers)
 try:

@@ -75,31 +75,19 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# December 29, 2025: Circuit breaker integration for distribution reliability
-# Sprint 10 (Jan 3, 2026): Added get_adaptive_timeout for SSH operations
-try:
-    from app.distributed.circuit_breaker import (
-        CircuitBreakerRegistry,
-        CircuitState,
-        get_adaptive_timeout,
-    )
-    CIRCUIT_BREAKER_AVAILABLE = True
-except ImportError:
-    CIRCUIT_BREAKER_AVAILABLE = False
-    CircuitBreakerRegistry = None  # type: ignore[assignment]
-    CircuitState = None  # type: ignore[assignment]
-
-    def get_adaptive_timeout(operation_type: str, host: str, default: float) -> float:
-        """Fallback when circuit_breaker not available."""
-        return default
-
-# December 30, 2025: Centralized SSH configuration
-try:
-    from app.config.coordination_defaults import build_ssh_options
-    SSH_CONFIG_AVAILABLE = True
-except ImportError:
-    SSH_CONFIG_AVAILABLE = False
-    build_ssh_options = None  # type: ignore[assignment]
+from app.coordination.distribution_shared import (
+    CIRCUIT_BREAKER_AVAILABLE,
+    CircuitBreakerRegistry,
+    CircuitState,
+    DataType,
+    DeliveryResult,
+    REMOTE_PATH_PATTERNS,
+    SSH_CONFIG_AVAILABLE,
+    _remote_path_cache,
+    _remote_path_cache_lock,
+    build_ssh_options,
+    get_adaptive_timeout,
+)
 
 # Add parent to path for imports
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -108,33 +96,8 @@ if str(ROOT) not in sys.path:
 
 
 # =============================================================================
-# Remote Path Detection
-# =============================================================================
-
-# Known remote path patterns for different providers (in order of preference)
-REMOTE_PATH_PATTERNS: list[str] = [
-    "/workspace/ringrift/ai-service",      # RunPod, some Vast.ai
-    "~/ringrift/ai-service",                # Lambda, Nebius, most providers
-    "/root/ringrift/ai-service",            # Vultr, Hetzner (non-tilde expanded)
-    "~/Development/RingRift/ai-service",    # Mac Studio coordinator
-]
-
-# Cache for discovered remote paths per host
-_remote_path_cache: dict[str, str] = {}
-_remote_path_cache_lock = threading.Lock()
-
-
-# =============================================================================
 # Enums and Configuration
 # =============================================================================
-
-# December 2025: Renamed from DataType to DistributionDataType to avoid collision
-# Import from canonical source for new code:
-#   from app.coordination.enums import DistributionDataType
-from app.coordination.enums import DistributionDataType
-
-# Backward-compatible alias (deprecated, remove Q2 2026)
-DataType = DistributionDataType
 
 
 @dataclass
@@ -197,25 +160,6 @@ class DistributionConfig:
         default_factory=lambda: os.environ.get("RINGRIFT_S3_REGION", "us-east-1")
     )
 
-
-@dataclass
-class DeliveryResult:
-    """Result of delivering data to a single node."""
-
-    node_id: str
-    host: str
-    data_path: str
-    data_type: DataType
-    success: bool
-    checksum_verified: bool
-    transfer_time_seconds: float
-    error_message: str = ""
-    method: str = "http"  # http, rsync, bittorrent
-
-
-# =============================================================================
-# Unified Distribution Daemon
-# =============================================================================
 
 from app.coordination.distribution_delivery_mixin import DistributionDeliveryMixin
 

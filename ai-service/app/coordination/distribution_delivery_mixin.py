@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from app.coordination.unified_distribution_daemon import (
+from app.coordination.distribution_shared import (
     CIRCUIT_BREAKER_AVAILABLE,
     REMOTE_PATH_PATTERNS,
     SSH_CONFIG_AVAILABLE,
