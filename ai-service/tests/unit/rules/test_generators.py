@@ -17,9 +17,11 @@ BUGS FIXED (Dec 2025):
 2. MovementGenerator._is_path_clear - Fixed to use x,y instead of q,r
 """
 
+from unittest.mock import patch
+
 import pytest
 
-from app.models import BoardType, GamePhase, MarkerInfo, MoveType, Position, RingStack
+from app.models import BoardType, GamePhase, MarkerInfo, MoveType, Position, RingStack, Territory
 from app.rules.generators.capture import CaptureGenerator
 from app.rules.generators.movement import MovementGenerator
 from app.rules.generators.placement import PlacementGenerator
@@ -190,9 +192,35 @@ class TestTerritoryGeneratorDetection:
 
     def test_skip_territory_option_available(self, generator):
         """Test SKIP_TERRITORY_PROCESSING option when regions exist."""
-        # This test would require setting up a scenario with disconnected regions
-        # For now, we'll test the basic structure
-        pytest.skip("Requires complex territory setup - implement when needed")
+        marker = MarkerInfo(
+            player=1,
+            position=Position(x=0, y=0),
+            type="ownership",
+        )
+        board = create_board_state(
+            board_type="square8",
+            markers={"0,0": marker},
+        )
+        state = create_game_state(board=board, board_type="square8", num_players=2)
+        region = Territory(
+            spaces=[Position(x=1, y=1)],
+            controllingPlayer=1,
+            isDisconnected=True,
+        )
+
+        with patch(
+            "app.rules.generators.territory.BoardManager.find_disconnected_regions",
+            return_value=[region],
+        ), patch.object(
+            TerritoryGenerator,
+            "_can_process_region",
+            return_value=True,
+        ):
+            moves = generator.generate(state, player=1)
+
+        move_types = {move.type for move in moves}
+        assert MoveType.CHOOSE_TERRITORY_OPTION in move_types
+        assert MoveType.SKIP_TERRITORY_PROCESSING in move_types
 
 
 # ============================================================================

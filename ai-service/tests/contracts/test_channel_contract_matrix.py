@@ -33,35 +33,42 @@ def _all_contract_pairs() -> list[tuple[BoardType, str]]:
     return sorted(_CONTRACTS.keys(), key=lambda x: (x[0].name, x[1]))
 
 
+def _registry_supported_contract_pairs() -> list[tuple[BoardType, str]]:
+    """Return the contract pairs that encoder_registry actually implements.
+
+    board_encoding_contract intentionally models a superset of possible
+    encoders. This test only exercises the intersection that the runtime
+    registry currently exposes, so missing registry entries are filtered out
+    at collection time instead of becoming runtime skips.
+    """
+    supported: list[tuple[BoardType, str]] = []
+    for board_type, model_version in _all_contract_pairs():
+        try:
+            registry_get_channels(board_type.name, model_version)
+        except ValueError:
+            continue
+        supported.append((board_type, model_version))
+    return supported
+
+
 class TestCrossModuleChannelAgreement:
     """Every registered (board_type, model_version) must produce identical
     channel counts across board_encoding_contract and encoder_registry."""
 
     @pytest.mark.parametrize(
         "board_type,model_version",
-        _all_contract_pairs(),
-        ids=[f"{bt.name}_{mv}" for bt, mv in _all_contract_pairs()],
+        _registry_supported_contract_pairs(),
+        ids=[
+            f"{bt.name}_{mv}"
+            for bt, mv in _registry_supported_contract_pairs()
+        ],
     )
     def test_contract_matches_encoder_registry(
         self, board_type: BoardType, model_version: str
     ) -> None:
         """board_encoding_contract and encoder_registry must agree."""
         contract_channels = contract_get_channels(board_type, model_version)
-
-        # encoder_registry uses board_type.name (uppercase)
-        try:
-            registry_channels = registry_get_channels(
-                board_type.name, model_version
-            )
-        except ValueError:
-            # Some contract entries may not have a registry counterpart
-            # (e.g., square v5-heavy-large). That is acceptable — the
-            # contract is the superset.
-            pytest.skip(
-                f"encoder_registry has no entry for "
-                f"{board_type.name}/{model_version}"
-            )
-            return
+        registry_channels = registry_get_channels(board_type.name, model_version)
 
         assert contract_channels == registry_channels, (
             f"Channel MISMATCH for {board_type.name}/{model_version}: "

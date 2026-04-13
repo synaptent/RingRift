@@ -10,6 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class _FakeDataEventType:
+    MODEL_PROMOTED = "MODEL_PROMOTED"
+
+
+class _FakeDataEvent:
+    def __init__(self, event_type, payload, source):
+        self.event_type = event_type
+        self.payload = payload
+        self.source = source
+
+
 # =============================================================================
 # Test Availability Checks
 # =============================================================================
@@ -91,31 +102,32 @@ class TestEventCreation:
 
     def test_create_event_valid_type(self):
         """Test creating an event with valid type."""
-        from app.distributed.event_helpers import create_event, has_event_bus
+        from app.distributed import event_helpers
 
-        if not has_event_bus():
-            pytest.skip("Event bus not available")
-
-        event = create_event(
-            event_type="MODEL_PROMOTED",
-            payload={"model_id": "test", "elo": 1500.0},
-            source="test",
-        )
+        with patch.object(event_helpers, "_HAS_EVENT_BUS", True), \
+             patch.object(event_helpers, "_DataEventType", _FakeDataEventType), \
+             patch.object(event_helpers, "_DataEvent", _FakeDataEvent):
+            event = event_helpers.create_event(
+                event_type="MODEL_PROMOTED",
+                payload={"model_id": "test", "elo": 1500.0},
+                source="test",
+            )
 
         assert event is not None
+        assert event.event_type == _FakeDataEventType.MODEL_PROMOTED
 
     def test_create_event_invalid_type(self):
         """Test creating an event with invalid type."""
-        from app.distributed.event_helpers import create_event, has_event_bus
+        from app.distributed import event_helpers
 
-        if not has_event_bus():
-            pytest.skip("Event bus not available")
-
-        event = create_event(
-            event_type="NONEXISTENT_EVENT_TYPE",
-            payload={},
-            source="test",
-        )
+        with patch.object(event_helpers, "_HAS_EVENT_BUS", True), \
+             patch.object(event_helpers, "_DataEventType", _FakeDataEventType), \
+             patch.object(event_helpers, "_DataEvent", _FakeDataEvent):
+            event = event_helpers.create_event(
+                event_type="NONEXISTENT_EVENT_TYPE",
+                payload={},
+                source="test",
+            )
 
         assert event is None
 
@@ -244,16 +256,22 @@ class TestSubscribeSafe:
 
     def test_subscribe_safe_success(self):
         """Test successful subscription."""
-        from app.distributed.event_helpers import subscribe_safe, has_event_bus
-
-        if not has_event_bus():
-            pytest.skip("Event bus not available")
+        from app.distributed import event_helpers
 
         handler = AsyncMock()
-        result = subscribe_safe("MODEL_PROMOTED", handler)
+        mock_bus = MagicMock()
+        with patch.object(event_helpers, "_DataEventType", _FakeDataEventType):
+            result = event_helpers.subscribe_safe(
+                "MODEL_PROMOTED",
+                handler,
+                bus=mock_bus,
+            )
 
-        # Result depends on whether event bus is available
-        assert isinstance(result, bool)
+        assert result is True
+        mock_bus.subscribe.assert_called_once_with(
+            _FakeDataEventType.MODEL_PROMOTED,
+            handler,
+        )
 
 
 # =============================================================================

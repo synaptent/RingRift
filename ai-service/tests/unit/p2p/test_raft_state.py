@@ -393,31 +393,29 @@ class TestReplicatedWorkQueue:
 
 
 class TestReplicatedWorkQueueWithoutPySyncObj:
-    """Tests for ReplicatedWorkQueue when pysyncobj is not available."""
+    """Tests for the PySyncObj fallback surfaces."""
 
-    def test_stub_repl_dict(self):
-        """Stub ReplDict should work like a dict."""
-        if PYSYNCOBJ_AVAILABLE:
-            pytest.skip("pysyncobj is installed")
+    def test_repl_dict_surface(self):
+        """ReplDict should expose the expected local/test surface."""
+        from app.p2p import raft_state
 
-        from app.p2p.raft_state import ReplDict
+        if raft_state.PYSYNCOBJ_AVAILABLE:
+            assert raft_state.ReplDict.__module__.startswith("pysyncobj")
+            return
 
-        d = ReplDict()
+        d = raft_state.ReplDict()
         d["key1"] = "value1"
         assert d["key1"] == "value1"
         assert "key1" in d
         assert d.get("key2") is None
         assert d.get("key2", "default") == "default"
 
-    def test_stub_repl_lock_manager(self):
-        """Stub ReplLockManager should be instantiable."""
-        if PYSYNCOBJ_AVAILABLE:
-            pytest.skip("pysyncobj is installed")
+    def test_repl_lock_manager_surface(self):
+        """ReplLockManager should be available in both real and stub modes."""
+        from app.p2p import raft_state
 
-        from app.p2p.raft_state import ReplLockManager
+        lm = raft_state.ReplLockManager(autoUnlockTime=60)
 
-        # Should not raise
-        lm = ReplLockManager(autoUnlockTime=60)
         assert lm is not None
 
 

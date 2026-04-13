@@ -17,6 +17,22 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 
+def _exported_daemon_adapter_classes() -> list[type]:
+    """Return the concrete DaemonAdapter subclasses exported by the module."""
+    from app.coordination import daemon_adapters
+    from app.coordination.daemon_adapters import DaemonAdapter
+
+    adapter_classes: list[type] = []
+    for value in vars(daemon_adapters).values():
+        if not isinstance(value, type):
+            continue
+        if value is DaemonAdapter or not issubclass(value, DaemonAdapter):
+            continue
+        adapter_classes.append(value)
+
+    return sorted(adapter_classes, key=lambda cls: cls.__name__)
+
+
 class TestHealthCheckCompliance:
     """Verify all registered daemons implement health_check()."""
 
@@ -308,28 +324,16 @@ class TestDaemonAdapterHealthCheck:
             "DaemonAdapter base class must have health_check method"
         )
 
-    @pytest.mark.parametrize("adapter_class", [
-        "SyncCoordinatorAdapter",
-        "AutoPromotionAdapter",
-        "DistillationAdapter",
-        "NASAdapter",
-        "PBTAdapter",
-        "SyncGateAdapter",
-        "TrainingDistributorAdapter",
-        "TrainingJobCoordinatorAdapter",
-        "WorkerReporterAdapter",
-    ])
-    def test_adapter_subclasses_have_health_check(self, adapter_class: str):
-        """Verify all DaemonAdapter subclasses have health_check."""
-        from app.coordination import daemon_adapters
-
-        try:
-            cls = getattr(daemon_adapters, adapter_class)
-            assert hasattr(cls, "health_check"), (
-                f"{adapter_class} must have health_check method"
-            )
-        except AttributeError:
-            pytest.skip(f"{adapter_class} not found in daemon_adapters")
+    @pytest.mark.parametrize(
+        "adapter_class",
+        _exported_daemon_adapter_classes(),
+        ids=lambda cls: cls.__name__,
+    )
+    def test_adapter_subclasses_have_health_check(self, adapter_class: type):
+        """Verify the exported adapter classes retain health_check()."""
+        assert hasattr(adapter_class, "health_check"), (
+            f"{adapter_class.__name__} must have health_check method"
+        )
 
 
 class TestEventRouterHealthValidation:

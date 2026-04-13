@@ -30,11 +30,13 @@ from app.training.reanalysis import (
 # Check for torch availability
 try:
     import torch
-    from app.training.reanalysis import ReanalysisDataset
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
     torch = None
+
+if HAS_TORCH:
+    from app.training.reanalysis import ReanalyzedDataset
 
 
 # =============================================================================
@@ -262,13 +264,13 @@ class TestReanalysisEngine:
 
 
 # =============================================================================
-# ReanalysisDataset Tests
+# ReanalyzedDataset Tests
 # =============================================================================
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
-class TestReanalysisDataset:
-    """Tests for ReanalysisDataset class."""
+class TestReanalyzedDataset:
+    """Tests for ReanalyzedDataset class."""
 
     @pytest.fixture
     def sample_npz_files(self, tmp_path):
@@ -297,20 +299,29 @@ class TestReanalysisDataset:
 
     def test_init(self, sample_npz_files):
         """Test dataset initialization."""
-        dataset = ReanalysisDataset(npz_paths=sample_npz_files)
+        dataset = ReanalyzedDataset(
+            fresh_npz_paths=sample_npz_files,
+            reanalyzed_npz_paths=[],
+        )
 
         assert len(dataset) > 0
 
     def test_len(self, sample_npz_files):
         """Test dataset length."""
-        dataset = ReanalysisDataset(npz_paths=sample_npz_files)
+        dataset = ReanalyzedDataset(
+            fresh_npz_paths=sample_npz_files,
+            reanalyzed_npz_paths=[],
+        )
 
         # 3 files * 50 samples each = 150
         assert len(dataset) == 150
 
     def test_getitem(self, sample_npz_files):
         """Test getting individual items."""
-        dataset = ReanalysisDataset(npz_paths=sample_npz_files)
+        dataset = ReanalyzedDataset(
+            fresh_npz_paths=sample_npz_files,
+            reanalyzed_npz_paths=[],
+        )
 
         features, globals_vec, values = dataset[0]
 
@@ -320,7 +331,10 @@ class TestReanalysisDataset:
 
     def test_empty_paths(self):
         """Test with empty paths list."""
-        dataset = ReanalysisDataset(npz_paths=[])
+        dataset = ReanalyzedDataset(
+            fresh_npz_paths=[],
+            reanalyzed_npz_paths=[],
+        )
 
         assert len(dataset) == 0
 

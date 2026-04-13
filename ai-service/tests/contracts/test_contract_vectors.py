@@ -141,6 +141,39 @@ def get_vector_ids() -> list[str]:
     return [v.id for v in vectors]
 
 
+def _vector_skip_reason(vector: TestVector) -> str | None:
+    """Return the documented reason a vector is excluded from this harness."""
+    if vector.skip:
+        return vector.skip
+
+    if "multi_phase" in vector.tags:
+        return "requires orchestrator execution (multi_phase)"
+
+    if (
+        vector.category == "territory_processing"
+        and "orchestrator" in vector.tags
+    ):
+        return "requires orchestrator execution (territory_processing)"
+
+    skip_tags = [tag for tag in vector.tags if tag.startswith("skip:")]
+    if skip_tags:
+        return skip_tags[0]
+
+    if vector.id in KNOWN_FAILING_VECTORS:
+        return "fixture needs update (phase/player tracking changed)"
+
+    return None
+
+
+def get_runnable_vector_ids() -> list[str]:
+    """Get only the vector IDs this single-move harness can execute."""
+    return [
+        vector.id
+        for vector in load_all_vectors()
+        if _vector_skip_reason(vector) is None
+    ]
+
+
 def get_vector_by_id(vector_id: str) -> TestVector | None:
     """Get a specific vector by ID."""
     vectors = load_all_vectors()
@@ -576,12 +609,11 @@ class TestContractVectors:
 
 
 # Parametrized test for all vectors
-@pytest.fixture(params=get_vector_ids(), ids=lambda x: x)
+@pytest.fixture(params=get_runnable_vector_ids(), ids=lambda x: x)
 def vector(request) -> TestVector:
     """Fixture providing each test vector."""
     v = get_vector_by_id(request.param)
-    if v is None:
-        pytest.skip(f"Vector not found: {request.param}")
+    assert v is not None, f"Vector not found: {request.param}"
     return v
 
 
@@ -596,36 +628,10 @@ def test_contract_vector(vector: TestVector):
     If the test fails, it indicates a parity divergence between
     the Python and TypeScript engines that should be investigated.
     """
-    # Skip vectors with explicit skip reason (unimplemented functionality)
-    if vector.skip:
-        pytest.skip(f"Vector {vector.id}: {vector.skip}")
-
-    # Skip multi-phase vectors that require orchestrator execution
-    # These test complex turn sequences that span multiple phases and
-    # cannot be properly tested with single-move application.
-    if "multi_phase" in vector.tags:
-        pytest.skip(
-            f"Vector {vector.id} requires orchestrator execution (multi_phase)"
-        )
-
-    # Skip territory_processing vectors with orchestrator tag
-    # These specifically require multi-step territory processing that
-    # can't be tested with single-move application.
-    if vector.category == "territory_processing" and "orchestrator" in vector.tags:
-        pytest.skip(
-            f"Vector {vector.id} requires orchestrator execution (territory_processing)"
-        )
-
-    # Skip vectors with skip:* tags (e.g., skip:pending_self_elim_tracking)
-    skip_tags = [t for t in vector.tags if t.startswith("skip:")]
-    if skip_tags:
-        pytest.skip(f"Vector {vector.id}: {skip_tags[0]}")
-
-    # Skip known-failing vectors that need fixture updates
-    if vector.id in KNOWN_FAILING_VECTORS:
-        pytest.skip(
-            f"Vector {vector.id}: fixture needs update (phase/player tracking changed)"
-        )
+    skip_reason = _vector_skip_reason(vector)
+    assert skip_reason is None, (
+        f"Non-runnable vector was parametrized: {vector.id} ({skip_reason})"
+    )
 
     GameEngine.clear_cache()
     result = execute_vector(vector)
