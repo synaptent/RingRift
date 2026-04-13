@@ -453,13 +453,7 @@ class TestBaseLoop:
         assert not task.done()
 
         # Cleanup
-        loop.stop()
-        await asyncio.sleep(0.1)
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        assert await loop.stop_async(timeout=1.0) is True
 
     @pytest.mark.asyncio
     async def test_start_background_already_running(self):
@@ -473,13 +467,7 @@ class TestBaseLoop:
         assert task1 is task2
 
         # Cleanup
-        loop.stop()
-        await asyncio.sleep(0.1)
-        task1.cancel()
-        try:
-            await task1
-        except asyncio.CancelledError:
-            pass
+        assert await loop.stop_async(timeout=1.0) is True
 
     @pytest.mark.asyncio
     async def test_start_background_async(self):
@@ -492,8 +480,7 @@ class TestBaseLoop:
         assert loop.running is True
 
         # Cleanup
-        loop.stop()
-        await task
+        assert await loop.stop_async(timeout=1.0) is True
 
     def test_reset_stats(self):
         """Test reset_stats() clears all statistics."""
@@ -815,14 +802,7 @@ class TestLoopManager:
         assert result is True
 
         # Cleanup
-        loop.stop()
-        await asyncio.sleep(0.05)
-        if loop._task:
-            loop._task.cancel()
-            try:
-                await loop._task
-            except asyncio.CancelledError:
-                pass
+        assert await loop.stop_async(timeout=1.0) is True
 
     def test_restart_loop_not_found(self):
         """Test restart_loop with unknown loop."""
@@ -870,10 +850,8 @@ class TestLoopManager:
         assert "loop2" not in results
 
         # Cleanup
-        loop1.stop()
+        assert await loop1.stop_async(timeout=1.0) is True
         loop2.stop()
-        if loop1._task:
-            loop1._task.cancel()
 
     def test_get_startup_order_no_dependencies(self):
         """Test startup order with no dependencies."""

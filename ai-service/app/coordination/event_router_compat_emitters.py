@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import os
 from datetime import datetime
 from typing import Any
 
@@ -82,7 +83,11 @@ def safe_emit_event(
         else:
             # Sync context: schedule on known running router loop when possible.
             # This avoids cross-loop lock errors when called from worker threads.
-            main_loop = _get_runtime_loop()
+            #
+            # Under pytest, async tests create and tear down many event loops. Reusing
+            # a previously captured loop from a later sync test can leak unscheduled
+            # coroutines if that loop is in teardown. Prefer a local loop there.
+            main_loop = None if os.environ.get("PYTEST_CURRENT_TEST") else _get_runtime_loop()
 
             if main_loop is not None:
                 # Schedule onto a running loop from this sync thread.

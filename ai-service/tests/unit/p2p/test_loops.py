@@ -222,8 +222,7 @@ class TestBaseLoop:
         assert loop.on_start_called is True
 
         # Stop
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
         assert loop.running is False
         assert loop.on_stop_called is True
@@ -235,8 +234,7 @@ class TestBaseLoop:
 
         loop.start_background()
         await asyncio.sleep(0.05)
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
         assert loop.stats.total_runs >= 1
         assert loop.stats.successful_runs >= 1
@@ -251,8 +249,7 @@ class TestBaseLoop:
 
         loop.start_background()
         await asyncio.sleep(0.05)
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
         assert loop.stats.total_runs >= 1
         assert loop.stats.failed_runs >= 1
@@ -274,8 +271,7 @@ class TestBaseLoop:
 
         loop.start_background()
         await asyncio.sleep(0.05)
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
         assert len(callback_called) >= 1
         assert isinstance(callback_called[0], ValueError)
@@ -296,8 +292,7 @@ class TestBaseLoop:
 
         loop.start_background()
         await asyncio.sleep(0.03)
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
         assert len(callback_called) == 0
 
@@ -308,8 +303,7 @@ class TestBaseLoop:
 
         loop.start_background()
         await asyncio.sleep(0.03)
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
         assert loop.run_count == 0
 
@@ -332,8 +326,7 @@ class TestBaseLoop:
         # Should have stopped incrementing (or only 1 more in-flight run)
         assert count_after_disable <= initial_count + 1
 
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
     def test_get_status(self):
         """Should return status dictionary."""
@@ -389,8 +382,7 @@ class TestBaseLoop:
         task2 = loop.start_background()
         assert task is task2
 
-        loop.stop()
-        await asyncio.sleep(0.02)
+        assert await loop.stop_async(timeout=1.0) is True
 
 
 # =============================================================================

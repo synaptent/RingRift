@@ -14,9 +14,11 @@ Tests cover:
 Created: December 2025
 """
 
-import os
-import pytest
 from unittest.mock import MagicMock, patch
+import warnings
+import os
+
+import pytest
 
 from app.ai.factory import (
     # Type definitions
@@ -714,26 +716,45 @@ class TestExperimentalOverrides:
 class TestDeprecationWarnings:
     """Tests for deprecated AI type warnings."""
 
+    @staticmethod
+    def _assert_deprecation_warning(pattern: str, factory_call) -> None:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", DeprecationWarning)
+            factory_call()
+        assert any(
+            issubclass(warning.category, DeprecationWarning)
+            and pattern in str(warning.message)
+            for warning in caught
+        )
+
     def test_ebmo_emits_deprecation_warning(self):
         """EBMO creation emits deprecation warning."""
         config = AIConfig(difficulty=5, think_time=1000)
-        with pytest.warns(DeprecationWarning, match="EBMO is deprecated"):
-            AIFactory.create(AIType.EBMO, player_number=1, config=config)
+        self._assert_deprecation_warning(
+            "EBMO is deprecated",
+            lambda: AIFactory.create(AIType.EBMO, player_number=1, config=config),
+        )
 
     def test_gmo_emits_deprecation_warning(self):
         """GMO creation emits deprecation warning."""
         config = AIConfig(difficulty=5, think_time=1000)
-        with pytest.warns(DeprecationWarning, match="GMO is deprecated"):
-            AIFactory.create(AIType.GMO, player_number=1, config=config)
+        self._assert_deprecation_warning(
+            "GMO is deprecated",
+            lambda: AIFactory.create(AIType.GMO, player_number=1, config=config),
+        )
 
     def test_gmo_v2_emits_deprecation_warning(self):
         """GMO v2 creation emits deprecation warning."""
         config = AIConfig(difficulty=5, think_time=1000)
-        with pytest.warns(DeprecationWarning, match="GMO v2 is deprecated"):
-            AIFactory.create(AIType.GMO_V2, player_number=1, config=config)
+        self._assert_deprecation_warning(
+            "GMO v2 is deprecated",
+            lambda: AIFactory.create(AIType.GMO_V2, player_number=1, config=config),
+        )
 
     def test_ig_gmo_emits_deprecation_warning(self):
         """IG-GMO creation emits deprecation warning."""
         config = AIConfig(difficulty=5, think_time=1000)
-        with pytest.warns(DeprecationWarning, match="IG-GMO is deprecated"):
-            AIFactory.create(AIType.IG_GMO, player_number=1, config=config)
+        self._assert_deprecation_warning(
+            "IG-GMO is deprecated",
+            lambda: AIFactory.create(AIType.IG_GMO, player_number=1, config=config),
+        )
