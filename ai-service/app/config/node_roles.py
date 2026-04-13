@@ -26,6 +26,7 @@ DEFAULT_NODE_ROLE_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" /
 
 POLICY_ONLY_SELFPLAY_PROFILES = frozenset({"policy-gumbel", "policy-training"})
 DISABLED_SELFPLAY_PROFILES = frozenset({"disabled", "none"})
+SELFPLAY_WORK_TYPES = frozenset({"selfplay"})
 
 _ROLE_MANIFEST_CACHE: dict[str, Any] | None = None
 _ROLE_MANIFEST_CACHE_MTIME: float | None = None
@@ -165,6 +166,77 @@ def get_node_workload_policy(
         allowed_config_keys=allowed_config_keys,
         feeds_trainer=feeds_trainer,
     )
+
+
+def policy_allows_config_key(
+    policy: NodeWorkloadPolicy,
+    config_key: str | None = None,
+) -> bool:
+    """Return whether a config_key is allowed under a resolved workload policy.
+
+    Unresolved policies fail open so legacy nodes without a role overlay keep
+    their historical behavior.
+    """
+
+    normalized_config_key = (config_key or "").strip()
+    if not normalized_config_key:
+        return True
+    if not policy.resolved:
+        return True
+    if not policy.allowed_config_keys:
+        return True
+    return normalized_config_key in policy.allowed_config_keys
+
+
+def policy_allows_work_type(
+    policy: NodeWorkloadPolicy,
+    work_type: str | Any,
+    *,
+    config_key: str | None = None,
+) -> bool:
+    """Return whether a workload policy allows a work type for a config.
+
+    This is the manifest-backed gate for manifest-managed fleet behavior. The
+    overlay only constrains nodes that resolve through the workload manifest;
+    unresolved nodes keep the historical fail-open behavior.
+    """
+
+    normalized_work_type = str(getattr(work_type, "value", work_type) or "").strip().lower()
+    if not normalized_work_type:
+        return True
+    if not policy.resolved:
+        return True
+
+    if normalized_work_type in SELFPLAY_WORK_TYPES:
+        return policy.selfplay_enabled and policy_allows_config_key(
+            policy, config_key=config_key
+        )
+
+    return True
+
+
+def node_allows_work_type(
+    node_id: str | None = None,
+    work_type: str | Any = "",
+    *,
+    hostname: str | None = None,
+    config_key: str | None = None,
+    cluster_config_path: str | Path | None = None,
+    role_config_path: str | Path | None = None,
+) -> bool:
+    """Resolve a node policy and check whether a work type is allowed.
+
+    This helper is intentionally lightweight so P2P sender- and receiver-side
+    gates can share the same manifest-backed decision.
+    """
+
+    policy = get_node_workload_policy(
+        node_id=node_id,
+        hostname=hostname,
+        cluster_config_path=cluster_config_path,
+        role_config_path=role_config_path,
+    )
+    return policy_allows_work_type(policy, work_type, config_key=config_key)
 
 
 def _resolve_cluster_config_path(

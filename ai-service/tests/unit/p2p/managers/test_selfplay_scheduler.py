@@ -525,6 +525,37 @@ class TestShouldSpawnCpuOnlyJobs:
 
 
 # =============================================================================
+# Test Auto-Start Gating
+# =============================================================================
+
+
+class TestAutoStartSelfplay:
+    """Tests for idle-node auto-start policy enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_skips_idle_auto_start_when_role_disallows_selfplay(self) -> None:
+        """Trainer-role nodes must be rejected before queueing or HTTP push."""
+        scheduler = SelfplayScheduler()
+        peer = MockNodeInfo(node_id="gh200-8", gpu_name="GH200", has_gpu=True)
+
+        with patch.object(scheduler, "_log_info") as mock_log_info, patch(
+            "app.config.node_roles.get_node_workload_policy",
+            return_value=MagicMock(role="trainer", allowed_config_keys=()),
+        ), patch(
+            "app.config.node_roles.policy_allows_work_type",
+            return_value=False,
+        ), patch(
+            "app.coordination.work_queue.get_work_queue",
+        ) as mock_get_work_queue:
+            await scheduler.auto_start_selfplay(peer, idle_duration=600.0)
+
+        mock_get_work_queue.assert_not_called()
+        mock_log_info.assert_called_with(
+            "Skipping auto-start on gh200-8: node role policy disables P2P selfplay"
+        )
+
+
+# =============================================================================
 # Test Diversity Tracking
 # =============================================================================
 

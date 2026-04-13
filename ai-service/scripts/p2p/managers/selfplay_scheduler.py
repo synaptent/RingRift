@@ -396,6 +396,24 @@ class SelfplayScheduler(
             gpu_tier = "low"
 
         peer_node_id = getattr(peer, "node_id", "unknown")
+        allowed_config_keys: tuple[str, ...] = ()
+        try:
+            from app.config.node_roles import (
+                get_node_workload_policy,
+                policy_allows_work_type,
+            )
+
+            policy = get_node_workload_policy(peer_node_id)
+            if not policy_allows_work_type(policy, "selfplay"):
+                self._log_info(
+                    f"Skipping auto-start on {peer_node_id}: "
+                    "node role policy disables P2P selfplay"
+                )
+                return
+            allowed_config_keys = policy.allowed_config_keys
+        except Exception as exc:
+            self._log_debug(f"Node role lookup failed for {peer_node_id}: {exc}")
+
         self._log_info(
             f"Auto-starting {num_processes} diverse selfplay processes on idle node {peer_node_id} "
             f"(GPU={gpu_name}, tier={gpu_tier}, {games_per_process} games each, idle for {idle_duration:.0f}s)"
@@ -448,6 +466,18 @@ class SelfplayScheduler(
             remaining = num_processes - len(forced_profiles)
             random_profiles = select_diverse_profiles(k=remaining) if remaining > 0 else []
             selected_profiles = forced_profiles + random_profiles
+            if allowed_config_keys:
+                selected_profiles = [
+                    profile
+                    for profile in selected_profiles
+                    if f"{profile['board_type']}_{profile['num_players']}p" in allowed_config_keys
+                ]
+                if not selected_profiles:
+                    self._log_info(
+                        f"Skipping auto-start on {peer_node_id}: "
+                        "no selected configs allowed by node role policy"
+                    )
+                    return
 
             # Build job configs from selected profiles
             job_configs = []

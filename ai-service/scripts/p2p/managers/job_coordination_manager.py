@@ -706,6 +706,29 @@ class JobCoordinationManager:
                         "work_id": work_id,
                     }
                 elif work_type == WorkType.SELFPLAY:
+                    try:
+                        from app.config.node_roles import node_allows_work_type
+
+                        config_key = f"{config.get('board_type', 'square8')}_{config.get('num_players', 2)}p"
+                        if not node_allows_work_type(
+                            peer_node_id,
+                            "selfplay",
+                            config_key=config_key,
+                        ):
+                            logger.info(
+                                "Skipping selfplay push dispatch to %s: node role policy "
+                                "disallows config %s",
+                                peer_node_id,
+                                config_key,
+                            )
+                            return False
+                    except Exception as exc:
+                        logger.debug(
+                            "Selfplay push node-role lookup failed for %s: %s",
+                            peer_node_id,
+                            exc,
+                        )
+
                     url = self._url_for_peer(peer, "/selfplay/start")
                     payload = {
                         "board_type": config.get("board_type", "square8"),
@@ -776,9 +799,15 @@ class JobCoordinationManager:
 
         # Policy check: ensure selfplay is allowed on this node
         try:
-            from app.coordination.node_policies import is_work_allowed
-            if not is_work_allowed(node_id, "selfplay"):
-                logger.debug(f"Selfplay not allowed on {node_id} by policy")
+            from app.config.node_roles import (
+                get_node_workload_policy,
+                policy_allows_config_key,
+                policy_allows_work_type,
+            )
+
+            policy = get_node_workload_policy(node_id)
+            if not policy_allows_work_type(policy, "selfplay"):
+                logger.debug("Selfplay not allowed on %s by node role policy", node_id)
                 return None
         except ImportError:
             pass
@@ -798,9 +827,18 @@ class JobCoordinationManager:
         weighted_configs = []
         for board_type, num_players in diverse_configs:
             config_key = f"{board_type}_{num_players}p"
+            if "policy" in locals() and not policy_allows_config_key(policy, config_key):
+                continue
             priority = board_priority_overrides.get(config_key, 3)  # Default LOW
             weight = 4 - priority  # 0->4, 1->3, 2->2, 3->1
             weighted_configs.extend([(board_type, num_players)] * weight)
+
+        if not weighted_configs:
+            logger.info(
+                "No diverse selfplay configs allowed for %s under node role policy",
+                node_id,
+            )
+            return None
 
         # Round-robin through weighted list based on node-specific counter
         counter = self._diverse_config_counter.get(node_id, 0)

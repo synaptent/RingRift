@@ -653,6 +653,28 @@ class JobManager(EventSubscriptionMixin):
             effective_engine_mode = self._get_effective_engine_mode(
                 requested_engine_mode, peer
             )
+            config_key = f"{board_type}_{num_players}p"
+
+            try:
+                from app.config.node_roles import node_allows_work_type
+
+                if not node_allows_work_type(
+                    node_id,
+                    "selfplay",
+                    config_key=config_key,
+                ):
+                    return {
+                        "success": False,
+                        "error": "selfplay disallowed by node role policy",
+                        "node_id": node_id,
+                        "config_key": config_key,
+                    }
+            except Exception as exc:
+                logger.debug(
+                    "[JobManager] Preemptive node-role lookup failed for %s: %s",
+                    node_id,
+                    exc,
+                )
 
             config = {
                 "board_type": board_type,
@@ -690,7 +712,6 @@ class JobManager(EventSubscriptionMixin):
                         record_peer_transport_success(peer_ip, "http")
 
                         # Register the spawn for verification tracking
-                        config_key = f"{board_type}_{num_players}p"
                         self._register_spawn(job_id, node_id, config_key)
 
                         # Session 17.24: Track job dispatch for load balancing
@@ -3057,11 +3078,38 @@ class JobManager(EventSubscriptionMixin):
         # This ensures underutilized nodes get jobs first, improving fairness
         # across heterogeneous GPU nodes (+8-12% estimated fairness improvement)
         sorted_workers = self._sort_workers_by_load(workers)
+        config_key = f"{board_type}_{num_players}p"
 
         async with get_client_session(timeout) as session:
             for i, worker in enumerate(sorted_workers):
                 worker_id = getattr(worker, "node_id", str(worker))
                 games = games_per_worker + (1 if i < remainder else 0)
+
+                try:
+                    from app.config.node_roles import node_allows_work_type
+
+                    if not node_allows_work_type(
+                        worker_id,
+                        "selfplay",
+                        config_key=config_key,
+                    ):
+                        results[worker_id] = {
+                            "success": False,
+                            "error": "selfplay_disallowed_by_node_role",
+                            "skipped": True,
+                        }
+                        logger.info(
+                            "Skipping worker %s for %s: node role policy disallows P2P selfplay",
+                            worker_id,
+                            config_key,
+                        )
+                        continue
+                except Exception as exc:
+                    logger.debug(
+                        "[JobManager] Worker node-role lookup failed for %s: %s",
+                        worker_id,
+                        exc,
+                    )
 
                 # Get worker endpoint
                 worker_ip = getattr(worker, "best_ip", None) or getattr(worker, "ip", None)

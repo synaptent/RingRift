@@ -301,6 +301,58 @@ class TestDistributedSelfplay:
         ]
         assert len(alive_peers) == 2  # node-2 and node-3
 
+    @pytest.mark.asyncio
+    async def test_dispatch_selfplay_to_workers_skips_role_blocked_nodes(
+        self,
+        job_manager_with_peers,
+    ):
+        """Manifest-disallowed workers must be skipped before HTTP dispatch."""
+
+        class _SessionContext:
+            def __init__(self, session):
+                self._session = session
+
+            async def __aenter__(self):
+                return self._session
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        worker = job_manager_with_peers.peers["node-2"]
+        session = MagicMock()
+        session.post = AsyncMock()
+
+        with patch(
+            "scripts.p2p.network.get_client_session",
+            return_value=_SessionContext(session),
+        ), patch(
+            "app.config.node_roles.node_allows_work_type",
+            return_value=False,
+        ) as mock_gate, patch(
+            "scripts.p2p.managers.selfplay_scheduler.SelfplayScheduler._select_board_engine",
+            return_value=("gumbel-mcts", {"budget": 150}),
+        ):
+            results = await job_manager_with_peers._dispatch_selfplay_to_workers(
+                job_id="dispatch-job-001",
+                workers=[worker],
+                games_per_worker=50,
+                remainder=0,
+                board_type="hex8",
+                num_players=2,
+                model_path=None,
+                output_dir="/tmp/selfplay",
+            )
+
+        assert results["node-2"]["success"] is False
+        assert results["node-2"]["skipped"] is True
+        assert results["node-2"]["error"] == "selfplay_disallowed_by_node_role"
+        session.post.assert_not_called()
+        mock_gate.assert_called_once_with(
+            "node-2",
+            "selfplay",
+            config_key="hex8_2p",
+        )
+
 
 # =============================================================================
 # Training Data Export Tests

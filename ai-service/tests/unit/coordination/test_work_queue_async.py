@@ -196,6 +196,31 @@ class TestClaimWorkAsync:
         )
         assert claimed is not None
 
+    @pytest.mark.asyncio
+    async def test_claim_work_async_respects_node_role_selfplay_gate(
+        self,
+        work_queue,
+        sample_work_item,
+    ):
+        """Trainer-role nodes must not claim P2P selfplay work."""
+        await work_queue.add_work_async(sample_work_item)
+
+        with patch(
+            "app.config.node_roles.node_allows_work_type",
+            return_value=False,
+        ) as mock_gate:
+            claimed = await work_queue.claim_work_async(
+                node_id="gh200-8",
+                capabilities=["selfplay"],
+            )
+
+        assert claimed is None
+        mock_gate.assert_called_once_with(
+            "gh200-8",
+            "selfplay",
+            config_key="hex8_2p",
+        )
+
 
 # =============================================================================
 # start_work_async Tests

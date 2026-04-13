@@ -165,13 +165,33 @@ class SelfplayHandlersMixin:
         is enabled. Selfplay doesn't require cluster consensus - it's local GPU work.
         """
         try:
-            # Mar 2026: Reject selfplay on nodes with selfplay_enabled=false
+            data = await request.json()
+            board_type = data.get("board_type", "square8")
+            num_players = data.get("num_players", 2)
+            config_key = f"{board_type}_{num_players}p"
+
+            # Mar/Apr 2026: Reject selfplay on nodes disabled by the workload
+            # manifest, including trainer-role nodes and config-mismatched nodes.
             try:
-                from scripts.p2p.managers.work_discovery_manager import _is_selfplay_enabled_for_node
-                if not _is_selfplay_enabled_for_node():
+                from app.config.node_roles import (
+                    get_local_node_workload_policy,
+                    policy_allows_work_type,
+                )
+
+                policy = get_local_node_workload_policy(
+                    node_id=getattr(self, "node_id", None),
+                )
+                if not policy_allows_work_type(
+                    policy,
+                    "selfplay",
+                    config_key=config_key,
+                ):
                     return web.json_response({
                         "success": False,
-                        "error": "selfplay_enabled=false for this node",
+                        "error": (
+                            f"selfplay disallowed by node role policy "
+                            f"(role={policy.role}, config_key={config_key})"
+                        ),
                     }, status=403)
             except ImportError:
                 pass
@@ -214,9 +234,6 @@ class SelfplayHandlersMixin:
                         "retry_after_seconds": 60,
                     }, status=503)
 
-            data = await request.json()
-            board_type = data.get("board_type", "square8")
-            num_players = data.get("num_players", 2)
             num_games = data.get("num_games", 500)
             engine_mode = data.get("engine_mode", "gumbel-mcts")  # GPU-accelerated MCTS
             engine_extra_args = data.get("engine_extra_args")  # December 2025: for budget override
@@ -346,6 +363,65 @@ class SelfplayHandlersMixin:
         # If we're the leader, add work directly to queue
         if self.is_leader:
             try:
+                config_key = f"{board_type}_{num_players}p"
+
+                try:
+                    from app.config.node_roles import node_allows_work_type
+
+                    eligible_nodes: list[str] = []
+                    local_node_id = getattr(self, "node_id", "")
+                    if local_node_id and node_allows_work_type(
+                        local_node_id,
+                        "selfplay",
+                        config_key=config_key,
+                    ):
+                        eligible_nodes.append(local_node_id)
+
+                    orchestrator = getattr(self, "_orchestrator", self)
+                    peers = getattr(orchestrator, "peers", None) or getattr(self, "peers", None) or {}
+                    peers_lock = getattr(orchestrator, "peers_lock", None) or getattr(self, "peers_lock", None)
+
+                    if peers_lock:
+                        with peers_lock:
+                            peer_items = list(peers.items())
+                    else:
+                        peer_items = list(peers.items())
+
+                    for peer_id, peer in peer_items:
+                        if peer_id == local_node_id:
+                            continue
+                        try:
+                            is_alive = peer.is_alive() if hasattr(peer, "is_alive") else True
+                        except Exception:
+                            is_alive = True
+                        if not is_alive:
+                            continue
+                        if node_allows_work_type(
+                            peer_id,
+                            "selfplay",
+                            config_key=config_key,
+                        ):
+                            eligible_nodes.append(peer_id)
+
+                    if not eligible_nodes:
+                        return web.json_response(
+                            {
+                                "success": False,
+                                "error": (
+                                    f"no eligible P2P selfplay nodes for {config_key} "
+                                    "under node role policy"
+                                ),
+                                "config_key": config_key,
+                            },
+                            status=409,
+                        )
+                except Exception as exc:
+                    logger.debug(
+                        "[P2P] Failed to resolve eligible selfplay nodes for %s: %s",
+                        config_key,
+                        exc,
+                    )
+
                 from app.coordination.work_queue import get_work_queue, WorkItem, WorkType
 
                 wq = get_work_queue()
@@ -366,7 +442,6 @@ class SelfplayHandlersMixin:
                     if games_this_job == 0 and i == num_jobs - 1:
                         games_this_job = games_per_job  # Use full batch for last if no remainder
 
-                    config_key = f"{board_type}_{num_players}p"
                     item = WorkItem(
                         work_type=WorkType.SELFPLAY,
                         priority=priority,

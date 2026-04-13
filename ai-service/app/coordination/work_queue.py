@@ -690,11 +690,49 @@ class WorkQueue(WorkQueueStorageMixin):
             # Find work matching capabilities and policies
             for item in claimable:
                 work_type = item.work_type.value
+                config_key = str(
+                    item.config.get("config_key")
+                    or (
+                        f"{item.config.get('board_type', '')}_{item.config.get('num_players', 0)}p"
+                        if item.config.get("board_type") and item.config.get("num_players")
+                        else ""
+                    )
+                ).strip()
 
                 # Check capabilities
                 if capabilities and work_type not in capabilities:
                     self._claim_rejection_stats.rejected_by_capability += 1
                     continue
+
+                # Apr 2026: Manifest-backed workload-role gate for selfplay.
+                # Trainers and other manifest-disabled nodes must never claim
+                # P2P selfplay even if callers send broad capabilities.
+                if work_type == WorkType.SELFPLAY.value:
+                    try:
+                        from app.config.node_roles import node_allows_work_type
+
+                        if not node_allows_work_type(
+                            node_id,
+                            work_type,
+                            config_key=config_key or None,
+                        ):
+                            self._claim_rejection_stats.rejected_by_policy += 1
+                            logger.debug(
+                                "Work %s denied for %s by node role policy "
+                                "(work_type=%s, config_key=%s)",
+                                item.work_id,
+                                node_id,
+                                work_type,
+                                config_key or "-",
+                            )
+                            continue
+                    except Exception as exc:
+                        logger.debug(
+                            "Node role gate lookup failed for %s/%s: %s",
+                            node_id,
+                            item.work_id,
+                            exc,
+                        )
 
                 # Feb 2026: Prevent duplicate config+type assignments per node.
                 # Skip if this node already has a claimed item for the same
@@ -895,10 +933,36 @@ class WorkQueue(WorkQueueStorageMixin):
                     continue
 
                 work_type = item.work_type.value
+                config_key = str(
+                    item.config.get("config_key")
+                    or (
+                        f"{item.config.get('board_type', '')}_{item.config.get('num_players', 0)}p"
+                        if item.config.get("board_type") and item.config.get("num_players")
+                        else ""
+                    )
+                ).strip()
 
                 # Check capabilities
                 if capabilities and work_type not in capabilities:
                     continue
+
+                if work_type == WorkType.SELFPLAY.value:
+                    try:
+                        from app.config.node_roles import node_allows_work_type
+
+                        if not node_allows_work_type(
+                            node_id,
+                            work_type,
+                            config_key=config_key or None,
+                        ):
+                            continue
+                    except Exception as exc:
+                        logger.debug(
+                            "Batch node role gate lookup failed for %s/%s: %s",
+                            node_id,
+                            item.work_id,
+                            exc,
+                        )
 
                 # Feb 2026: Prevent duplicate config+type per node in batch
                 item_bt = item.config.get("board_type", "")

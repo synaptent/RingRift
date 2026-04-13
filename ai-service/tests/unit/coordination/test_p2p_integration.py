@@ -198,6 +198,40 @@ class TestGetP2PStatus:
 
             assert result is None
 
+
+class TestDispatchSelfplayDirect:
+    """Tests for direct selfplay dispatch helper."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_target_blocked_by_node_role_policy(self):
+        """Manifest-disabled targets should be rejected before HTTP."""
+        from app.coordination.p2p_integration import dispatch_selfplay_direct
+
+        with patch(
+            "app.coordination.p2p_integration.HAS_AIOHTTP",
+            True,
+        ), patch(
+            "app.config.node_roles.node_allows_work_type",
+            return_value=False,
+        ) as mock_gate:
+            result = await dispatch_selfplay_direct(
+                target_node="gh200-8",
+                host="100.0.0.8",
+                port=8770,
+                board_type="hex8",
+                num_players=2,
+                num_games=100,
+            )
+
+        assert result.success is False
+        assert "node role policy" in result.error
+        assert result.details["rejected_by"] == "node_roles"
+        mock_gate.assert_called_once_with("gh200-8", "selfplay", config_key="hex8_2p")
+
+
+class TestGetP2PStatusCaching:
+    """Tests for get_p2p_status cache behavior."""
+
     @pytest.mark.asyncio
     async def test_uses_cache(self):
         """Test that cache is used when valid."""

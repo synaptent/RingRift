@@ -5,6 +5,7 @@ from pathlib import Path
 from app.config.node_roles import (
     clear_node_role_manifest_cache,
     get_node_workload_policy,
+    node_allows_work_type,
 )
 
 
@@ -139,3 +140,64 @@ class TestNodeWorkloadPolicy:
 
         assert policy.resolved is False
         assert policy.role == "sync-only"
+
+    def test_node_allows_work_type_blocks_trainer_selfplay(self, tmp_path: Path) -> None:
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+        roles_path = tmp_path / "node_roles.yaml"
+
+        _write_text(
+            cluster_path,
+            """
+            hosts:
+              gh200-8:
+                role: gpu_training_selfplay
+                gpu: GH200 (96 GB)
+                gpu_vram_gb: 96
+                selfplay_enabled: true
+                training_enabled: true
+            """,
+        )
+        _write_text(
+            roles_path,
+            """
+            nodes:
+              gh200-8:
+                role: trainer
+                target_config: hex8_2p
+            """,
+        )
+
+        assert not node_allows_work_type(
+            "gh200-8",
+            "selfplay",
+            config_key="hex8_2p",
+            cluster_config_path=cluster_path,
+            role_config_path=roles_path,
+        )
+
+    def test_node_allows_work_type_allows_legacy_gpu_selfplay_without_overlay(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        cluster_path = tmp_path / "distributed_hosts.yaml"
+
+        _write_text(
+            cluster_path,
+            """
+            hosts:
+              vast-1:
+                role: gpu_selfplay
+                gpu: RTX 4090
+                gpu_vram_gb: 24
+                selfplay_enabled: true
+                training_enabled: false
+            """,
+        )
+
+        assert node_allows_work_type(
+            "vast-1",
+            "selfplay",
+            config_key="hex8_2p",
+            cluster_config_path=cluster_path,
+            role_config_path=tmp_path / "missing-node-roles.yaml",
+        )

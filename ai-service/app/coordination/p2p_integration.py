@@ -486,6 +486,27 @@ async def dispatch_selfplay_direct(
     if not HAS_AIOHTTP:
         return P2PJobResult(success=False, error="aiohttp not available")
 
+    try:
+        from app.config.node_roles import node_allows_work_type
+
+        config_key = f"{board_type}_{num_players}p"
+        if not node_allows_work_type(
+            target_node,
+            "selfplay",
+            config_key=config_key,
+        ):
+            return P2PJobResult(
+                success=False,
+                error=f"selfplay disallowed by node role policy for {target_node}",
+                details={"rejected_by": "node_roles", "config_key": config_key},
+            )
+    except Exception as exc:
+        logger.debug(
+            "[dispatch_selfplay_direct] Node role gate lookup failed for %s: %s",
+            target_node,
+            exc,
+        )
+
     url = f"http://{host}:{port}/selfplay/start"
     payload = {
         "board_type": board_type,
