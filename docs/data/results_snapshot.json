@@ -1,11 +1,11 @@
 {
-  "as_of": "2026-04-09",
+  "as_of": "2026-04-13",
   "headline": [
     {
       "config": "hex8_2p",
       "start_elo": 1500.0,
-      "best_elo": 1967.6,
-      "promotions": 6
+      "best_elo": 1979.8,
+      "promotions": 7
     },
     {
       "config": "square8_2p",

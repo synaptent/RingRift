@@ -2,6 +2,8 @@
 
 Last updated: 2026-04-10.
 
+Note: this file is a point-in-time operational memo. For the current April 13 research state and supported public claims, use [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md) first.
+
 This is an owner-facing snapshot for Armand. It is not a marketing document.
 
 ## Snapshot Sources

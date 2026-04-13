@@ -1,6 +1,6 @@
 # RingRift Research Snapshot
 
-This is the shortest shareable summary of the RingRift training project as of April 9, 2026.
+This is the shortest shareable summary of the RingRift training project as of April 13, 2026.
 
 ## What RingRift Is
 
@@ -15,13 +15,13 @@ RingRift is a deterministic abstract strategy game plus a research codebase for 
 
 The project now has credible evidence of iterative neural-network improvement on more than one configuration.
 
-| Config       | Best Reported Elo | Promotions | Interpretation                                                       |
-| ------------ | ----------------: | ---------: | -------------------------------------------------------------------- |
-| `hex8_2p`    |          `1967.6` |        `6` | Strongest result; clear iterative improvement from the 1500 baseline |
-| `square8_2p` |          `1601.8` |        `2` | Second clean 2-player proof under the corrected experiment harness   |
-| `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but weaker than the 2-player evidence     |
+| Config       | Best Reported Elo | Promotions | Interpretation                                                        |
+| ------------ | ----------------: | ---------: | --------------------------------------------------------------------- |
+| `hex8_2p`    |          `1979.8` |        `7` | Strongest result; fixed-LR minimal loop pushed the line near 2000 Elo |
+| `square8_2p` |          `1601.8` |        `2` | Second clean 2-player proof under the corrected experiment harness    |
+| `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                    |
 
-The core research claim is no longer "can the pipeline run at all?" It is now: the RingRift self-play training loop can produce stronger models over time on multiple supported configurations.
+The core research claim is no longer "can the pipeline run at all?" It is now: the RingRift self-play training loop can produce stronger models over time on at least two supported configurations, with one weaker multiplayer signal that is not yet strong enough to generalize from.
 
 ## Why The Results Are Credible
 
@@ -32,6 +32,7 @@ The reported April 2026 results only became defensible after several important f
 - structural stalemate resolution and winner selection were corrected
 - the experiment harness gained true fixed-LR support end-to-end
 - multiplayer evaluation was corrected to rotate exactly one candidate seat per game
+- trainer/selfplay role separation stopped P2P GPU contention from polluting the supported training path
 
 In other words, the current evidence is post-fix evidence, not a continuation of the earlier buggy harness.
 
@@ -40,7 +41,8 @@ In other words, the current evidence is post-fix evidence, not a continuation of
 The project is not finished.
 
 - `hex8_2p` may be plateauing near 2000 Elo
-- `square8_3p` and `square8_4p` are currently being rerun under the corrected seat-fair multiplayer evaluator
+- `square8_3p` still needs another clean promotion before it should count as persuasive multiplayer evidence
+- `square8_4p` and the larger-board paths remain unproven
 - larger boards and slower multiplayer configurations remain much less mature than the 2-player path
 - cluster runs still produce the strongest evidence; local reproduction is useful but smaller in scale
 
@@ -56,4 +58,4 @@ If you want to evaluate the project quickly, use this order:
 
 ## Bottom Line
 
-RingRift is now in a presentable state for external readers because there is a clear supported path through the repository and a real result to show at the end of it. The strongest remaining uncertainty is not whether the system works at all. It is how far the same approach extends cleanly to multiplayer and larger-board configurations.
+RingRift is now in a presentable state for external readers because there is a clear supported path through the repository and a real result to show at the end of it. The strongest remaining uncertainty is not whether the system works at all. It is how far the same approach extends cleanly beyond `hex8_2p` and `square8_2p`.

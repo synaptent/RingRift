@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2026-04-10
+> **Last Updated:** 2026-04-13
 > **Status:** actively curated during Part 3 cleanup
 
 This index provides navigation and status tracking for all project documentation.
@@ -9,19 +9,20 @@ This index provides navigation and status tracking for all project documentation
 
 ## Quick Start
 
-| Document                   | Purpose                     | Status |
-| -------------------------- | --------------------------- | ------ |
-| `../README.md`             | Project overview            | Active |
-| `PROJECT_BRIEF.md`         | Short external-facing brief | Active |
-| `RESEARCH_SNAPSHOT.md`     | Shareable research summary  | Active |
-| `../QUICKSTART.md`         | Setup guide                 | Active |
-| `RESULTS.md`               | Current research results    | Active |
-| `ARCHITECTURE_OVERVIEW.md` | External architecture guide | Active |
-| `REPOSITORY_MAP.md`        | Supported vs legacy map     | Active |
-| `DEVELOPER_GUIDE.md`       | New developer quick start   | Active |
-| `../SECURITY.md`           | Security policy             | Active |
-| `../CONTRIBUTING.md`       | Contribution guidelines     | Active |
-| `../AGENTS.md`             | AI agent expectations       | Active |
+| Document                      | Purpose                     | Status |
+| ----------------------------- | --------------------------- | ------ |
+| `../README.md`                | Project overview            | Active |
+| `PROJECT_BRIEF.md`            | Short external-facing brief | Active |
+| `RESEARCH_SNAPSHOT.md`        | Shareable research summary  | Active |
+| `../QUICKSTART.md`            | Setup guide                 | Active |
+| `RESULTS.md`                  | Current research results    | Active |
+| `CODEBASE_QUALITY_PROGRAM.md` | Long-horizon cleanup plan   | Active |
+| `ARCHITECTURE_OVERVIEW.md`    | External architecture guide | Active |
+| `REPOSITORY_MAP.md`           | Supported vs legacy map     | Active |
+| `DEVELOPER_GUIDE.md`          | New developer quick start   | Active |
+| `../SECURITY.md`              | Security policy             | Active |
+| `../CONTRIBUTING.md`          | Contribution guidelines     | Active |
+| `../AGENTS.md`                | AI agent expectations       | Active |
 
 ---
 
