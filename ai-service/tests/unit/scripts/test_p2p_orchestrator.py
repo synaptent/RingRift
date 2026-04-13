@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import threading
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -205,6 +205,63 @@ class TestCapabilityInference:
 
         clear_node_role_manifest_cache()
         assert info.capabilities == []
+
+
+class TestProcessSpawnerRoleGates:
+    """Tests for role-aware local selfplay blocking in the process spawner."""
+
+    @pytest.mark.asyncio
+    async def test_start_local_job_blocks_manifest_disabled_selfplay(self):
+        from scripts.p2p.orchestrators.process_spawner_orchestrator import ProcessSpawnerOrchestrator
+
+        p2p = SimpleNamespace(
+            node_id="lambda-gh200-8",
+            ringrift_path="/tmp/ringrift",
+            role="follower",
+            local_jobs={},
+            jobs_lock=None,
+            _get_ai_service_path=lambda: "/tmp/ringrift/ai-service",
+            _get_script_path=lambda name: f"/tmp/ringrift/ai-service/scripts/{name}",
+        )
+        orchestrator = ProcessSpawnerOrchestrator(p2p)
+
+        with patch.object(orchestrator, "_local_selfplay_allowed", return_value=False):
+            with patch.object(orchestrator, "_start_gpu_selfplay_job", AsyncMock()) as start_gpu:
+                result = await orchestrator.start_local_job("gpu_selfplay", board_type="square8")
+
+        assert result is None
+        start_gpu.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_manage_local_jobs_decentralized_returns_without_spawning_when_disabled(self):
+        from scripts.p2p.orchestrators.process_spawner_orchestrator import ProcessSpawnerOrchestrator
+
+        p2p = SimpleNamespace(
+            node_id="lambda-gh200-8",
+            role="follower",
+            leader_id="",
+            last_leader_seen=0.0,
+            last_work_from_leader=0.0,
+            _last_local_job_manage=0.0,
+            self_info=SimpleNamespace(
+                disk_percent=0.0,
+                memory_percent=0.0,
+                selfplay_jobs=0,
+                has_gpu=True,
+                gpu_name="GH200",
+            ),
+            selfplay_scheduler=MagicMock(),
+            peers={},
+            peers_lock=None,
+            _update_self_info_async=AsyncMock(),
+        )
+        orchestrator = ProcessSpawnerOrchestrator(p2p)
+
+        with patch.object(orchestrator, "_local_selfplay_allowed", return_value=False):
+            changes = await orchestrator.manage_local_jobs_decentralized()
+
+        assert changes == 0
+        p2p._update_self_info_async.assert_not_called()
 
 
 # =============================================================================

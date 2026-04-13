@@ -213,6 +213,15 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
             return self._p2p._load_distributed_hosts()
         return {"hosts": {}}
 
+    def _local_selfplay_allowed(self) -> bool:
+        """Return whether manifest policy allows local P2P selfplay on this node."""
+        try:
+            from scripts.p2p.managers.work_discovery_manager import _is_selfplay_enabled_for_node
+
+            return _is_selfplay_enabled_for_node()
+        except Exception:
+            return True
+
     def _spawn_and_track_job(
         self,
         job_id: str,
@@ -353,6 +362,12 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
 
             # Route to appropriate handler based on job type
             job_type_val = job_type.value if hasattr(job_type, "value") else str(job_type)
+
+            if "selfplay" in job_type_val and not self._local_selfplay_allowed():
+                self._log_info(
+                    f"Blocked local {job_type_val} on {self.node_id}: node role disables P2P selfplay"
+                )
+                return None
 
             if job_type_val == "selfplay":
                 return await self._start_selfplay_job(
@@ -1591,6 +1606,8 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
         """
         # Mar 2026: Never spawn selfplay on coordinator via decentralized path
         if os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes"):
+            return 0
+        if not self._local_selfplay_allowed():
             return 0
 
         import random
