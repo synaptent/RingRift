@@ -417,6 +417,7 @@ class TestGPUMemoryPressure:
 
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
+    @patch.dict("os.environ", {"RINGRIFT_FORCE_CPU": "0"}, clear=False)
     def test_mps_available_uses_mps(self, mock_mps, mock_cuda):
         """When MPS is available and CUDA is not, should use MPS."""
         mock_cuda.return_value = False

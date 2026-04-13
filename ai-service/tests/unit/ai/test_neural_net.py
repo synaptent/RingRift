@@ -605,6 +605,15 @@ class TestNeuralNetAIInit:
 
     @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
     @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=True)
+    @patch.dict(
+        "os.environ",
+        {
+            "RINGRIFT_FORCE_CPU": "0",
+            "RINGRIFT_DISABLE_MPS": "false",
+            "PYTORCH_MPS_DISABLE": "0",
+        },
+        clear=False,
+    )
     def test_init_cuda_device(self, mock_cuda, mock_mps, mock_config):
         """Test initialization selects CUDA when available."""
         from app.ai.neural_net import NeuralNetAI
