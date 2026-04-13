@@ -602,16 +602,32 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_run_once_checks_selfplay_enabled(self) -> None:
-        """Test that run_once checks if selfplay is enabled for node."""
+        """Fallback coordinator role should deactivate the loop when policy is unresolved."""
         orchestrator = create_mock_orchestrator()
         orchestrator._role = "coordinator"
         loop = AutonomousQueuePopulationLoop(orchestrator)
         loop._grace_period_complete = True
         loop._state.activate("test")
 
-        await loop._run_once()
+        from app.config.node_roles import NodeWorkloadPolicy
 
-        # Coordinator role should disable selfplay
+        unresolved_policy = NodeWorkloadPolicy(
+            node_id=orchestrator.node_id,
+            role="sync-only",
+            resolved=False,
+            selfplay_enabled=False,
+            training_enabled=False,
+            evaluation_enabled=False,
+            p2p_enabled=True,
+            selfplay_profile="disabled",
+            job_preference="disabled",
+        )
+        with patch(
+            "app.config.node_roles.get_local_node_workload_policy",
+            return_value=unresolved_policy,
+        ):
+            await loop._run_once()
+
         assert loop._state.activated is False
 
 
@@ -730,12 +746,29 @@ class TestSelfplayEnabledCheck:
     """Tests for selfplay enabled checking."""
 
     def test_returns_false_for_coordinator_role(self) -> None:
-        """Test returns False when node has coordinator role."""
+        """Fallback to legacy coordinator role should disable selfplay."""
         orchestrator = create_mock_orchestrator()
         orchestrator._role = "coordinator"
         loop = AutonomousQueuePopulationLoop(orchestrator)
 
-        result = loop._is_selfplay_enabled_for_node()
+        from app.config.node_roles import NodeWorkloadPolicy
+
+        unresolved_policy = NodeWorkloadPolicy(
+            node_id=orchestrator.node_id,
+            role="sync-only",
+            resolved=False,
+            selfplay_enabled=False,
+            training_enabled=False,
+            evaluation_enabled=False,
+            p2p_enabled=True,
+            selfplay_profile="disabled",
+            job_preference="disabled",
+        )
+        with patch(
+            "app.config.node_roles.get_local_node_workload_policy",
+            return_value=unresolved_policy,
+        ):
+            result = loop._is_selfplay_enabled_for_node()
 
         assert result is False
 
