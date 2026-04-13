@@ -156,7 +156,7 @@ write_remote_config() {
   tmp_file="$(mktemp)"
   printf '%s' "${content}" > "${tmp_file}"
   scp "${SSH_OPTS[@]}" "${tmp_file}" "ubuntu@${ip}:/tmp/$(basename "${remote_path}")"
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "sudo mkdir -p /etc/ringrift && sudo mv /tmp/$(basename "${remote_path}") ${remote_path}"
+  ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" "sudo mkdir -p /etc/ringrift && sudo mv /tmp/$(basename "${remote_path}") ${remote_path}"
   rm -f "${tmp_file}"
 }
 
@@ -165,7 +165,7 @@ install_service() {
   local local_path="$2"
   local remote_name="$3"
   scp "${SSH_OPTS[@]}" "${local_path}" "ubuntu@${ip}:/tmp/${remote_name}"
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "sudo mv /tmp/${remote_name} /etc/systemd/system/${remote_name}"
+  ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" "sudo mv /tmp/${remote_name} /etc/systemd/system/${remote_name}"
 }
 
 while IFS= read -r row; do
@@ -199,8 +199,8 @@ PY
   fi
 
   echo "  Updating code..."
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'cd ~/ringrift && git fetch origin && git checkout -f origin/main --detach >/dev/null 2>&1 || true'
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'mkdir -p ~/ringrift/ai-service/logs ~/ringrift/ai-service/logs/selfplay'
+  ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'cd ~/ringrift && git fetch origin && git checkout -f origin/main --detach >/dev/null 2>&1 || true'
+  ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'mkdir -p ~/ringrift/ai-service/logs ~/ringrift/ai-service/logs/selfplay'
   install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-p2p.service" "ringrift-p2p.service"
 
   case "${role}" in
@@ -229,7 +229,7 @@ PY
 )"
       write_remote_config "${ip}" "/etc/ringrift/training.conf" "${TRAINING_CONF}"
       install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-training.service" "ringrift-training.service"
-      ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
+      ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" '
         sudo systemctl stop ringrift-selfplay-worker ringrift-evaluator 2>/dev/null || true
         sudo systemctl daemon-reload
         sudo systemctl enable ringrift-training
@@ -268,7 +268,7 @@ PY
 )"
       write_remote_config "${ip}" "/etc/ringrift/selfplay.conf" "${SELFPLAY_CONF}"
       install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-selfplay-worker.service" "ringrift-selfplay-worker.service"
-      ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
+      ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" '
         sudo systemctl stop ringrift-training ringrift-evaluator 2>/dev/null || true
         sudo systemctl daemon-reload
         sudo systemctl enable ringrift-selfplay-worker
@@ -292,7 +292,7 @@ PY
 )"
       write_remote_config "${ip}" "/etc/ringrift/evaluator.conf" "${EVALUATOR_CONF}"
       install_service "${ip}" "${AI_DIR}/config/systemd/ringrift-evaluator.service" "ringrift-evaluator.service"
-      ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" '
+      ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" '
         sudo systemctl stop ringrift-training ringrift-selfplay-worker 2>/dev/null || true
         sudo systemctl daemon-reload
         sudo systemctl enable ringrift-evaluator
@@ -308,7 +308,7 @@ PY
   esac
 
   if ${RESTART}; then
-    ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'sudo systemctl restart ringrift-p2p 2>/dev/null || true'
+    ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'sudo systemctl restart ringrift-p2p 2>/dev/null || true'
   fi
 
   SERVICE_NAME="ringrift-${role}"
@@ -319,8 +319,8 @@ PY
   elif [[ "${role}" == "evaluator" ]]; then
     SERVICE_NAME="ringrift-evaluator"
   fi
-  STATUS="$(ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "systemctl is-active ${SERVICE_NAME} 2>/dev/null || echo unknown")"
-  P2P_STATUS="$(ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" 'systemctl is-active ringrift-p2p 2>/dev/null || echo unknown')"
+  STATUS="$(ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" "systemctl is-active ${SERVICE_NAME} 2>/dev/null || echo unknown")"
+  P2P_STATUS="$(ssh -n "${SSH_OPTS[@]}" "ubuntu@${ip}" 'systemctl is-active ringrift-p2p 2>/dev/null || echo unknown')"
   echo "  Status: ${SERVICE_NAME}=${STATUS}, ringrift-p2p=${P2P_STATUS}"
   echo ""
 done < <(python3 - <<'PY' "${PLAN_JSON}"

@@ -32,6 +32,7 @@ def test_script_references_role_manifest_and_new_services() -> None:
     script_text = SCRIPT_PATH.read_text()
     assert "config/node_roles.yaml" in script_text
     assert "config/systemd/ringrift-p2p.service" in script_text
+    assert 'ssh -n "${SSH_OPTS[@]}"' in script_text
     assert "ringrift-selfplay-worker.service" in script_text
     assert "ringrift-evaluator.service" in script_text
     assert "disable ringrift-p2p" not in script_text
