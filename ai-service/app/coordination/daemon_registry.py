@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from app.coordination.daemon_types import DaemonType
 
 if TYPE_CHECKING:
-    from app.coordination import daemon_runners
+    import app.coordination.daemon_runners as daemon_runners
 
 
 @dataclass(frozen=True)
@@ -1123,7 +1123,7 @@ def validate_registry() -> list[str]:
     # 2. By that point, both daemon_registry and daemon_runners are fully loaded
     # 3. daemon_runners only imports DaemonType in TYPE_CHECKING (not at runtime)
     try:
-        from app.coordination import daemon_runners
+        import app.coordination.daemon_runners as daemon_runners
 
         for daemon_type, spec in DAEMON_REGISTRY.items():
             if not hasattr(daemon_runners, spec.runner_name):
@@ -1212,7 +1212,7 @@ def check_registry_health() -> "HealthCheckResult":
     # check_registry_health() is called at runtime for health monitoring, not at import time.
     missing_runners: list[str] = []
     try:
-        from app.coordination import daemon_runners
+        import app.coordination.daemon_runners as daemon_runners
 
         for daemon_type, spec in DAEMON_REGISTRY.items():
             if not hasattr(daemon_runners, spec.runner_name):

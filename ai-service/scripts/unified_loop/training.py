@@ -159,7 +159,7 @@ except ImportError:
 
 # Coordination utilities
 try:
-    from app.coordination import estimate_task_duration
+    from app.coordination.duration_scheduler import estimate_task_duration
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False

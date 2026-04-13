@@ -8,6 +8,7 @@ training event emission separate from the daemon/event-shell code in
 from __future__ import annotations
 
 import json
+import importlib
 import logging
 import os
 import sqlite3
@@ -65,8 +66,7 @@ logger = logging.getLogger(__name__)
 def _coordinator_compat_attr(name: str, default: Any) -> Any:
     """Read compatibility exports from ``training_coordinator.py``."""
     try:
-        from app.coordination import training_coordinator as coordinator_module
-
+        coordinator_module = importlib.import_module("app.coordination.training_coordinator")
         return getattr(coordinator_module, name, default)
     except ImportError:
         return default

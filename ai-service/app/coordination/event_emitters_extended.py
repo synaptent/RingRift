@@ -42,9 +42,9 @@ async def emit_curriculum_updated(
     Example:
         await emit_curriculum_updated("square8_2p", 1.3, trigger="promotion")
     """
-    from app.coordination import event_emitters
+    from app.coordination.event_emitters import emit_curriculum_rebalanced
 
-    return await event_emitters.emit_curriculum_rebalanced(
+    return await emit_curriculum_rebalanced(
         config=config_key,
         old_weights={},  # Old weights often not available for single updates
         new_weights=all_weights or {config_key: new_weight},

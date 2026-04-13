@@ -522,7 +522,7 @@ class JobTargetingMixin:
             try:
                 # Import QueueType here to avoid circular imports
                 try:
-                    from app.coordination import QueueType
+                    from app.coordination.queue_monitor import QueueType
 
                     queue_type = QueueType.TRAINING_DATA
                 except ImportError:

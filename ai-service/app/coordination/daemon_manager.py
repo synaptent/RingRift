@@ -123,7 +123,7 @@ from app.coordination.daemon_event_handlers import DaemonEventHandlers
 # 1. daemon_runners.py only uses TYPE_CHECKING for DaemonType (not executed at import)
 # 2. The import of get_daemon_manager is inside a function body (lazy evaluation)
 # 3. By the time create_health_server() is called, daemon_manager.py is fully loaded
-from app.coordination import daemon_runners
+import app.coordination.daemon_runners as daemon_runners
 
 logger = logging.getLogger(__name__)
 

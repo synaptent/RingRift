@@ -18,7 +18,10 @@ from scripts.p2p.p2p_mixin_base import P2PMixinBase
 from scripts.p2p.types import NodeRole
 
 try:
-    from app.coordination import NodeResources, get_resource_optimizer
+    from app.coordination.resource_optimizer import (
+        NodeResources,
+        get_resource_optimizer,
+    )
     HAS_NEW_COORDINATION = True
 except ImportError:
     NodeResources = None
