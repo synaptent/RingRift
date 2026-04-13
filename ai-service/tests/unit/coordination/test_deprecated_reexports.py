@@ -8,8 +8,16 @@ Tests verify:
 """
 
 import warnings
+from contextlib import contextmanager
 
 import pytest
+
+
+@contextmanager
+def _ignore_expected_deprecation_warnings():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        yield
 
 
 class TestClusterSyncReexports:
@@ -17,25 +25,29 @@ class TestClusterSyncReexports:
 
     def test_import_sync_scheduler(self):
         """Verify SyncScheduler is accessible."""
-        from app.coordination.cluster.sync import SyncScheduler
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.cluster.sync import SyncScheduler
 
         assert SyncScheduler is not None
 
     def test_import_sync_coordinator(self):
         """Verify SyncCoordinator is accessible."""
-        from app.coordination.cluster.sync import SyncCoordinator
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.cluster.sync import SyncCoordinator
 
         assert SyncCoordinator is not None
 
     def test_import_bandwidth_coordinated_rsync(self):
         """Verify BandwidthCoordinatedRsync is accessible."""
-        from app.coordination.cluster.sync import BandwidthCoordinatedRsync
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.cluster.sync import BandwidthCoordinatedRsync
 
         assert BandwidthCoordinatedRsync is not None
 
     def test_import_sync_mutex(self):
         """Verify SyncMutex is accessible."""
-        from app.coordination.cluster.sync import SyncMutex
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.cluster.sync import SyncMutex
 
         assert SyncMutex is not None
 
@@ -45,19 +57,22 @@ class TestTrainingOrchestratorReexports:
 
     def test_import_training_coordinator(self):
         """Verify TrainingCoordinator is accessible."""
-        from app.coordination.training.orchestrator import TrainingCoordinator
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training.orchestrator import TrainingCoordinator
 
         assert TrainingCoordinator is not None
 
     def test_import_selfplay_orchestrator(self):
         """Verify SelfplayOrchestrator is accessible."""
-        from app.coordination.training.orchestrator import SelfplayOrchestrator
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training.orchestrator import SelfplayOrchestrator
 
         assert SelfplayOrchestrator is not None
 
     def test_import_all_exports(self):
         """Verify __all__ exports are accessible."""
-        from app.coordination.training import orchestrator
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training import orchestrator
 
         # Should have multiple exports
         assert hasattr(orchestrator, "__all__")
@@ -71,19 +86,22 @@ class TestTrainingSchedulerReexports:
 
     def test_import_priority_job_scheduler(self):
         """Verify PriorityJobScheduler is accessible."""
-        from app.coordination.training.scheduler import PriorityJobScheduler
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training.scheduler import PriorityJobScheduler
 
         assert PriorityJobScheduler is not None
 
     def test_import_unified_scheduler(self):
         """Verify UnifiedScheduler is accessible."""
-        from app.coordination.training.scheduler import UnifiedScheduler
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training.scheduler import UnifiedScheduler
 
         assert UnifiedScheduler is not None
 
     def test_import_all_exports(self):
         """Verify __all__ exports are accessible."""
-        from app.coordination.training import scheduler
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training import scheduler
 
         assert hasattr(scheduler, "__all__")
         for name in scheduler.__all__:
@@ -113,7 +131,8 @@ class TestBaseHandlerDeprecated:
 
     def test_import_handler_base(self):
         """Verify HandlerBase is accessible from deprecated path."""
-        from app.coordination.base_handler import HandlerBase
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.base_handler import HandlerBase
 
         assert HandlerBase is not None
 
@@ -129,18 +148,21 @@ class TestNoCircularImportsInReexports:
 
     def test_cluster_sync_no_circular_import(self):
         """Verify cluster.sync imports without circular errors."""
-        from app.coordination.cluster import sync
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.cluster import sync
 
         assert sync is not None
 
     def test_training_orchestrator_no_circular_import(self):
         """Verify training.orchestrator imports without circular errors."""
-        from app.coordination.training import orchestrator
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training import orchestrator
 
         assert orchestrator is not None
 
     def test_training_scheduler_no_circular_import(self):
         """Verify training.scheduler imports without circular errors."""
-        from app.coordination.training import scheduler
+        with _ignore_expected_deprecation_warnings():
+            from app.coordination.training import scheduler
 
         assert scheduler is not None

@@ -100,7 +100,9 @@ def get_all_providers() -> list["CloudProvider"]:
     providers = []
     for provider_type in ProviderType:
         try:
-            provider = get_provider(provider_type)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                provider = get_provider(provider_type)
             if provider.is_configured():
                 providers.append(provider)
         except (ImportError, ModuleNotFoundError, ValueError, AttributeError):

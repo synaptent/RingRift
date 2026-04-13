@@ -7,7 +7,17 @@ the re-exports work correctly.
 December 2025 - Phase 2 test coverage
 """
 
+import warnings
+from contextlib import contextmanager
+
 import pytest
+
+
+@contextmanager
+def _ignore_deprecated_training_reexport_warnings():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        yield
 
 
 class TestOrchestratorReexports:
@@ -15,16 +25,17 @@ class TestOrchestratorReexports:
 
     def test_training_coordinator_exports(self):
         """TrainingCoordinator and related functions are importable."""
-        from app.coordination.training.orchestrator import (
-            TrainingCoordinator,
-            get_training_coordinator,
-            get_training_status,
-            TrainingJob,
-            can_train,
-            request_training_slot,
-            release_training_slot,
-            wire_training_events,
-        )
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.orchestrator import (
+                TrainingCoordinator,
+                get_training_coordinator,
+                get_training_status,
+                TrainingJob,
+                can_train,
+                request_training_slot,
+                release_training_slot,
+                wire_training_events,
+            )
         assert TrainingCoordinator is not None
         assert callable(get_training_coordinator)
         assert callable(get_training_status)
@@ -36,17 +47,18 @@ class TestOrchestratorReexports:
 
     def test_selfplay_orchestrator_exports(self):
         """SelfplayOrchestrator and related functions are importable."""
-        from app.coordination.training.orchestrator import (
-            SelfplayOrchestrator,
-            get_selfplay_orchestrator,
-            get_selfplay_stats,
-            is_large_board,
-            get_engine_for_board,
-            get_simulation_budget_for_board,
-            SelfplayStats,
-            SelfplayType,
-            wire_selfplay_events,
-        )
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.orchestrator import (
+                SelfplayOrchestrator,
+                get_selfplay_orchestrator,
+                get_selfplay_stats,
+                is_large_board,
+                get_engine_for_board,
+                get_simulation_budget_for_board,
+                SelfplayStats,
+                SelfplayType,
+                wire_selfplay_events,
+            )
         assert SelfplayOrchestrator is not None
         assert callable(get_selfplay_orchestrator)
         assert callable(get_selfplay_stats)
@@ -59,7 +71,8 @@ class TestOrchestratorReexports:
 
     def test_all_exports_defined(self):
         """__all__ contains expected exports."""
-        from app.coordination.training import orchestrator
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training import orchestrator
 
         expected = [
             "TrainingCoordinator",
@@ -85,7 +98,8 @@ class TestOrchestratorReexports:
 
     def test_is_large_board_function(self):
         """is_large_board works correctly."""
-        from app.coordination.training.orchestrator import is_large_board
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.orchestrator import is_large_board
 
         # Small boards
         assert is_large_board("hex8") is False
@@ -100,12 +114,13 @@ class TestSchedulerReexports:
 
     def test_job_scheduler_exports(self):
         """PriorityJobScheduler and related classes are importable."""
-        from app.coordination.training.scheduler import (
-            PriorityJobScheduler,
-            JobPriority,
-            ScheduledJob,
-            HostDeadJobMigrator,
-        )
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.scheduler import (
+                PriorityJobScheduler,
+                JobPriority,
+                ScheduledJob,
+                HostDeadJobMigrator,
+            )
         assert PriorityJobScheduler is not None
         assert JobPriority is not None
         assert ScheduledJob is not None
@@ -113,13 +128,14 @@ class TestSchedulerReexports:
 
     def test_duration_scheduler_exports(self):
         """DurationScheduler and related functions are importable."""
-        from app.coordination.training.scheduler import (
-            DurationScheduler,
-            ScheduledTask,
-            TaskDurationRecord,
-            estimate_task_duration,
-            can_schedule_task,
-        )
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.scheduler import (
+                DurationScheduler,
+                ScheduledTask,
+                TaskDurationRecord,
+                estimate_task_duration,
+                can_schedule_task,
+            )
         assert DurationScheduler is not None
         assert ScheduledTask is not None
         assert TaskDurationRecord is not None
@@ -128,21 +144,24 @@ class TestSchedulerReexports:
 
     def test_work_distributor_export(self):
         """WorkDistributor is importable."""
-        from app.coordination.training.scheduler import WorkDistributor
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.scheduler import WorkDistributor
         assert WorkDistributor is not None
 
     def test_unified_scheduler_exports(self):
         """UnifiedScheduler and factory function are importable."""
-        from app.coordination.training.scheduler import (
-            UnifiedScheduler,
-            get_unified_scheduler,
-        )
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.scheduler import (
+                UnifiedScheduler,
+                get_unified_scheduler,
+            )
         assert UnifiedScheduler is not None
         assert callable(get_unified_scheduler)
 
     def test_all_exports_defined(self):
         """__all__ contains expected exports."""
-        from app.coordination.training import scheduler
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training import scheduler
 
         expected = [
             "PriorityJobScheduler",
@@ -163,7 +182,8 @@ class TestSchedulerReexports:
 
     def test_job_priority_enum(self):
         """JobPriority enum has expected values."""
-        from app.coordination.training.scheduler import JobPriority
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training.scheduler import JobPriority
 
         # Should have priority levels
         assert hasattr(JobPriority, "HIGH") or hasattr(JobPriority, "CRITICAL")
@@ -180,10 +200,12 @@ class TestModuleInit:
 
     def test_orchestrator_submodule_importable(self):
         """Orchestrator submodule can be imported."""
-        from app.coordination.training import orchestrator
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training import orchestrator
         assert orchestrator is not None
 
     def test_scheduler_submodule_importable(self):
         """Scheduler submodule can be imported."""
-        from app.coordination.training import scheduler
+        with _ignore_deprecated_training_reexport_warnings():
+            from app.coordination.training import scheduler
         assert scheduler is not None

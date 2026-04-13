@@ -55,7 +55,6 @@ from app.core.event_bus import (
     EventFilter,
     EventHandler,
     _get_or_create_event_bus,
-    get_event_bus,
     subscribe,
 )
 
@@ -70,6 +69,11 @@ except ImportError:
         return None
 
 logger = logging.getLogger(__name__)
+
+
+def _publish_sync_legacy_event(event: Event) -> int:
+    """Publish on the legacy event bus without triggering deprecation warnings."""
+    return _get_or_create_event_bus().publish_sync(event)
 
 
 async def publish(event: Event) -> int:
@@ -926,7 +930,7 @@ def publish_composite_elo_updated_sync(
         is_improvement=elo_delta > 0,
         source="composite_elo",
     )
-    return get_event_bus().publish_sync(event)
+    return _publish_sync_legacy_event(event)
 
 
 # =============================================================================
@@ -957,7 +961,7 @@ def publish_training_started_sync(
         **kwargs,
     })
 
-    return get_event_bus().publish_sync(event)
+    return _publish_sync_legacy_event(event)
 
 
 def publish_step_completed_sync(
@@ -975,7 +979,7 @@ def publish_step_completed_sync(
         source="training",
         **kwargs,
     )
-    return get_event_bus().publish_sync(event)
+    return _publish_sync_legacy_event(event)
 
 
 def publish_checkpoint_saved_sync(
@@ -993,7 +997,7 @@ def publish_checkpoint_saved_sync(
         source="checkpoint",
         **kwargs,
     )
-    return get_event_bus().publish_sync(event)
+    return _publish_sync_legacy_event(event)
 
 
 # =============================================================================
@@ -1092,7 +1096,7 @@ def wire_background_evaluator_events(evaluator: Any) -> None:
         original_process(result)
 
         # Publish event (sync since we're in a thread)
-        bus = get_event_bus()
+        bus = _get_or_create_event_bus()
 
         event = EvaluationCompletedEvent(
             topic=TrainingTopics.EVAL_COMPLETED,

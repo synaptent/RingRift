@@ -9,6 +9,7 @@ Tests focus on:
 """
 
 import asyncio
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -541,7 +542,9 @@ class TestCoordinationBootstrap:
 
     def test_bootstrap_status_initial(self):
         """Test initial bootstrap status."""
-        from app.coordination.coordination_bootstrap import get_bootstrap_status, reset_bootstrap_state
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.coordination_bootstrap import get_bootstrap_status, reset_bootstrap_state
 
         reset_bootstrap_state()
         status = get_bootstrap_status()
@@ -551,18 +554,22 @@ class TestCoordinationBootstrap:
 
     def test_is_coordination_ready_before_bootstrap(self):
         """Test is_coordination_ready before bootstrap."""
-        from app.coordination.coordination_bootstrap import is_coordination_ready, reset_bootstrap_state
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.coordination_bootstrap import is_coordination_ready, reset_bootstrap_state
 
         reset_bootstrap_state()
         assert not is_coordination_ready()
 
     def test_bootstrap_with_all_disabled(self):
         """Test bootstrap with all coordinators disabled."""
-        from app.coordination.coordination_bootstrap import (
-            bootstrap_coordination,
-            get_bootstrap_status,
-            reset_bootstrap_state,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.coordination_bootstrap import (
+                bootstrap_coordination,
+                get_bootstrap_status,
+                reset_bootstrap_state,
+            )
 
         reset_bootstrap_state()
 
@@ -598,11 +605,13 @@ class TestCoordinationBootstrap:
 
     def test_bootstrap_selective(self):
         """Test selective coordinator initialization."""
-        from app.coordination.coordination_bootstrap import (
-            bootstrap_coordination,
-            get_bootstrap_status,
-            reset_bootstrap_state,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.coordination_bootstrap import (
+                bootstrap_coordination,
+                get_bootstrap_status,
+                reset_bootstrap_state,
+            )
 
         reset_bootstrap_state()
 
