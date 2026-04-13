@@ -916,13 +916,13 @@ class HeuristicTierSpec:
 HEURISTIC_TIER_SPECS: list[HeuristicTierSpec] = [
     HeuristicTierSpec(
         id="sq8_heuristic_baseline_v1",
-        name="Square8 – heuristic_v1 vs baseline_v1 (eval pool v1)",
+        name="Square8 – heuristic_v1 balanced baseline (eval pool v1)",
         board_type=BoardType.SQUARE8,
         num_players=2,
         eval_pool_id="v1",
         num_games=64,
-        candidate_profile_id="baseline_v1_balanced",
-        baseline_profile_id="baseline_v1_balanced",
+        candidate_profile_id="heuristic_v1_balanced",
+        baseline_profile_id="heuristic_v1_balanced",
         description=(
             "Sanity-check tier evaluating the canonical v1 balanced "
             "heuristic weights on the Square8 v1 eval pool."

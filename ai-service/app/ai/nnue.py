@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import gc
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -516,12 +517,21 @@ class RingRiftNNUE(nn.Module):
         self.cpu()
         self.eval()
 
-        # Dynamic quantization: quantizes weights to int8, activations at runtime
-        quantized = torch.quantization.quantize_dynamic(
-            self,
-            {nn.Linear},  # Quantize Linear layers
-            dtype=torch.qint8,
-        )
+        # PyTorch's eager quantization API is currently deprecated upstream, but
+        # it is still the compatibility path available in this codebase until a
+        # torchao migration lands.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"torch\.ao\.quantization is deprecated",
+                category=DeprecationWarning,
+            )
+            # Dynamic quantization: quantizes weights to int8, activations at runtime
+            quantized = torch.quantization.quantize_dynamic(
+                self,
+                {nn.Linear},  # Quantize Linear layers
+                dtype=torch.qint8,
+            )
 
         logger.info("Applied dynamic int8 quantization to NNUE model")
         return quantized

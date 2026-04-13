@@ -449,7 +449,10 @@ class TestStepSchedulers:
         """Test with epoch scheduler."""
         scheduler = torch.optim.lr_scheduler.StepLR(epoch_context.optimizer, step_size=5)
         epoch_context.epoch_scheduler = scheduler
-        initial_lr = epoch_context.optimizer.param_groups[0]["lr"]
+
+        # Mirror the real training order: optimizer.step() before scheduler.step().
+        epoch_context.optimizer.zero_grad()
+        epoch_context.optimizer.step()
 
         step_schedulers(epoch_context, val_loss=0.5, epoch=0)
 
