@@ -353,15 +353,16 @@ class TestEdgeCases:
 
     def test_handles_extreme_quality_values(self, scheduler):
         """Test handles extreme quality values."""
-        # Negative quality (should not happen but defensive)
-        event1 = MagicMock()
-        event1.payload = {"quality_score": -0.5, "old_state": "ok", "new_state": "critical"}
-        scheduler._on_low_quality_warning(event1)
+        with patch("app.coordination.event_emission_helpers.safe_emit_event", return_value=False):
+            # Negative quality (should not happen but defensive)
+            event1 = MagicMock()
+            event1.payload = {"quality_score": -0.5, "old_state": "ok", "new_state": "critical"}
+            scheduler._on_low_quality_warning(event1)
 
-        # Quality > 1.0 (should not happen)
-        event2 = MagicMock()
-        event2.payload = {"quality_score": 1.5, "old_state": "ok", "new_state": "ok"}
-        scheduler._on_low_quality_warning(event2)
+            # Quality > 1.0 (should not happen)
+            event2 = MagicMock()
+            event2.payload = {"quality_score": 1.5, "old_state": "ok", "new_state": "ok"}
+            scheduler._on_low_quality_warning(event2)
 
     def test_thread_safety(self, scheduler):
         """Test concurrent low quality handling is thread-safe."""

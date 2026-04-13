@@ -613,22 +613,24 @@ class TestCoordinationBootstrap:
                 reset_bootstrap_state,
             )
 
-        reset_bootstrap_state()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            reset_bootstrap_state()
 
-        # Only enable metrics
-        status = bootstrap_coordination(
-            enable_resources=False,
-            enable_metrics=True,
-            enable_optimization=False,
-            enable_cache=False,
-            enable_model=False,
-            enable_error=False,
-            enable_leadership=False,
-            enable_selfplay=False,
-            enable_pipeline=False,
-            enable_task=False,
-            register_with_registry=False,
-        )
+            # Only enable metrics
+            status = bootstrap_coordination(
+                enable_resources=False,
+                enable_metrics=True,
+                enable_optimization=False,
+                enable_cache=False,
+                enable_model=False,
+                enable_error=False,
+                enable_leadership=False,
+                enable_selfplay=False,
+                enable_pipeline=False,
+                enable_task=False,
+                register_with_registry=False,
+            )
 
         assert status["initialized"] is True
         assert "metrics_orchestrator" in status["coordinators"]
@@ -644,7 +646,9 @@ class TestEventEmitters:
     @pytest.mark.asyncio
     async def test_emit_backpressure_activated_without_bus(self):
         """Test emit_backpressure_activated handles missing bus gracefully."""
-        from app.coordination.event_emitters import emit_backpressure_activated
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.event_emitters import emit_backpressure_activated
 
         # Should not raise even without event bus
         result = await emit_backpressure_activated(
@@ -659,7 +663,9 @@ class TestEventEmitters:
     @pytest.mark.asyncio
     async def test_emit_plateau_detected_without_bus(self):
         """Test emit_plateau_detected handles missing bus gracefully."""
-        from app.coordination.event_emitters import emit_plateau_detected
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.event_emitters import emit_plateau_detected
 
         result = await emit_plateau_detected(
             metric_name="val_loss",
@@ -673,7 +679,9 @@ class TestEventEmitters:
     @pytest.mark.asyncio
     async def test_emit_regression_detected_without_bus(self):
         """Test emit_regression_detected handles missing bus gracefully."""
-        from app.coordination.event_emitters import emit_regression_detected
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.event_emitters import emit_regression_detected
 
         result = await emit_regression_detected(
             metric_name="elo",
