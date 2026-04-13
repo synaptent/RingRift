@@ -15,7 +15,7 @@ from app.config.thresholds import SQLITE_CONNECT_TIMEOUT, SQLITE_SHORT_TIMEOUT
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_utils import parse_config_key
 from app.coordination.types import WorkStatus
-from app.coordination.work_queue import (
+from app.coordination.work_queue_models import (
     BACKPRESSURE_HARD_LIMIT,
     BACKPRESSURE_RECOVERY_THRESHOLD,
     BACKPRESSURE_SOFT_LIMIT,

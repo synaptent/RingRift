@@ -1168,7 +1168,7 @@ class TestClusterScaling:
     @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._load_existing_elo")
     def test_scale_queue_depth_with_active_nodes(self, mock_load):
         """Test queue depth scaling with active nodes."""
-        with patch("app.distributed.cluster_monitor.ClusterMonitor") as mock_monitor_class:
+        with patch("app.coordination.cluster_status_monitor.ClusterMonitor") as mock_monitor_class:
             mock_monitor = MagicMock()
             mock_monitor.get_cluster_status.return_value = MagicMock(active_nodes=25)
             mock_monitor_class.return_value = mock_monitor
@@ -1182,7 +1182,7 @@ class TestClusterScaling:
     @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._load_existing_elo")
     def test_scale_queue_depth_large_cluster(self, mock_load):
         """Test queue depth scaling with large cluster."""
-        with patch("app.distributed.cluster_monitor.ClusterMonitor") as mock_monitor_class:
+        with patch("app.coordination.cluster_status_monitor.ClusterMonitor") as mock_monitor_class:
             mock_monitor = MagicMock()
             mock_monitor.get_cluster_status.return_value = MagicMock(active_nodes=100)
             mock_monitor_class.return_value = mock_monitor

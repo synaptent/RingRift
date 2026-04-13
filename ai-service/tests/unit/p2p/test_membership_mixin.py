@@ -18,25 +18,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Import with graceful fallback for missing swim-p2p dependency
-try:
-    from scripts.p2p.membership_mixin import (
-        MembershipMixin,
-        SWIM_ENABLED,
-        SWIM_ADAPTER_AVAILABLE,
-        MEMBERSHIP_MODE,
-    )
-    MIXIN_IMPORTABLE = True
-except ImportError:
-    MIXIN_IMPORTABLE = False
-    MembershipMixin = None
+from scripts.p2p.membership_mixin import (
+    MEMBERSHIP_MODE,
+    SWIM_ADAPTER_AVAILABLE,
+    SWIM_ENABLED,
+    MembershipMixin,
+)
 
 
 @pytest.fixture
 def mock_orchestrator():
     """Create a mock orchestrator with required attributes for MembershipMixin."""
 
-    class MockOrchestrator(MembershipMixin if MIXIN_IMPORTABLE else object):
+    class MockOrchestrator(MembershipMixin):
         def __init__(self):
             self.node_id = "test-node-1"
             self.peers = {}
@@ -50,9 +44,6 @@ def mock_orchestrator():
             """Track event emissions for testing."""
             self._event_emissions.append((event_type, payload))
 
-    if not MIXIN_IMPORTABLE:
-        pytest.skip("membership_mixin not importable")
-
     return MockOrchestrator()
 
 
@@ -61,14 +52,10 @@ class TestMembershipMixinImport:
 
     def test_mixin_importable(self):
         """Test that MembershipMixin can be imported."""
-        if not MIXIN_IMPORTABLE:
-            pytest.skip("membership_mixin not importable")
         assert MembershipMixin is not None
 
     def test_swim_constants_defined(self):
         """Test SWIM constants are defined."""
-        if not MIXIN_IMPORTABLE:
-            pytest.skip("membership_mixin not importable")
         # These should be defined regardless of SWIM availability
         assert isinstance(SWIM_ENABLED, bool)
         assert isinstance(SWIM_ADAPTER_AVAILABLE, bool)

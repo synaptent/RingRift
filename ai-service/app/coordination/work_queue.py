@@ -38,9 +38,6 @@ import os
 import sys
 import threading
 import time
-import uuid
-from dataclasses import asdict, dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +52,15 @@ from app.coordination.work_queue_backends import (
     BackendType,
     WorkQueueBackend,
 )
+from app.coordination.work_queue_models import (
+    BACKPRESSURE_HARD_LIMIT,
+    BACKPRESSURE_RECOVERY_THRESHOLD,
+    BACKPRESSURE_SOFT_LIMIT,
+    ClaimRejectionStats,
+    WorkItem,
+    WorkQueueBackendType,
+    WorkType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +68,6 @@ logger = logging.getLogger(__name__)
 # ============================================
 # Work Queue Backend Selection (Dec 30, 2025 - P5.1)
 # ============================================
-
-
-class WorkQueueBackendType(str, Enum):
-    """Available work queue backend types."""
-
-    RAFT = "raft"  # Cluster-wide via Raft consensus
-    SQLITE = "sqlite"  # Local SQLite database
 
 
 # Raft work queue availability check (cached)
@@ -211,16 +210,6 @@ DEFAULT_DB_PATH = Path(os.environ.get("RINGRIFT_WORK_QUEUE_DB", str(_DEFAULT_DB_
 # Jan 27, 2026: Increased to 15000 hard limit to provide recovery headroom.
 # With 20 nodes × 25 cores × 2 items/min = 1000 items/min capacity.
 # 15000 limit provides ~15 min buffer for backpressure handling.
-# Soft limit: Emit BACKPRESSURE_ACTIVATED event, warn callers
-# Hard limit: Reject new items, force callers to wait
-# Feb 28, 2026: Lowered from 7500/15000 — only ~7 GPU nodes can consume work,
-# so 15K pending items = 2000+ per node = days of backlog. 500/1000 is ~2h drain time.
-BACKPRESSURE_SOFT_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_SOFT_LIMIT", "500"))
-BACKPRESSURE_HARD_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_HARD_LIMIT", "1000"))
-# Recovery threshold: Emit BACKPRESSURE_RELEASED when queue drops below this
-BACKPRESSURE_RECOVERY_THRESHOLD = int(os.environ.get("RINGRIFT_WORK_QUEUE_RECOVERY", "200"))
-
-
 class SlackWorkQueueNotifier:
     """Simple Slack notifier for work queue events."""
 
@@ -299,180 +288,6 @@ class SlackWorkQueueNotifier:
             f"Node: `{item.claimed_by}` | Timeout: {item.timeout_seconds}s",
             color="#e01e5a" if permanent else "#f2c744"
         )
-
-
-class WorkType(str, Enum):
-    """Types of work that can be queued."""
-    TRAINING = "training"
-    GPU_CMAES = "gpu_cmaes"
-    CPU_CMAES = "cpu_cmaes"
-    TOURNAMENT = "tournament"
-    GAUNTLET = "gauntlet"
-    SELFPLAY = "selfplay"
-    DATA_MERGE = "data_merge"
-    DATA_SYNC = "data_sync"
-    VALIDATION = "validation"  # Model validation against baselines
-    HYPERPARAM_SWEEP = "hyperparam_sweep"  # Hyperparameter tuning trials
-
-
-# WorkStatus is now imported from app.coordination.types
-# Canonical values: PENDING, CLAIMED, RUNNING, COMPLETED, FAILED, CANCELLED, TIMEOUT
-
-
-@dataclass
-class WorkItem:
-    """A unit of work to be executed."""
-    work_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    work_type: WorkType = WorkType.SELFPLAY
-    priority: int = 50  # Higher = more urgent (0-100)
-    config: dict[str, Any] = field(default_factory=dict)
-
-    # Scheduling
-    created_at: float = field(default_factory=time.time)
-    claimed_at: float = 0.0
-    started_at: float = 0.0
-    completed_at: float = 0.0
-
-    # Assignment
-    status: WorkStatus = WorkStatus.PENDING
-    claimed_by: str = ""  # node_id
-    attempts: int = 0
-    max_attempts: int = 3
-    timeout_seconds: float = 3600.0  # 1 hour default
-
-    # Results
-    result: dict[str, Any] = field(default_factory=dict)
-    error: str = ""
-
-    # Dependencies - list of work_ids that must complete before this can run
-    depends_on: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        d["work_type"] = self.work_type.value
-        d["status"] = self.status.value
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> WorkItem:
-        d = d.copy()
-        d["work_type"] = WorkType(d.get("work_type", "selfplay"))
-        d["status"] = WorkStatus(d.get("status", "pending"))
-        # Handle depends_on - ensure it's a list
-        if "depends_on" in d and isinstance(d["depends_on"], str):
-            import json
-            try:
-                d["depends_on"] = json.loads(d["depends_on"]) if d["depends_on"] else []
-            except (json.JSONDecodeError, TypeError):
-                d["depends_on"] = []
-        # Feb 2026: Cast numeric fields to prevent type errors from JSON/gossip
-        for float_field in ("created_at", "claimed_at", "started_at", "completed_at", "timeout_seconds"):
-            if float_field in d and not isinstance(d[float_field], (int, float)):
-                try:
-                    d[float_field] = float(d[float_field])
-                except (ValueError, TypeError):
-                    d[float_field] = 0.0
-        for int_field in ("priority", "attempts", "max_attempts"):
-            if int_field in d and not isinstance(d[int_field], int):
-                try:
-                    d[int_field] = int(d[int_field])
-                except (ValueError, TypeError):
-                    d[int_field] = 0
-        return cls(**d)
-
-    def is_claimable(self) -> bool:
-        """Check if this work can be claimed (doesn't check dependencies)."""
-        if self.status != WorkStatus.PENDING:
-            return False
-        return not self.attempts >= self.max_attempts
-
-    def has_pending_dependencies(self, completed_ids: set[str]) -> bool:
-        """Check if any dependencies are not yet completed.
-
-        Args:
-            completed_ids: Set of work_ids that are completed
-
-        Returns:
-            True if there are unmet dependencies, False if all deps are met
-        """
-        if not self.depends_on:
-            return False
-        return any(dep_id not in completed_ids for dep_id in self.depends_on)
-
-    def is_timed_out(self) -> bool:
-        """Check if this work has timed out."""
-        if self.status not in (WorkStatus.CLAIMED, WorkStatus.RUNNING):
-            return False
-        if self.claimed_at == 0:
-            return False
-        return time.time() - self.claimed_at > self.timeout_seconds
-
-
-@dataclass
-class ClaimRejectionStats:
-    """Track why jobs are not being dispatched to improve observability.
-
-    Jan 2, 2026: Added to diagnose GPU node idle issues where jobs queue
-    but never dispatch. Jobs pass through 7 filtering gates in claim_work()
-    that can silently reject them.
-    """
-
-    total_claim_attempts: int = 0
-    rejected_by_circuit_breaker: int = 0  # Jan 6, 2026: Node circuit is OPEN
-    rejected_by_capability: int = 0
-    rejected_by_exclusion: int = 0
-    rejected_by_target_node: int = 0
-    rejected_by_target_node_expired: int = 0  # target_node was cleared due to expiration
-    rejected_by_requires_gpu: int = 0
-    rejected_by_policy: int = 0
-    rejected_by_already_claimed: int = 0
-    successful_claims: int = 0
-
-    # Track which target_nodes are being rejected most often
-    target_node_rejections: dict[str, int] = field(default_factory=dict)
-
-    # Timestamp of last reset (for rate calculations)
-    last_reset_at: float = field(default_factory=time.time)
-
-    def increment_target_node_rejection(self, target_node: str) -> None:
-        """Track rejection by specific target_node."""
-        self.rejected_by_target_node += 1
-        self.target_node_rejections[target_node] = (
-            self.target_node_rejections.get(target_node, 0) + 1
-        )
-
-    def reset(self) -> None:
-        """Reset all counters."""
-        self.total_claim_attempts = 0
-        self.rejected_by_circuit_breaker = 0
-        self.rejected_by_capability = 0
-        self.rejected_by_exclusion = 0
-        self.rejected_by_target_node = 0
-        self.rejected_by_target_node_expired = 0
-        self.rejected_by_requires_gpu = 0
-        self.rejected_by_policy = 0
-        self.rejected_by_already_claimed = 0
-        self.successful_claims = 0
-        self.target_node_rejections.clear()
-        self.last_reset_at = time.time()
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for JSON serialization."""
-        return {
-            "total_claim_attempts": self.total_claim_attempts,
-            "rejected_by_circuit_breaker": self.rejected_by_circuit_breaker,
-            "rejected_by_capability": self.rejected_by_capability,
-            "rejected_by_exclusion": self.rejected_by_exclusion,
-            "rejected_by_target_node": self.rejected_by_target_node,
-            "rejected_by_target_node_expired": self.rejected_by_target_node_expired,
-            "rejected_by_requires_gpu": self.rejected_by_requires_gpu,
-            "rejected_by_policy": self.rejected_by_policy,
-            "rejected_by_already_claimed": self.rejected_by_already_claimed,
-            "successful_claims": self.successful_claims,
-            "target_node_rejections": self.target_node_rejections.copy(),
-            "last_reset_at": self.last_reset_at,
-            "elapsed_seconds": time.time() - self.last_reset_at,
-        }
 
 
 from app.coordination.work_queue_storage import WorkQueueStorageMixin

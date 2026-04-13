@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from app.distributed.cluster_monitor import ClusterMonitor, ClusterStatus, NodeStatus
+from app.coordination.cluster_status_monitor import ClusterMonitor, ClusterStatus, NodeStatus
 
 # =============================================================================
 # Fixtures

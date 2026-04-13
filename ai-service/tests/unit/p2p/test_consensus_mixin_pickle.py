@@ -10,6 +10,13 @@ from __future__ import annotations
 import pickle
 from unittest.mock import MagicMock, patch
 
+from scripts.p2p.consensus_mixin import (
+    PYSYNCOBJ_AVAILABLE,
+    RAFT_ENABLED,
+    RaftInitState,
+    ReplicatedWorkQueue,
+)
+
 
 class TestReplicatedWorkQueuePickle:
     """Tests for ReplicatedWorkQueue pickle serialization."""
@@ -155,32 +162,13 @@ class TestImportConsensusMixin:
 
     def test_import_consensus_mixin(self):
         """Verify consensus_mixin can be imported."""
-        try:
-            from scripts.p2p.consensus_mixin import (
-                RaftInitState,
-                RAFT_ENABLED,
-                PYSYNCOBJ_AVAILABLE,
-            )
-            # Basic assertions
-            assert hasattr(RaftInitState, "READY")
-            assert hasattr(RaftInitState, "FAILED")
-            assert isinstance(RAFT_ENABLED, bool)
-            assert isinstance(PYSYNCOBJ_AVAILABLE, bool)
-        except ImportError as e:
-            # May fail if running tests outside of project context
-            import pytest
-            pytest.skip(f"Could not import consensus_mixin: {e}")
+        assert hasattr(RaftInitState, "READY")
+        assert hasattr(RaftInitState, "FAILED")
+        assert isinstance(RAFT_ENABLED, bool)
+        assert isinstance(PYSYNCOBJ_AVAILABLE, bool)
 
     def test_replicated_work_queue_has_pickle_methods(self):
         """Verify ReplicatedWorkQueue has __getstate__ and __setstate__ if pysyncobj available."""
-        try:
-            from scripts.p2p.consensus_mixin import (
-                ReplicatedWorkQueue,
-                PYSYNCOBJ_AVAILABLE,
-            )
-            if PYSYNCOBJ_AVAILABLE and ReplicatedWorkQueue is not None:
-                assert hasattr(ReplicatedWorkQueue, "__getstate__")
-                assert hasattr(ReplicatedWorkQueue, "__setstate__")
-        except ImportError as e:
-            import pytest
-            pytest.skip(f"Could not import consensus_mixin: {e}")
+        if PYSYNCOBJ_AVAILABLE and ReplicatedWorkQueue is not None:
+            assert hasattr(ReplicatedWorkQueue, "__getstate__")
+            assert hasattr(ReplicatedWorkQueue, "__setstate__")

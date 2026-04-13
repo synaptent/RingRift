@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime
 from pathlib import Path
 
-from app.distributed.cluster_monitor import (
+from app.coordination.cluster_status_monitor import (
     ClusterMonitor,
     ClusterStatus,
     NodeStatus,

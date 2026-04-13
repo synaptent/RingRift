@@ -20,34 +20,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Import with graceful fallback
-try:
-    from scripts.p2p.event_emission_mixin import (
-        EventEmissionMixin,
-        _check_event_emitters,
-    )
-    MIXIN_IMPORTABLE = True
-except ImportError:
-    MIXIN_IMPORTABLE = False
-    EventEmissionMixin = None
-    _check_event_emitters = None
+from scripts.p2p.event_emission_mixin import (
+    EventEmissionMixin,
+    _check_event_emitters,
+)
 
 
 @pytest.fixture
 def mock_orchestrator():
     """Create a mock orchestrator with EventEmissionMixin."""
 
-    class MockOrchestrator(EventEmissionMixin if MIXIN_IMPORTABLE else object):
+    class MockOrchestrator(EventEmissionMixin):
         def __init__(self):
             self.node_id = "test-node-1"
             self.verbose = False
 
-    if not MIXIN_IMPORTABLE:
-        pytest.skip("event_emission_mixin not importable")
-
     # Reset class-level cache
-    if EventEmissionMixin is not None:
-        EventEmissionMixin._event_emitters_available = None
+    EventEmissionMixin._event_emitters_available = None
 
     return MockOrchestrator()
 
@@ -57,14 +46,10 @@ class TestEventEmissionMixinImport:
 
     def test_mixin_importable(self):
         """Test that EventEmissionMixin can be imported."""
-        if not MIXIN_IMPORTABLE:
-            pytest.skip("event_emission_mixin not importable")
         assert EventEmissionMixin is not None
 
     def test_check_event_emitters_function(self):
         """Test _check_event_emitters function exists."""
-        if not MIXIN_IMPORTABLE:
-            pytest.skip("event_emission_mixin not importable")
         assert _check_event_emitters is not None
         # Should return bool
         result = _check_event_emitters()
