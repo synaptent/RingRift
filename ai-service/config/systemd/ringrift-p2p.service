@@ -5,16 +5,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/ringrift/ai-service
-Environment=PYTHONPATH=/root/ringrift/ai-service
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
 EnvironmentFile=-/etc/ringrift/node.conf
-ExecStartPre=/bin/bash -c 'cd /root/ringrift && git pull origin main 2>/dev/null || true'
-ExecStart=/root/ringrift/ai-service/venv/bin/python scripts/p2p_orchestrator.py --node-id ${NODE_ID} --port 8770 --advertise-host ${ADVERTISE_HOST} --peers ${PEER_LIST} --ringrift-path /root/ringrift
+ExecStartPre=/bin/bash -c 'cd /home/ubuntu/ringrift && git pull origin main 2>/dev/null || true'
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python scripts/p2p_orchestrator.py --node-id ${NODE_ID} --port 8770 --advertise-host ${ADVERTISE_HOST} --peers ${PEER_LIST} --ringrift-path /home/ubuntu/ringrift
 Restart=always
 RestartSec=10
-StandardOutput=append:/root/ringrift/ai-service/logs/p2p.log
-StandardError=append:/root/ringrift/ai-service/logs/p2p.log
+StandardOutput=append:/home/ubuntu/ringrift/ai-service/logs/p2p.log
+StandardError=append:/home/ubuntu/ringrift/ai-service/logs/p2p.log
 
 # Mar 27, 2026: Kill descendant processes via systemd cgroup only.
 # A later broad ExecStopPost pkill pattern also matched independent role
