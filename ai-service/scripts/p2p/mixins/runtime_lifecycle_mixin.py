@@ -15,6 +15,65 @@ class RuntimeLifecycleMixin(P2PMixinBase):
 
     MIXIN_TYPE = "runtime_lifecycle"
 
+    async def _start_tcp_site_with_retry(
+        self,
+        runner: "web.AppRunner",
+        host: str,
+        port: int,
+        *,
+        reuse_address: bool = True,
+        backlog: int = 1024,
+        max_retries: int = 5,
+        initial_delay: float = 2.0,
+        max_delay: float = 30.0,
+    ) -> "web.TCPSite":
+        """Start a fresh TCP site with retry/backoff.
+
+        ``aiohttp`` can partially register a ``TCPSite`` with its runner before
+        surfacing an address-in-use error. Retrying ``start()`` on the same site
+        instance then fails with "Site ... is already registered in runner", so
+        each retry must create a fresh site object.
+        """
+
+        delay = initial_delay
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries):
+            site = web.TCPSite(runner, host, port, reuse_address=reuse_address, backlog=backlog)
+            try:
+                await site.start()
+                return site
+            except OSError as exc:
+                last_error = exc
+                errno_val = getattr(exc, "errno", 0)
+                is_addr_in_use = "Address already in use" in str(exc) or errno_val == 98
+
+                try:
+                    await site.stop()
+                except Exception:
+                    pass
+
+                if is_addr_in_use and attempt < max_retries - 1:
+                    logger.warning(
+                        f"Port {port} busy (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {delay:.1f}s (likely TIME_WAIT state)..."
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, max_delay)
+                    continue
+                if is_addr_in_use:
+                    logger.error(f"Port {port} still in use after {max_retries} attempts.")
+                    logger.error(f"Try: lsof -i :{port} or pkill -f p2p_orchestrator")
+                    raise RuntimeError(f"Port {port} bound after retries - cannot start P2P") from exc
+                if "Invalid argument" in str(exc):
+                    logger.warning(f"TCP socket configuration failed on {host}:{port}: {exc}")
+                    logger.warning("This may be a macOS TCP keepalive compatibility issue")
+                else:
+                    logger.error(f"Failed to bind to {host}:{port}: {exc}")
+                raise
+
+        raise RuntimeError(f"Failed to bind {host}:{port}") from last_error
+
     async def restart_http_server(self) -> bool:
         """Restart the HTTP server gracefully without terminating the process.
 
@@ -58,11 +117,13 @@ class RuntimeLifecycleMixin(P2PMixinBase):
                 await self._http_runner.setup()
 
                 # Re-bind ports
-                site_v4 = web.TCPSite(
-                    self._http_runner, '0.0.0.0', self.port,
-                    reuse_address=True, backlog=1024
+                site_v4 = await self._start_tcp_site_with_retry(
+                    self._http_runner,
+                    "0.0.0.0",
+                    self.port,
+                    reuse_address=True,
+                    backlog=1024,
                 )
-                await site_v4.start()
                 self._http_sites.append(site_v4)
                 logger.info(f"[P2P] HTTP server restarted on 0.0.0.0:{self.port}")
 
@@ -238,52 +299,16 @@ class RuntimeLifecycleMixin(P2PMixinBase):
         # Jan 8, 2026: Added retry with exponential backoff for TIME_WAIT state.
         # After a crash, the port may be in TIME_WAIT for up to 60s. Retry instead of failing.
 
-        # Port binding retry configuration (January 2026)
-        PORT_BIND_MAX_RETRIES = 5
-        PORT_BIND_INITIAL_DELAY = 2.0  # seconds
-        PORT_BIND_MAX_DELAY = 30.0  # seconds
-
-        async def _try_bind_port(site: web.TCPSite, host: str, port: int) -> bool:
-            """Try to bind port with exponential backoff for TIME_WAIT state."""
-            delay = PORT_BIND_INITIAL_DELAY
-            for attempt in range(PORT_BIND_MAX_RETRIES):
-                try:
-                    await site.start()
-                    return True
-                except OSError as e:
-                    errno_val = getattr(e, 'errno', 0)
-                    is_addr_in_use = "Address already in use" in str(e) or errno_val == 98
-
-                    if is_addr_in_use and attempt < PORT_BIND_MAX_RETRIES - 1:
-                        # Likely TIME_WAIT state - retry with backoff
-                        logger.warning(
-                            f"Port {port} busy (attempt {attempt + 1}/{PORT_BIND_MAX_RETRIES}), "
-                            f"retrying in {delay:.1f}s (likely TIME_WAIT state)..."
-                        )
-                        await asyncio.sleep(delay)
-                        delay = min(delay * 2, PORT_BIND_MAX_DELAY)
-                        continue
-                    elif is_addr_in_use:
-                        # Final attempt failed
-                        logger.error(f"Port {port} still in use after {PORT_BIND_MAX_RETRIES} attempts.")
-                        logger.error(f"Try: lsof -i :{port} or pkill -f p2p_orchestrator")
-                        raise RuntimeError(f"Port {port} bound after retries - cannot start P2P") from e
-                    elif "Invalid argument" in str(e):
-                        # macOS TCP keepalive socket option issue - don't retry
-                        logger.warning(f"TCP socket configuration failed on {host}:{port}: {e}")
-                        logger.warning("This may be a macOS TCP keepalive compatibility issue")
-                        raise
-                    else:
-                        # Other errors - don't retry
-                        logger.error(f"Failed to bind to {host}:{port}: {e}")
-                        raise
-            return False  # Should not reach here
-
         bind_host = self.host
         if self.host == "0.0.0.0":
             # Bind to IPv4 first (always needed)
-            site_v4 = web.TCPSite(runner, '0.0.0.0', self.port, reuse_address=True, backlog=1024)
-            await _try_bind_port(site_v4, '0.0.0.0', self.port)
+            site_v4 = await self._start_tcp_site_with_retry(
+                runner,
+                "0.0.0.0",
+                self.port,
+                reuse_address=True,
+                backlog=1024,
+            )
             self._http_sites.append(site_v4)  # Store for graceful restart (Jan 2026)
             logger.info(f"HTTP server started on 0.0.0.0:{self.port} (IPv4, backlog=1024)")
 
@@ -301,8 +326,13 @@ class RuntimeLifecycleMixin(P2PMixinBase):
                 bind_host = "0.0.0.0"
         else:
             # Specific host requested - bind directly with retry
-            site = web.TCPSite(runner, self.host, self.port, reuse_address=True, backlog=1024)
-            await _try_bind_port(site, self.host, self.port)
+            site = await self._start_tcp_site_with_retry(
+                runner,
+                self.host,
+                self.port,
+                reuse_address=True,
+                backlog=1024,
+            )
             self._http_sites.append(site)  # Store for graceful restart (Jan 2026)
             logger.info(f"HTTP server started on {self.host}:{self.port} (backlog=1024)")
 

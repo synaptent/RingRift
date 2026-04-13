@@ -34,7 +34,7 @@ def test_script_references_role_manifest_and_new_services() -> None:
     assert "config/node_roles.yaml" in script_text
     assert "config/systemd/ringrift-p2p.service" in script_text
     assert 'ssh -n "${SSH_OPTS[@]}"' in script_text
-    assert "sudo chown -R ubuntu:ubuntu ~/ringrift/ai-service/logs" in script_text
+    assert "sudo chown -R ubuntu:ubuntu ~/ringrift/ai-service/logs ~/ringrift/ai-service/p2p_state" in script_text
     assert "ringrift-selfplay-worker.service" in script_text
     assert "ringrift-evaluator.service" in script_text
     assert "disable ringrift-p2p" not in script_text

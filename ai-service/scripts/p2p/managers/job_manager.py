@@ -969,6 +969,54 @@ class JobManager(EventSubscriptionMixin):
         mode_lower = engine_mode.lower().strip()
         return mode_lower in self.GPU_REQUIRED_ENGINE_MODES
 
+    def _coerce_effective_mode_for_local_policy(
+        self,
+        *,
+        board_type: str,
+        num_players: int,
+        engine_mode: str,
+    ) -> str:
+        """Normalize local selfplay mode to the manifest-backed workload policy."""
+
+        try:
+            from app.config.node_roles import (
+                POLICY_ONLY_SELFPLAY_PROFILES,
+                get_node_workload_policy,
+            )
+        except Exception:
+            return engine_mode
+
+        try:
+            policy = get_node_workload_policy(self.node_id)
+        except Exception:
+            return engine_mode
+
+        if not policy.resolved:
+            return engine_mode
+
+        board_key = f"{board_type}_{num_players}p"
+        if policy.allowed_config_keys and board_key not in policy.allowed_config_keys:
+            logger.warning(
+                "Node %s received selfplay job for %s outside allowed configs %s; keeping requested mode %s",
+                self.node_id,
+                board_key,
+                policy.allowed_config_keys,
+                engine_mode,
+            )
+            return engine_mode
+
+        if policy.selfplay_profile in POLICY_ONLY_SELFPLAY_PROFILES and engine_mode != "gumbel-mcts":
+            logger.info(
+                "Node %s coerced selfplay mode %s -> gumbel-mcts for %s under profile=%s",
+                self.node_id,
+                engine_mode,
+                board_key,
+                policy.selfplay_profile,
+            )
+            return "gumbel-mcts"
+
+        return engine_mode
+
     def _worker_has_gpu(self, worker: Any) -> bool:
         """Check if a worker node has GPU capability.
 
@@ -2135,6 +2183,11 @@ class JobManager(EventSubscriptionMixin):
 
         # Jan 2026: Default to gumbel-mcts for high-quality training data
         effective_mode = engine_mode or "gumbel-mcts"
+        effective_mode = self._coerce_effective_mode_for_local_policy(
+            board_type=board_type,
+            num_players=num_players,
+            engine_mode=effective_mode,
+        )
 
         # December 2025: GPU availability check using GPU_REQUIRED_ENGINE_MODES
         # This prevents wasting compute on GPU-required modes when no GPU is available

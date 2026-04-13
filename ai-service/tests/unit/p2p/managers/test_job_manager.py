@@ -567,6 +567,39 @@ class TestSelfplayJobLifecycle:
             assert mock_proc.pid == 12345
 
     @pytest.mark.asyncio
+    async def test_policy_profile_coerces_mixed_mode_to_gumbel(self, job_manager):
+        """Policy-bearing workers must not execute mixed-opponent selfplay."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        policy = MagicMock(
+            resolved=True,
+            selfplay_profile="policy-gumbel",
+            allowed_config_keys=("square8_2p",),
+        )
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("os.path.exists", return_value=True), \
+             patch("pathlib.Path.mkdir"), \
+             patch("app.config.node_roles.get_node_workload_policy", return_value=policy):
+            mock_exec.return_value = mock_proc
+
+            await job_manager.run_gpu_selfplay_job(
+                job_id="policy-job-001",
+                board_type="square8",
+                num_players=2,
+                num_games=50,
+                engine_mode="mixed",
+            )
+
+            joined = " ".join(str(part) for part in mock_exec.call_args.args)
+            assert "generate_gumbel_selfplay.py" in joined
+            assert " selfplay.py " not in f" {joined} "
+            assert "--engine mixed" not in joined
+
+    @pytest.mark.asyncio
     async def test_job_timeout_handling(self, job_manager):
         """Verify timeout kills process and updates status."""
         mock_proc = MagicMock()
