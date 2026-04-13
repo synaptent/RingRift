@@ -15,7 +15,7 @@ import logging
 import warnings
 from typing import Any
 
-from app.coordination.runners import _wait_for_daemon
+from app.coordination.runners._shared import wait_for_daemon
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ async def create_idle_resource() -> None:
 
         daemon = IdleResourceDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"IdleResourceDaemon not available: {e}")
         raise
@@ -51,7 +51,7 @@ async def create_cluster_utilization_watchdog() -> None:
 
         daemon = ClusterUtilizationWatchdog.get_instance()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ClusterUtilizationWatchdog not available: {e}")
         raise
@@ -64,7 +64,7 @@ async def create_node_recovery() -> None:
 
         daemon = NodeRecoveryDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"NodeRecoveryDaemon not available: {e}")
         raise
@@ -144,7 +144,7 @@ async def create_adaptive_resources() -> None:
 
         manager = AdaptiveResourceManager()
         await manager.start()
-        await _wait_for_daemon(manager)
+        await wait_for_daemon(manager)
     except ImportError as e:
         logger.error(f"AdaptiveResourceManager not available: {e}")
         raise
@@ -182,7 +182,7 @@ async def create_multi_provider() -> None:
 
         orchestrator = MultiProviderOrchestrator()
         await orchestrator.start()
-        await _wait_for_daemon(orchestrator)
+        await wait_for_daemon(orchestrator)
     except ImportError as e:
         logger.error(f"MultiProviderOrchestrator not available: {e}")
         raise
@@ -203,7 +203,7 @@ async def create_queue_populator() -> None:
         # if ensure_game_counts_loaded() is called eagerly by other init paths.
         daemon = await asyncio.to_thread(UnifiedQueuePopulatorDaemon)
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"UnifiedQueuePopulatorDaemon not available: {e}")
         raise

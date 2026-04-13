@@ -14,7 +14,7 @@ import logging
 import warnings
 from typing import Any
 
-from app.coordination.runners import _wait_for_daemon
+from app.coordination.runners._shared import wait_for_daemon
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ async def create_high_quality_sync() -> None:
 
         watcher = HighQualityDataSyncWatcher()
         await watcher.start()
-        await _wait_for_daemon(watcher)
+        await wait_for_daemon(watcher)
     except ImportError as e:
         logger.error(f"HighQualityDataSyncWatcher not available: {e}")
         raise
@@ -68,7 +68,7 @@ async def create_auto_sync() -> None:
 
         daemon = AutoSyncDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"AutoSyncDaemon not available: {e}")
         raise
@@ -86,7 +86,7 @@ async def create_config_sync() -> None:
 
         daemon = get_config_sync_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ConfigSyncDaemon not available: {e}")
         raise
@@ -103,7 +103,7 @@ async def create_config_validator() -> None:
 
         daemon = ConfigValidatorDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ConfigValidatorDaemon not available: {e}")
         raise
@@ -129,7 +129,7 @@ async def create_training_node_watcher() -> None:
         config = TrainingActivityConfig.from_env()
         daemon = TrainingActivityDaemon(config=config)
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"TrainingActivityDaemon not available: {e}")
         raise
@@ -293,7 +293,7 @@ async def create_owc_import() -> None:
 
         daemon = get_owc_import_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"OWCImportDaemon not available: {e}")
         raise
@@ -324,7 +324,7 @@ async def create_owc_model_import() -> None:
 
         daemon = get_owc_model_import_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"OWCModelImportDaemon not available: {e}")
         raise
@@ -351,7 +351,7 @@ async def create_unevaluated_model_scanner() -> None:
 
         daemon = get_unevaluated_model_scanner_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"UnevaluatedModelScannerDaemon not available: {e}")
         raise
@@ -377,7 +377,7 @@ async def create_stale_evaluation() -> None:
 
         daemon = get_stale_evaluation_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"StaleEvaluationDaemon not available: {e}")
         raise
@@ -408,7 +408,7 @@ async def create_comprehensive_model_scan() -> None:
 
         daemon = get_comprehensive_model_scan_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ComprehensiveModelScanDaemon not available: {e}")
         raise
@@ -491,7 +491,7 @@ async def create_gossip_sync() -> None:
             peers_config=peers_config,
         )
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"GossipSyncDaemon not available: {e}")
         raise
@@ -527,7 +527,7 @@ async def create_event_router() -> None:
             raise RuntimeError("Router instance missing start() method")
 
         await router.start()
-        await _wait_for_daemon(router)
+        await wait_for_daemon(router)
     except ImportError as e:
         logger.error(f"UnifiedEventRouter not available: {e}")
         raise
@@ -566,7 +566,7 @@ async def create_dlq_retry() -> None:
 
         retry = DLQRetryDaemon()  # Uses get_dead_letter_queue() internally
         await retry.start()
-        await _wait_for_daemon(retry)
+        await wait_for_daemon(retry)
     except ImportError as e:
         logger.error(f"DLQRetryDaemon not available: {e}")
         raise

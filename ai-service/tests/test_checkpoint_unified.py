@@ -16,6 +16,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.training.checkpoint_unified import (
+    CheckpointMetadata,
+    CheckpointType,
+    TrainingProgress,
+    UnifiedCheckpointConfig,
+    UnifiedCheckpointManager,
+)
+
 
 @pytest.fixture
 def temp_checkpoint_dir():
@@ -45,11 +53,6 @@ class TestUnifiedCheckpointConfig:
 
     def test_default_config_values(self):
         """Test default configuration values."""
-        try:
-            from app.training.checkpoint_unified import UnifiedCheckpointConfig
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig()
         assert config.max_checkpoints == 10
         assert config.keep_best == 3
@@ -58,11 +61,6 @@ class TestUnifiedCheckpointConfig:
 
     def test_custom_config_values(self):
         """Test custom configuration values."""
-        try:
-            from app.training.checkpoint_unified import UnifiedCheckpointConfig
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(
             max_checkpoints=20,
             keep_best=5,
@@ -80,11 +78,6 @@ class TestTrainingProgress:
 
     def test_progress_initialization(self):
         """Test TrainingProgress default values."""
-        try:
-            from app.training.checkpoint_unified import TrainingProgress
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         progress = TrainingProgress()
         assert progress.epoch == 0
         assert progress.global_step == 0
@@ -92,11 +85,6 @@ class TestTrainingProgress:
 
     def test_progress_custom_values(self):
         """Test TrainingProgress with custom values."""
-        try:
-            from app.training.checkpoint_unified import TrainingProgress
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         progress = TrainingProgress(
             epoch=5,
             global_step=1000,
@@ -112,11 +100,6 @@ class TestCheckpointType:
 
     def test_checkpoint_types_exist(self):
         """Test that checkpoint types are defined."""
-        try:
-            from app.training.checkpoint_unified import CheckpointType
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         assert hasattr(CheckpointType, 'REGULAR')
         assert hasattr(CheckpointType, 'EPOCH')
         assert hasattr(CheckpointType, 'BEST')
@@ -128,14 +111,6 @@ class TestUnifiedCheckpointManager:
 
     def test_manager_initialization(self, temp_checkpoint_dir):
         """Test checkpoint manager initialization."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(checkpoint_dir=temp_checkpoint_dir)
         manager = UnifiedCheckpointManager(config)
 
@@ -143,14 +118,6 @@ class TestUnifiedCheckpointManager:
 
     def test_manager_creates_directory(self, temp_checkpoint_dir):
         """Test that manager creates checkpoint directory."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         subdir = temp_checkpoint_dir / "new_checkpoints"
         config = UnifiedCheckpointConfig(checkpoint_dir=subdir)
         UnifiedCheckpointManager(config)
@@ -159,14 +126,6 @@ class TestUnifiedCheckpointManager:
 
     def test_adaptive_checkpointing_config(self, temp_checkpoint_dir):
         """Test adaptive checkpointing configuration."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(
             checkpoint_dir=temp_checkpoint_dir,
             adaptive_enabled=True,
@@ -185,14 +144,6 @@ class TestCheckpointMetadata:
 
     def test_metadata_creation(self):
         """Test creating checkpoint metadata."""
-        try:
-            from app.training.checkpoint_unified import (
-                CheckpointMetadata,
-                CheckpointType,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         metadata = CheckpointMetadata(
             checkpoint_id="ckpt_001",
             checkpoint_type=CheckpointType.REGULAR,
@@ -211,14 +162,6 @@ class TestCheckpointMetadata:
 
     def test_metadata_with_parent(self):
         """Test checkpoint metadata with parent reference."""
-        try:
-            from app.training.checkpoint_unified import (
-                CheckpointMetadata,
-                CheckpointType,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         metadata = CheckpointMetadata(
             checkpoint_id="ckpt_002",
             checkpoint_type=CheckpointType.EPOCH,
@@ -240,14 +183,6 @@ class TestCheckpointRecovery:
 
     def test_find_latest_checkpoint(self, temp_checkpoint_dir):
         """Test finding the latest checkpoint."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(checkpoint_dir=temp_checkpoint_dir)
         manager = UnifiedCheckpointManager(config)
 
@@ -265,14 +200,6 @@ class TestCheckpointRecovery:
 
     def test_checkpoint_listing(self, temp_checkpoint_dir):
         """Test listing available checkpoints."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(checkpoint_dir=temp_checkpoint_dir)
         manager = UnifiedCheckpointManager(config)
 
@@ -286,14 +213,6 @@ class TestHashVerification:
 
     def test_hash_computation_method_exists(self, temp_checkpoint_dir):
         """Test that hash computation is available."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(checkpoint_dir=temp_checkpoint_dir)
         manager = UnifiedCheckpointManager(config)
 
@@ -312,14 +231,6 @@ class TestRetentionPolicy:
 
     def test_max_checkpoints_config(self, temp_checkpoint_dir):
         """Test max checkpoints configuration."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(
             checkpoint_dir=temp_checkpoint_dir,
             max_checkpoints=5,
@@ -332,14 +243,6 @@ class TestRetentionPolicy:
 
     def test_keep_every_n_epochs(self, temp_checkpoint_dir):
         """Test keep_every_n_epochs configuration."""
-        try:
-            from app.training.checkpoint_unified import (
-                UnifiedCheckpointConfig,
-                UnifiedCheckpointManager,
-            )
-        except ImportError:
-            pytest.skip("checkpoint_unified not available")
-
         config = UnifiedCheckpointConfig(
             checkpoint_dir=temp_checkpoint_dir,
             keep_every_n_epochs=5,

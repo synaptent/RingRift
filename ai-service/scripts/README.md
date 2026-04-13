@@ -1,140 +1,92 @@
 # AI Service Scripts
 
-This directory contains a large amount of training, parity, export, cluster, and operational tooling.
+This directory contains hundreds of scripts. Only a small subset is part of the supported operational surface.
 
-It is useful, but it is not a single coherent product surface. If you are new to RingRift, do not start by reading every script here.
+If you are new to the codebase, start with the scripts below and treat most `analyze_*`, `benchmark_*`, and `debug_*` files as investigative tools rather than supported entrypoints.
 
-Start with the supported path, then move into the operational surface only if you need it.
+## Essential Scripts
 
-## Start Here
-
-If your goal is to understand or reproduce the current research result, read these in order:
-
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-5. [scripts/run_proven_experiment.sh](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
-
-Then come back here for script-level detail.
-
-## Supported For External Readers
-
-These are the scripts that matter most for understanding the current project.
-
-### Reproduce the reported experiments
-
-- [`/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
-  - Top-level wrapper for the supported experiment presets.
-  - Best first stop for anyone trying to reproduce the published `hex8_2p` or `square8_2p` results.
+### Fleet runtime
 
 - [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
-  - Supported self-play / train / evaluate loop for the current research path.
-  - This is the narrow experiment harness behind the reproducible presets.
+  - Canonical trainer loop for self-play, train, and evaluate on a single config.
 
-### Verify TypeScript ↔ Python parity
+- [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py)
+  - Dedicated policy-bearing Gumbel selfplay worker for role-based fleet nodes.
 
-- [`check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
-  - Main parity harness.
-  - Use this to verify that the Python mirror still matches the canonical TypeScript engine on replayed games.
+- [`ingest_policy_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/ingest_policy_selfplay.py)
+  - Validates, converts, and stages policy selfplay JSONL into trainer supplemental NPZ shards.
 
-- [`diff_state_bundle.py`](/Users/armand/Development/RingRift/ai-service/scripts/diff_state_bundle.py)
-  - Focused parity debugging tool for a single emitted state bundle.
+- [`deploy_training_service.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_training_service.sh)
+  - Role-aware systemd deployment for trainer, selfplay-worker, evaluator, and P2P services.
 
-### Work with canonical replay data
+- [`autonomy_fleet_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/autonomy_fleet_check.py)
+  - Fleet health probe for the current role-based GH200 deployment.
 
-- [`generate_canonical_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/generate_canonical_selfplay.py)
-  - Preferred canonical self-play generator and gate.
-
-- [`check_canonical_phase_history.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_canonical_phase_history.py)
-  - Validates canonical phase-history semantics for a replay database.
-
-- [`export_replay_dataset.py`](/Users/armand/Development/RingRift/ai-service/scripts/export_replay_dataset.py)
-  - Preferred replay-to-dataset export path for current training work.
-
-## Supported Workflow By Goal
-
-### I want to prove the training pipeline works
-
-```bash
-./scripts/run_proven_experiment.sh square8_2p --print-only
-./scripts/run_proven_experiment.sh square8_2p --iterations 10
-```
-
-### I want to inspect or debug parity
-
-```bash
-cd ai-service
-PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db <path-to-db>
-```
-
-### I want to validate replay history before training on a DB
-
-```bash
-cd ai-service
-PYTHONPATH=. python scripts/check_canonical_phase_history.py --db <path-to-db>
-```
-
-## Operations And Cluster Surface
-
-These scripts are real and actively useful for cluster operations, but they are not the best starting point for understanding the project.
-
-### Coordinator / orchestration
-
-- [`master_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/master_loop.py)
-  - Coordinator-oriented multi-board orchestration loop.
-  - Useful for long-running fleet operations.
-  - Not the recommended first entrypoint for reproducing the published results.
+- [`fleet_health_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/fleet_health_check.py)
+  - Broader fleet health diagnostics across hosts and services.
 
 - [`p2p_orchestrator.py`](/Users/armand/Development/RingRift/ai-service/scripts/p2p_orchestrator.py)
-  - Cluster node coordination and job orchestration.
+  - P2P control plane for model sync, job coordination, and node health.
 
-- [`node_resilience.py`](/Users/armand/Development/RingRift/ai-service/scripts/node_resilience.py)
-  - Supervisor / fallback behavior for nodes.
+### Canonical data and parity
 
-### Sync and export
+- [`generate_canonical_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/generate_canonical_selfplay.py)
+  - Canonical selfplay generation with parity and history gating.
 
-- [`unified_data_sync.py`](/Users/armand/Development/RingRift/ai-service/scripts/unified_data_sync.py)
-  - Current sync entrypoint.
+- [`run_canonical_selfplay_parity_gate.py`](/Users/armand/Development/RingRift/ai-service/scripts/run_canonical_selfplay_parity_gate.py)
+  - Batch parity gate for canonical selfplay outputs.
 
-- [`distributed_export.py`](/Users/armand/Development/RingRift/ai-service/scripts/distributed_export.py)
-  - Parallel export tooling for larger jobs.
+- [`check_canonical_phase_history.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_canonical_phase_history.py)
+  - Canonical move/phase history validator for replay databases.
 
-- [`update_cluster_code.py`](/Users/armand/Development/RingRift/ai-service/scripts/update_cluster_code.py)
-  - Cluster rollout helper.
+- [`check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
+  - Main TypeScript ↔ Python replay parity harness.
 
-If you are operating a live fleet, read [docs/operations](/Users/armand/Development/RingRift/docs/operations) and [docs/runbooks](/Users/armand/Development/RingRift/docs/runbooks) before using these directly.
+- [`diff_state_bundle.py`](/Users/armand/Development/RingRift/ai-service/scripts/diff_state_bundle.py)
+  - Focused state diff tool for one parity failure bundle.
 
-## Secondary Or Historical Surface
+- [`export_replay_dataset.py`](/Users/armand/Development/RingRift/ai-service/scripts/export_replay_dataset.py)
+  - Preferred replay DB to NPZ export path.
 
-This directory also contains many scripts that reflect older experiments, alternate pipelines, or specialized operational needs.
+- [`jsonl_to_npz.py`](/Users/armand/Development/RingRift/ai-service/scripts/jsonl_to_npz.py)
+  - Converts policy-bearing JSONL into NPZ training artifacts.
 
-Examples:
+### Training operations
 
-- tier-based or alternate training pipelines such as `run_tier_training_pipeline.py`
-- older automation wrappers such as `auto_training_pipeline.py`
-- board-specific or one-off training flows such as `hex8_training_pipeline.py`
-- Vast.ai or cluster-specific utilities
-- archived self-play helpers under `archive/`
+- [`run_training_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/run_training_loop.py)
+  - Higher-level training loop wrapper for config-driven runs.
 
-Those files can still be useful, but they should not be mistaken for the main supported research path.
+- [`auto_promote.py`](/Users/armand/Development/RingRift/ai-service/scripts/auto_promote.py)
+  - Promotion helper for candidate-to-best checkpoint flow.
 
-## Recommended Reading Order
+- [`check_sync_health.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_sync_health.py)
+  - Sync-path sanity check for data/model distribution.
 
-If you need more than the supported path, use this order:
+- [`cluster_health_cli.py`](/Users/armand/Development/RingRift/ai-service/scripts/cluster_health_cli.py)
+  - Operator-facing health summary for cluster state.
 
-1. [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
-2. [`check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
-3. [`generate_canonical_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/generate_canonical_selfplay.py)
-4. [`export_replay_dataset.py`](/Users/armand/Development/RingRift/ai-service/scripts/export_replay_dataset.py)
-5. `master_loop.py` and cluster scripts only if you are dealing with fleet operations
+- [`cleanup_selfplay_data.sh`](/Users/armand/Development/RingRift/ai-service/scripts/cleanup_selfplay_data.sh)
+  - Selfplay data cleanup helper for reclaiming dead storage.
 
-## Bottom Line
+- [`db_health_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/db_health_check.py)
+  - Replay database integrity and health triage.
 
-Treat this directory as three layers:
+## Current Supported Flow
 
-1. supported experiment and parity tools
-2. operational cluster tooling
-3. historical or specialized scripts
+1. Deploy the role-based runtime with [`deploy_training_service.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_training_service.sh).
+2. Trainers run [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
+3. Selfplay workers run [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py).
+4. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/ingest_policy_selfplay.py).
+5. Fleet state is checked with [`autonomy_fleet_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/autonomy_fleet_check.py).
 
-If you follow that framing, the directory is much easier to navigate and much less misleading.
+## Everything Else
+
+Most remaining scripts fall into one of these categories:
+
+- one-off incident tooling
+- analysis and diagnosis helpers
+- historical experiments
+- provider-specific migration/deployment helpers
+
+Do not assume those scripts are part of the supported path unless they are listed above or referenced by current docs under [`docs/architecture`](/Users/armand/Development/RingRift/ai-service/docs/architecture) or [`docs/runbooks`](/Users/armand/Development/RingRift/ai-service/docs/runbooks).

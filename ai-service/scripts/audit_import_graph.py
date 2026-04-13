@@ -108,7 +108,27 @@ def _normalize_to_known_module(candidate: str, module_to_path: dict[str, Path]) 
     return None
 
 
-def build_import_graph(base_dir: Path, roots: tuple[str, ...]) -> tuple[dict[str, set[str]], dict[str, Path]]:
+def _iter_import_nodes(tree: ast.AST, include_local_imports: bool) -> Iterable[ast.AST]:
+    """Yield import nodes, optionally including imports nested in functions/classes."""
+
+    if include_local_imports:
+        yield from ast.walk(tree)
+        return
+
+    if not isinstance(tree, ast.Module):
+        return
+
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            yield node
+
+
+def build_import_graph(
+    base_dir: Path,
+    roots: tuple[str, ...],
+    *,
+    include_local_imports: bool = False,
+) -> tuple[dict[str, set[str]], dict[str, Path]]:
     module_to_path = _build_module_index(base_dir, roots)
     graph: dict[str, set[str]] = defaultdict(set)
 
@@ -118,7 +138,7 @@ def build_import_graph(base_dir: Path, roots: tuple[str, ...]) -> tuple[dict[str
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        for node in ast.walk(tree):
+        for node in _iter_import_nodes(tree, include_local_imports=include_local_imports):
             raw_candidates: list[str] = []
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -225,6 +245,11 @@ def main() -> int:
         help="Maximum DFS depth for cycle detection (default: 10)",
     )
     parser.add_argument(
+        "--include-local-imports",
+        action="store_true",
+        help="Include imports nested inside functions/classes in the graph",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit machine-readable JSON instead of plain text",
@@ -233,7 +258,11 @@ def main() -> int:
 
     base_dir = Path(__file__).resolve().parents[1]
     roots = tuple(part.strip() for part in args.roots.split(",") if part.strip())
-    graph, module_to_path = build_import_graph(base_dir, roots)
+    graph, module_to_path = build_import_graph(
+        base_dir,
+        roots,
+        include_local_imports=args.include_local_imports,
+    )
     filtered_modules = sorted(
         module for module in module_to_path if module == args.module_prefix or module.startswith(f"{args.module_prefix}.")
     )
@@ -247,6 +276,7 @@ def main() -> int:
         "module_count": len(filtered_modules),
         "dependency_count": sum(len(deps) for deps in filtered_graph.values()),
         "cycle_count": len(cycles),
+        "include_local_imports": args.include_local_imports,
         "zero_inbound_count": len(zero_inbound),
     }
 
@@ -267,6 +297,7 @@ def main() -> int:
     print(f"modules={summary['module_count']}")
     print(f"dependencies={summary['dependency_count']}")
     print(f"cycles={summary['cycle_count']}")
+    print(f"include_local_imports={summary['include_local_imports']}")
     print(f"zero_inbound={summary['zero_inbound_count']}")
 
     if args.report in {"cycles", "all"}:

@@ -14,7 +14,7 @@ import logging
 import warnings
 from typing import Any
 
-from app.coordination.runners import _wait_for_daemon
+from app.coordination.runners._shared import wait_for_daemon
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ async def create_model_sync() -> None:
 
         daemon = create_model_distribution_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"Model sync daemon not available: {e}")
         raise
@@ -48,7 +48,7 @@ async def create_model_distribution() -> None:
 
         daemon = UnifiedDistributionDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"UnifiedDistributionDaemon not available: {e}")
         raise
@@ -71,7 +71,7 @@ async def create_data_server() -> None:
         sync = SyncCoordinator.get_instance()
         # Jan 3, 2026: Fixed method name - SyncCoordinator has start_data_server(), not start_server()
         await sync.start_data_server()
-        await _wait_for_daemon(sync)
+        await wait_for_daemon(sync)
     except ImportError as e:
         logger.error(f"SyncCoordinator data server not available: {e}")
         raise

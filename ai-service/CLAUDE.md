@@ -2,24 +2,26 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: April 5, 2026
+**Last Updated**: April 12, 2026
 
 ## Infrastructure Health Snapshot
 
-| Component          | Status   | Evidence                                                       |
-| ------------------ | -------- | -------------------------------------------------------------- |
-| **P2P Network**    | STANDBY  | Mac-studio coordinator offline; Lambda nodes run minimal loops |
-| **Training Loop**  | GREEN    | 7/7 Lambda GH200 nodes training via minimal_alphazero_loop.py  |
-| **Code Quality**   | GREEN    | BoardEncodingContract + 14 contract tests in CI                |
-| **Event Emission** | UNIFIED  | Migrated to safe_emit_event for consistent error handling      |
-| **Async Safety**   | VERIFIED | All blocking SQLite calls wrapped in asyncio.to_thread()       |
+| Component                 | Status   | Evidence                                                                    |
+| ------------------------- | -------- | --------------------------------------------------------------------------- |
+| **P2P Control Plane**     | GREEN    | 7/7 GH200 fleet healthy with role-aware deployment and active sync/health   |
+| **Training Loop**         | GREEN    | 4 trainer nodes on `minimal_alphazero_loop.py` under systemd                |
+| **Policy Selfplay**       | GREEN    | 2 selfplay-worker nodes generating policy-bearing Gumbel JSONL              |
+| **Supplemental Pipeline** | PROVING  | Worker shard landing proven on trainers; trainer merge occurs on next cycle |
+| **Evaluator**             | ACTIVE   | 1 dedicated evaluator node in the fleet                                     |
+| **Code Quality**          | VERIFIED | 33k+ Python tests, package-surface cleanup, role-based autonomy runtime     |
 
 **Key Metrics:**
 
-- 127 daemon types (107 active, 20 deprecated)
-- 292 event types in DataEventType enum
-- Lean daemon profile: 23 daemons (down from 47 standard)
-- 7 active Lambda GH200 nodes, 3 Hetzner CPU voters, Nebius stopped
+- 7 GH200 nodes in active role-based deployment
+- 4 trainers, 2 selfplay workers, 1 evaluator
+- fixed learning rate `5e-5` is the current proven baseline on the supported path
+- `hex8_2p` reached `1979.8` Elo on the current minimal-loop line
+- 33k+ Python tests in the core suite
 
 ## Project Overview
 
@@ -35,25 +37,23 @@ RingRift is a multiplayer territory control game. The Python `ai-service` mirror
 ## Quick Start
 
 ```bash
-# Full cluster automation with lean profile (RECOMMENDED)
-python scripts/master_loop.py --profile lean
+# Deploy the role-based fleet runtime
+cd ai-service
+bash scripts/deploy_training_service.sh
 
-# Standalone AlphaZero loop on a single GPU node
+# Standalone trainer loop
 PYTHONPATH=. python scripts/minimal_alphazero_loop.py \
   --model models/canonical_hex8_2p.pth --board-type hex8 --num-players 2 \
   --iterations 50 --games-per-iter 100 --eval-games 50 --budget 128
 
-# Single config training pipeline
-python scripts/run_training_loop.py --board-type hex8 --num-players 2 --selfplay-games 1000
+# Standalone policy selfplay worker
+PYTHONPATH=. python scripts/policy_selfplay_worker.py --help
 
-# Manual training
-python -m app.training.train --board-type hex8 --num-players 2 --data-path data/training/hex8_2p.npz
+# Fleet status
+PYTHONPATH=. python scripts/autonomy_fleet_check.py
 
-# Cluster status
-curl -s http://localhost:8770/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"Leader: {d.get(\"leader_id\")}, Alive: {d.get(\"alive_peers\")}")'
-
-# Update all cluster nodes (RECOMMENDED: use --safe-mode)
-python scripts/update_all_nodes.py --safe-mode --restart-p2p
+# TS ↔ Python parity
+PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db data/games/canonical_hex8_2p.db
 ```
 
 ## Verifying NN Strength Improvement
@@ -165,14 +165,13 @@ The dashboard shows:
 
 ## Cluster Infrastructure
 
-~12 active nodes across providers:
+Active runtime fleet:
 
-| Provider     | Nodes | GPUs                        | Status  |
-| ------------ | ----- | --------------------------- | ------- |
-| Lambda GH200 | 7     | GH200 96GB x 7              | Active  |
-| Nebius       | 3     | H100 80GB x 2, L40S         | Stopped |
-| Hetzner      | 3     | CPU only (P2P voters)       | Active  |
-| Local        | 2     | Mac Studio M3 (coordinator) | Active  |
+| Role            | Nodes | Workload                                                    |
+| --------------- | ----- | ----------------------------------------------------------- |
+| Trainer         | 4     | `minimal_alphazero_loop.py` with `--supplemental-data-dir`  |
+| Selfplay worker | 2     | `policy_selfplay_worker.py` generating Gumbel policy shards |
+| Evaluator       | 1     | evaluation / gauntlet services                              |
 
 ## Key Modules
 

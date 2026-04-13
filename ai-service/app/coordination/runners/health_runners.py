@@ -13,7 +13,7 @@ import logging
 import warnings
 from typing import Any
 
-from app.coordination.runners import _wait_for_daemon
+from app.coordination.runners._shared import wait_for_daemon
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ async def create_queue_monitor() -> None:
 
         monitor = QueueMonitor()
         await monitor.start()
-        await _wait_for_daemon(monitor)
+        await wait_for_daemon(monitor)
     except ImportError as e:
         logger.error(f"QueueMonitor not available: {e}")
         raise
@@ -52,7 +52,7 @@ async def create_daemon_watchdog() -> None:
 
         # start_watchdog() is async and already calls .start() internally
         watchdog = await start_watchdog()
-        await _wait_for_daemon(watchdog)
+        await wait_for_daemon(watchdog)
     except ImportError as e:
         logger.error(f"DaemonWatchdog not available: {e}")
         raise
@@ -133,7 +133,7 @@ async def create_quality_monitor() -> None:
 
         daemon = QualityMonitorDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"QualityMonitorDaemon not available: {e}")
         raise
@@ -146,7 +146,7 @@ async def create_model_performance_watchdog() -> None:
 
         watchdog = ModelPerformanceWatchdog()
         await watchdog.start()
-        await _wait_for_daemon(watchdog)
+        await wait_for_daemon(watchdog)
     except ImportError as e:
         logger.error(f"ModelPerformanceWatchdog not available: {e}")
         raise
@@ -171,7 +171,7 @@ async def create_cluster_watchdog() -> None:
 
         daemon = ClusterWatchdogDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ClusterWatchdogDaemon not available: {e}")
         raise
@@ -192,7 +192,7 @@ async def create_coordinator_health_monitor() -> None:
 
         monitor = get_coordinator_health_monitor()
         await monitor.start()
-        await _wait_for_daemon(monitor)
+        await wait_for_daemon(monitor)
     except ImportError as e:
         logger.error(f"CoordinatorHealthMonitorDaemon not available: {e}")
         raise
@@ -214,7 +214,7 @@ async def create_work_queue_monitor() -> None:
 
         monitor = get_work_queue_monitor()
         await monitor.start()
-        await _wait_for_daemon(monitor)
+        await wait_for_daemon(monitor)
     except ImportError as e:
         logger.error(f"WorkQueueMonitorDaemon not available: {e}")
         raise

@@ -42,59 +42,75 @@ Usage:
         pass
 """
 
-import contextlib
+from __future__ import annotations
 
-import app.coordination._exports_core as _exports_core
-import app.coordination._exports_daemon as _exports_daemon
-import app.coordination._exports_events as _exports_events
-import app.coordination._exports_orchestrators as _exports_orchestrators
-import app.coordination._exports_sync as _exports_sync
-import app.coordination._exports_utils as _exports_utils
+import ast
+import importlib
+from pathlib import Path
 
 from app.utils.retry import RetryConfig  # Jan 2026: Centralized retry pattern
 
 # =============================================================================
-# Submodule Exports (December 2025 - organized for maintainability)
+# Lazy package exports (April 2026)
 # =============================================================================
-
-from app.coordination._exports_core import __all__ as _core_all
-
-from app.coordination._exports_sync import __all__ as _sync_all
-
-from app.coordination._exports_daemon import __all__ as _daemon_all
-
-from app.coordination._exports_events import __all__ as _events_all
-
-from app.coordination._exports_orchestrators import __all__ as _orchestrators_all
-
-from app.coordination._exports_utils import __all__ as _utils_all
+_EXPORT_MODULES = {
+    "app.coordination._exports_core": "_exports_core.py",
+    "app.coordination._exports_sync": "_exports_sync.py",
+    "app.coordination._exports_daemon": "_exports_daemon.py",
+    "app.coordination._exports_events": "_exports_events.py",
+    "app.coordination._exports_orchestrators": "_exports_orchestrators.py",
+    "app.coordination._exports_utils": "_exports_utils.py",
+}
+_EXPORT_NAME_TO_MODULE: dict[str, str] = {}
+_LAZY_EXPORT_CACHE: dict[str, object] = {}
 
 
-def _bind_export_module(module, exported_names: list[str]) -> None:
-    """Bind a module's declared exports into this package namespace.
+def _read_declared_exports(filename: str) -> list[str]:
+    """Read ``__all__`` from a sibling export module without importing it."""
 
-    This preserves the historical re-export surface without relying on
-    wildcard imports, which makes the package import graph easier to audit.
-    """
+    path = Path(__file__).with_name(filename)
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in module.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    value = ast.literal_eval(node.value)
+                    if isinstance(value, list):
+                        return [str(item) for item in value]
+    raise RuntimeError(f"Unable to resolve __all__ from {path}")
 
-    for name in exported_names:
-        globals()[name] = getattr(module, name)
+
+for _module_name, _filename in _EXPORT_MODULES.items():
+    for _export_name in _read_declared_exports(_filename):
+        _EXPORT_NAME_TO_MODULE[_export_name] = _module_name
 
 
-_bind_export_module(_exports_core, _core_all)
-_bind_export_module(_exports_sync, _sync_all)
-_bind_export_module(_exports_daemon, _daemon_all)
-_bind_export_module(_exports_events, _events_all)
-_bind_export_module(_exports_orchestrators, _orchestrators_all)
-_bind_export_module(_exports_utils, _utils_all)
+def _load_export(name: str) -> object:
+    """Load one re-exported symbol lazily and cache it."""
 
-# Core Utilities - Consolidated Module (December 2025)
-# This module consolidates: tracing, distributed_lock, optional_imports, yaml_utils
-from app.coordination import core_utils
+    if name in _LAZY_EXPORT_CACHE:
+        return _LAZY_EXPORT_CACHE[name]
+    module_name = _EXPORT_NAME_TO_MODULE[name]
+    module = importlib.import_module(module_name)
+    value = getattr(module, name)
+    _LAZY_EXPORT_CACHE[name] = value
+    return value
 
-# Core Events - Consolidated Module (December 2025)
-# This module consolidates: event_router, event_mappings, event_emitters, event_normalization
-from app.coordination import core_events
+
+def __getattr__(name: str) -> object:
+    """Resolve historical package re-exports lazily."""
+
+    if name in _EXPORT_NAME_TO_MODULE:
+        return _load_export(name)
+    if name in {"core_utils", "core_events"}:
+        value = importlib.import_module(f"app.coordination.{name}")
+        _LAZY_EXPORT_CACHE[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
 
 
 # =============================================================================
@@ -797,24 +813,17 @@ def is_heartbeat_running() -> bool:
 # =============================================================================
 # Combined __all__ from all submodules
 # =============================================================================
-__all__ = (
-    _core_all
-    + _sync_all
-    + _daemon_all
-    + _events_all
-    + _orchestrators_all
-    + _utils_all
-    + [
-        # Consolidated modules
-        "core_utils",
-        "core_events",
-        # Functions defined in this file
-        "get_all_coordinator_status",
-        "get_system_health",
-        "initialize_all_coordinators",
-        "is_heartbeat_running",
-        "shutdown_all_coordinators",
-        "start_coordinator_heartbeats",
-        "stop_coordinator_heartbeats",
-    ]
-)
+__all__ = [
+    *_EXPORT_NAME_TO_MODULE.keys(),
+    # Consolidated modules
+    "core_utils",
+    "core_events",
+    # Functions defined in this file
+    "get_all_coordinator_status",
+    "get_system_health",
+    "initialize_all_coordinators",
+    "is_heartbeat_running",
+    "shutdown_all_coordinators",
+    "start_coordinator_heartbeats",
+    "stop_coordinator_heartbeats",
+]

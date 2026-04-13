@@ -2,6 +2,8 @@
 
 This file provides context for AI assistants working on this codebase.
 
+**Last Updated**: April 12, 2026
+
 ## What is RingRift?
 
 A multiplayer territory control board game where players place pieces to claim territory. Features:
@@ -55,20 +57,45 @@ npm test                           # TypeScript tests
 cd ai-service && pytest           # Python tests
 ```
 
-## Cluster Automation (Recommended)
+## Current Supported Runtime
 
-For long-term cluster utilization, use `master_loop.py`:
+The live training path is now narrower than the historical automation surface.
+
+- TypeScript remains the rules source of truth.
+- The supported Python runtime is a role-based GH200 fleet:
+  - 4 trainer nodes running `minimal_alphazero_loop.py`
+  - 2 policy selfplay-worker nodes producing supplemental shards
+  - 1 evaluator node
+- P2P remains active on all nodes as the control plane for sync, health, and job coordination.
+- The current supported trainer baseline uses fixed learning rate `5e-5`.
+- `hex8_2p` has reached `1979.8` Elo on the current minimal-loop path.
+
+## Cluster Automation
+
+For the current fleet, use the role-aware deploy and health scripts first:
 
 ```bash
 cd ai-service
 
-# Full automation (24/7 cluster operation)
+# Deploy the role-based fleet runtime
+bash scripts/deploy_training_service.sh
+
+# Check fleet health and role assignments
+PYTHONPATH=. python scripts/autonomy_fleet_check.py
+```
+
+Historical broad automation still exists, but it is not the first-line supported path:
+
+```bash
+cd ai-service
+
+# Historical full automation
 python scripts/master_loop.py
 
-# Watch mode (show status)
+# Historical watch mode
 python scripts/master_loop.py --watch
 
-# Dry run (preview actions)
+# Historical dry run
 python scripts/master_loop.py --dry-run
 ```
 
@@ -142,27 +169,21 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 ## Cluster Infrastructure
 
-RingRift uses a P2P mesh network for distributed training across ~12 active nodes.
+RingRift uses a P2P-backed distributed training/runtime layer. The current active deployment is a 7-node GH200 role-based fleet.
 
-| Provider     | Nodes | GPUs                        | Status  |
-| ------------ | ----- | --------------------------- | ------- |
-| Lambda GH200 | 7     | GH200 96GB x 7              | Active  |
-| Nebius       | 3     | H100 80GB x 2, L40S         | Stopped |
-| Hetzner      | 3     | CPU only (P2P voters)       | Active  |
-| Local        | 2     | Mac Studio M3 (coordinator) | Active  |
+| Role            | Nodes | Status |
+| --------------- | ----- | ------ |
+| Trainer         | 4     | Active |
+| Selfplay worker | 2     | Active |
+| Evaluator       | 1     | Active |
 
 ```bash
 # Check cluster status via P2P
 curl -s http://localhost:8770/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print("Leader:", d.get("leader_id")); print("Alive:", d.get("alive_peers"))'
 
-# Or use the monitor
-cd ai-service && python -m app.distributed.cluster_monitor
-
-# Update all nodes to latest code
-cd ai-service && python scripts/update_all_nodes.py --restart-p2p
+# Or use the role-aware fleet monitor
+cd ai-service && PYTHONPATH=. python scripts/autonomy_fleet_check.py
 ```
-
-See `ai-service/config/distributed_hosts.yaml` for full cluster configuration.
 
 ## Neural Network Architectures
 
@@ -223,6 +244,6 @@ python scripts/check_ts_python_replay_parity.py --db data/games/canonical_hex8.d
 
 - `ai-service/CLAUDE.md` - Detailed AI service context
 - `ai-service/AGENTS.md` - Coding guidelines for AI service
-- `ai-service/docs/architecture/` - Architecture documentation
+- `ai-service/docs/architecture/OVERVIEW.md` - Current architecture entry point
 - `ai-service/docs/QUICK_START_TRAINING.md` - Training quick-start guide
 - `AGENTS.md` - Root-level coding guidelines

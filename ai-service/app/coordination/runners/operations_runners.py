@@ -20,7 +20,7 @@ import logging
 import warnings
 from typing import Any
 
-from app.coordination.runners import _wait_for_daemon
+from app.coordination.runners._shared import wait_for_daemon
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ async def create_feedback_loop() -> None:
 
         controller = FeedbackLoopController()
         await controller.start()
-        await _wait_for_daemon(controller)
+        await wait_for_daemon(controller)
     except ImportError as e:
         logger.error(f"FeedbackLoopController not available: {e}")
         raise
@@ -53,7 +53,7 @@ async def create_curriculum_integration() -> None:
         bridge = MomentumToCurriculumBridge()
         # Dec 2025 fix: start() is synchronous (uses threading internally), don't await
         bridge.start()
-        await _wait_for_daemon(bridge)
+        await wait_for_daemon(bridge)
     except ImportError as e:
         logger.error(f"MomentumToCurriculumBridge not available: {e}")
         raise
@@ -71,7 +71,7 @@ async def create_recovery_orchestrator() -> None:
 
         orchestrator = RecoveryOrchestrator()
         await orchestrator.start()
-        await _wait_for_daemon(orchestrator)
+        await wait_for_daemon(orchestrator)
     except ImportError as e:
         logger.error(f"RecoveryOrchestrator not available: {e}")
         raise
@@ -108,7 +108,7 @@ async def create_maintenance() -> None:
 
         daemon = MaintenanceDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"MaintenanceDaemon not available: {e}")
         raise
@@ -121,7 +121,7 @@ async def create_orphan_detection() -> None:
 
         daemon = OrphanDetectionDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"OrphanDetectionDaemon not available: {e}")
         raise
@@ -134,7 +134,7 @@ async def create_data_cleanup() -> None:
 
         daemon = DataCleanupDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"DataCleanupDaemon not available: {e}")
         raise
@@ -154,7 +154,7 @@ async def create_disk_space_manager() -> None:
 
         daemon = DiskSpaceManagerDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"DiskSpaceManagerDaemon not available: {e}")
         raise
@@ -191,7 +191,7 @@ async def create_coordinator_disk_manager() -> None:
 
         daemon = CoordinatorDiskManager()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"CoordinatorDiskManager not available: {e}")
         raise
@@ -217,7 +217,7 @@ async def create_node_availability() -> None:
 
         daemon = get_node_availability_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"NodeAvailabilityDaemon not available: {e}")
         raise
@@ -240,7 +240,7 @@ async def create_sync_push() -> None:
 
         daemon = SyncPushDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"SyncPushDaemon not available: {e}")
         raise
@@ -275,7 +275,7 @@ async def create_unified_data_plane() -> None:
 
         daemon = get_data_plane_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"UnifiedDataPlaneDaemon not available: {e}")
         raise
@@ -293,7 +293,7 @@ async def create_s3_backup() -> None:
 
         daemon = S3BackupDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"S3BackupDaemon not available: {e}")
         raise
@@ -309,7 +309,7 @@ async def create_s3_node_sync() -> None:
 
         daemon = S3NodeSyncDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"S3NodeSyncDaemon not available: {e}")
         raise
@@ -325,7 +325,7 @@ async def create_s3_consolidation() -> None:
 
         daemon = S3ConsolidationDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"S3ConsolidationDaemon not available: {e}")
         raise
@@ -342,7 +342,7 @@ async def create_unified_backup() -> None:
 
         daemon = UnifiedBackupDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"UnifiedBackupDaemon not available: {e}")
         raise
@@ -359,7 +359,7 @@ async def create_s3_push() -> None:
 
         daemon = S3PushDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"S3PushDaemon not available: {e}")
         raise
@@ -389,7 +389,7 @@ async def create_vast_cpu_pipeline() -> None:
 
         daemon = VastCpuPipelineDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"VastCpuPipelineDaemon not available: {e}")
         raise
@@ -411,7 +411,7 @@ async def create_p2p_backend() -> None:
 
         integration = P2PIntegration()
         await integration.start()
-        await _wait_for_daemon(integration)
+        await wait_for_daemon(integration)
     except ImportError as e:
         logger.error(f"P2PIntegration not available: {e}")
         raise
@@ -424,7 +424,7 @@ async def create_p2p_auto_deploy() -> None:
 
         deployer = P2PAutoDeployer()
         await deployer.run_daemon()
-        await _wait_for_daemon(deployer)
+        await wait_for_daemon(deployer)
     except ImportError as e:
         logger.error(f"P2PAutoDeployer not available: {e}")
         raise
@@ -439,7 +439,7 @@ async def create_metrics_analysis() -> None:
 
         orchestrator = MetricsAnalysisOrchestrator()
         await orchestrator.start()
-        await _wait_for_daemon(orchestrator)
+        await wait_for_daemon(orchestrator)
     except ImportError as e:
         logger.error(f"MetricsAnalysisOrchestrator not available: {e}")
         raise
@@ -480,7 +480,7 @@ async def create_data_consolidation() -> None:
 
         daemon = get_consolidation_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"DataConsolidationDaemon not available: {e}")
         raise
@@ -507,7 +507,7 @@ async def create_cluster_consolidation() -> None:
 
         daemon = get_cluster_consolidation_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ClusterConsolidationDaemon not available: {e}")
         raise
@@ -542,7 +542,7 @@ async def create_comprehensive_consolidation() -> None:
 
         daemon = get_comprehensive_consolidation_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ComprehensiveConsolidationDaemon not available: {e}")
         raise
@@ -566,7 +566,7 @@ async def create_unified_data_sync_orchestrator() -> None:
 
         daemon = get_unified_data_sync_orchestrator()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"UnifiedDataSyncOrchestrator not available: {e}")
         raise
@@ -584,7 +584,7 @@ async def create_npz_combination() -> None:
 
         daemon = get_npz_combination_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"NPZCombinationDaemon not available: {e}")
         raise
@@ -614,7 +614,7 @@ async def create_integrity_check() -> None:
         config = IntegrityCheckConfig.from_env()
         daemon = IntegrityCheckDaemon(config=config)
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"IntegrityCheckDaemon not available: {e}")
         raise
@@ -641,7 +641,7 @@ async def create_availability_node_monitor() -> None:
 
         daemon = get_node_monitor()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"NodeMonitor not available: {e}")
         raise
@@ -664,7 +664,7 @@ async def create_availability_recovery_engine() -> None:
 
         daemon = get_recovery_engine()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"RecoveryEngine not available: {e}")
         raise
@@ -686,7 +686,7 @@ async def create_availability_capacity_planner() -> None:
 
         daemon = get_capacity_planner()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"CapacityPlanner not available: {e}")
         raise
@@ -709,7 +709,7 @@ async def create_cascade_training() -> None:
 
         daemon = get_cascade_orchestrator()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"CascadeTrainingOrchestrator not available: {e}")
         raise
@@ -729,7 +729,7 @@ async def create_availability_provisioner() -> None:
 
         daemon = get_provisioner()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"Provisioner not available: {e}")
         raise
@@ -759,7 +759,7 @@ async def create_progress_watchdog() -> None:
 
         daemon = get_progress_watchdog()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ProgressWatchdog not available: {e}")
         raise
@@ -783,7 +783,7 @@ async def create_p2p_recovery() -> None:
 
         daemon = get_p2p_recovery_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"P2PRecovery not available: {e}")
         raise
@@ -815,7 +815,7 @@ async def create_voter_health_monitor() -> None:
 
         daemon = get_voter_health_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"VoterHealthMonitor not available: {e}")
         raise
@@ -840,7 +840,7 @@ async def create_memory_monitor() -> None:
 
         daemon = get_memory_monitor()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"MemoryMonitor not available: {e}")
         raise
@@ -869,7 +869,7 @@ async def create_socket_leak_recovery() -> None:
 
         daemon = get_socket_leak_recovery_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"SocketLeakRecoveryDaemon not available: {e}")
         raise
@@ -939,7 +939,7 @@ async def create_underutilization_recovery() -> None:
 
         handler = get_underutilization_handler()
         await handler.start()
-        await _wait_for_daemon(handler)
+        await wait_for_daemon(handler)
     except ImportError as e:
         logger.error(f"UnderutilizationRecoveryHandler not available: {e}")
         raise
@@ -962,7 +962,7 @@ async def create_fast_failure_detector() -> None:
 
         detector = get_fast_failure_detector()
         await detector.start()
-        await _wait_for_daemon(detector)
+        await wait_for_daemon(detector)
     except ImportError as e:
         logger.error(f"FastFailureDetector not available: {e}")
         raise
@@ -986,7 +986,7 @@ async def create_tailscale_health() -> None:
 
         daemon = get_tailscale_health_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"TailscaleHealthDaemon not available: {e}")
         raise
@@ -1013,7 +1013,7 @@ async def create_connectivity_recovery() -> None:
 
         daemon = get_connectivity_recovery_coordinator()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ConnectivityRecoveryCoordinator not available: {e}")
         raise
@@ -1164,7 +1164,7 @@ async def create_data_availability() -> None:
 
         daemon = create_data_availability_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.warning(f"Data availability daemon not available: {e}")
         await asyncio.sleep(float("inf"))
@@ -1201,7 +1201,7 @@ async def create_pipeline_completeness_monitor() -> None:
 
         daemon = PipelineCompletenessMonitor.get_instance()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.warning(f"PipelineCompletenessMonitor not available: {e}")
         await asyncio.sleep(float("inf"))

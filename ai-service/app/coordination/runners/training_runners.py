@@ -14,7 +14,7 @@ import logging
 import warnings
 from typing import Any
 
-from app.coordination.runners import _wait_for_daemon
+from app.coordination.runners._shared import wait_for_daemon
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def create_data_pipeline() -> None:
 
         orchestrator = get_pipeline_orchestrator()
         await orchestrator.start()
-        await _wait_for_daemon(orchestrator)
+        await wait_for_daemon(orchestrator)
     except ImportError as e:
         logger.error(f"DataPipelineOrchestrator not available: {e}")
         raise
@@ -87,7 +87,7 @@ async def create_training_coordinator() -> None:
 
         daemon = get_training_coordinator_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"TrainingCoordinatorDaemon not available: {e}")
         raise
@@ -100,7 +100,7 @@ async def create_training_trigger() -> None:
 
         daemon = TrainingTriggerDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"TrainingTriggerDaemon not available: {e}")
         raise
@@ -113,7 +113,7 @@ async def create_auto_export() -> None:
 
         daemon = AutoExportDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"AutoExportDaemon not available: {e}")
         raise
@@ -126,7 +126,7 @@ async def create_tournament_daemon() -> None:
 
         daemon = TournamentDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"TournamentDaemon not available: {e}")
         raise
@@ -144,7 +144,7 @@ async def create_nnue_training() -> None:
 
         daemon = NNUETrainingDaemon.get_instance()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"NNUETrainingDaemon not available: {e}")
         raise
@@ -165,7 +165,7 @@ async def create_architecture_feedback() -> None:
 
         controller = ArchitectureFeedbackController.get_instance()
         await controller.start()
-        await _wait_for_daemon(controller)
+        await wait_for_daemon(controller)
     except ImportError as e:
         logger.error(f"ArchitectureFeedbackController not available: {e}")
         raise
@@ -189,7 +189,7 @@ async def create_parity_validation() -> None:
 
         daemon = get_parity_validation_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ParityValidationDaemon not available: {e}")
 
@@ -211,7 +211,7 @@ async def create_elo_progress() -> None:
 
         daemon = get_elo_progress_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"EloProgressDaemon not available: {e}")
         raise
@@ -229,7 +229,7 @@ async def create_evaluation_daemon() -> None:
 
         daemon = get_evaluation_daemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"EvaluationDaemon not available: {e}")
         raise
@@ -242,7 +242,7 @@ async def create_auto_promotion() -> None:
 
         daemon = AutoPromotionDaemon()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"AutoPromotionDaemon not available: {e}")
         raise
@@ -279,7 +279,7 @@ async def create_gauntlet_feedback() -> None:
 
         controller = GauntletFeedbackController()
         await controller.start()
-        await _wait_for_daemon(controller)
+        await wait_for_daemon(controller)
     except ImportError as e:
         logger.error(f"GauntletFeedbackController not available: {e}")
         raise
@@ -297,7 +297,7 @@ async def create_backlog_evaluation() -> None:
 
         daemon = BacklogEvaluationDaemon.get_instance()
         await daemon.start()
-        await _wait_for_daemon(daemon)
+        await wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"BacklogEvaluationDaemon not available: {e}")
         raise

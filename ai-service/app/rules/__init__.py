@@ -11,10 +11,9 @@ Exports:
     create_game_state: Factory function to create GameState instances
 """
 
-from .factory import get_rules_engine
-from .interfaces import RulesEngine  # re-export for convenience
-from .mutable_state import MutableGameState
-from app.testing.fixtures import create_game_state
+from __future__ import annotations
+
+import importlib
 
 __all__ = [
     "RulesEngine",
@@ -22,3 +21,15 @@ __all__ = [
     "MutableGameState",
     "create_game_state",
 ]
+
+
+def __getattr__(name: str):
+    if name == "get_rules_engine":
+        return importlib.import_module("app.rules.factory").get_rules_engine
+    if name == "RulesEngine":
+        return importlib.import_module("app.rules.interfaces").RulesEngine
+    if name == "MutableGameState":
+        return importlib.import_module("app.rules.mutable_state").MutableGameState
+    if name == "create_game_state":
+        return importlib.import_module("app.testing.fixtures").create_game_state
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
