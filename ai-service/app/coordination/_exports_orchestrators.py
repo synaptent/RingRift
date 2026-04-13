@@ -18,13 +18,17 @@ from app.coordination.cache_coordination_orchestrator import (
     wire_cache_events,
 )
 
-# DataPipelineOrchestrator - unified pipeline stage coordination
-from app.coordination.data_pipeline_orchestrator import (
-    DataPipelineOrchestrator,
+# Shared pipeline contracts
+from app.coordination.pipeline_shared import (
     IterationRecord,
     PipelineStage,
     PipelineStats,
     StageTransition,
+)
+
+# DataPipelineOrchestrator - unified pipeline stage coordination
+from app.coordination.data_pipeline_orchestrator import (
+    DataPipelineOrchestrator,
     get_current_pipeline_stage,
     get_pipeline_orchestrator,
     get_pipeline_status,

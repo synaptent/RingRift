@@ -130,23 +130,27 @@ from app.coordination.host_health_policy import (
     pre_spawn_check,
 )
 
-# UnifiedHealthManager - consolidated error recovery and health management
-from app.coordination.unified_health_manager import (
+# Unified health shared contracts
+from app.coordination.unified_health_shared import (
     ErrorRecord,
     ErrorSeverity,
     HealthStats,
-    JobHealthState,
     NodeHealthState,
-    PipelineState,
     RecoveryAction,
     RecoveryAttempt,
-    RecoveryConfig,
-    RecoveryEvent,
     RecoveryResult,
     RecoveryStatus,
     SystemHealthConfig,
     SystemHealthLevel,
     SystemHealthScore,
+)
+
+# UnifiedHealthManager - consolidated error recovery and health management
+from app.coordination.unified_health_manager import (
+    JobHealthState,
+    PipelineState,
+    RecoveryConfig,
+    RecoveryEvent,
     UnifiedHealthManager,
     get_health_manager,
     get_system_health_level,
