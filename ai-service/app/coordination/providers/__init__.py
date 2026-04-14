@@ -133,3 +133,9 @@ __all__ = [
     "get_all_providers",
     "reset_providers",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended package surface for discoverability and tests."""
+
+    return sorted(set(globals()) | set(__all__))

@@ -10,6 +10,7 @@ import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
 import app.coordination.mixins as mixins_pkg
 import app.coordination.node_availability as node_availability_pkg
+import app.coordination.providers as providers_pkg
 import app.coordination.queue_strategies as queue_strategies_pkg
 import app.coordination.selfplay as selfplay_pkg
 import app.coordination.status_reporting as status_reporting_pkg
@@ -177,6 +178,30 @@ def test_node_availability_package_declares_public_exports() -> None:
         exported = getattr(node_availability_pkg, name)
         assert getattr(exported, "__module__", type(exported).__module__) == module_name
         assert name in dir(node_availability_pkg)
+
+
+def test_providers_package_declares_public_exports() -> None:
+    expected = {
+        "CloudProvider": "app.coordination.providers.base",
+        "Instance": "app.coordination.providers.base",
+        "InstanceStatus": "app.coordination.providers.base",
+        "ProviderType": "app.coordination.providers.base",
+        "GPUType": "app.coordination.providers.base",
+        "ProviderRegistry": "app.coordination.providers.registry",
+        "ProviderConfig": "app.coordination.providers.registry",
+        "CloudProviderProtocol": "app.coordination.providers.registry",
+        "PROVIDER_CONFIGS": "builtins",
+        "get_provider": "app.coordination.providers",
+        "get_all_providers": "app.coordination.providers",
+        "reset_providers": "app.coordination.providers",
+    }
+
+    assert providers_pkg.__all__ == list(expected)
+    assert len(providers_pkg.__all__) == len(set(providers_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(providers_pkg, name)
+        assert getattr(exported, "__module__", type(exported).__module__) == module_name
+        assert name in dir(providers_pkg)
 
 
 def test_queue_strategies_package_declares_public_exports() -> None:
