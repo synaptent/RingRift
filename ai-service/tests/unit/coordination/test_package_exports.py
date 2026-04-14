@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import app.coordination.availability as availability_pkg
 import app.coordination.cluster as cluster_pkg
+import app.coordination.health as health_pkg
 import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
 import app.coordination.queue_strategies as queue_strategies_pkg
@@ -86,6 +87,27 @@ def test_interfaces_module_declares_protocol_surface() -> None:
         exported = getattr(interfaces_pkg, name)
         assert exported.__module__ == "app.coordination.interfaces"
         assert name in dir(interfaces_pkg)
+
+
+def test_health_package_declares_public_exports() -> None:
+    expected = {
+        "HealthStatus": "app.coordination.health.types",
+        "HealthStatusInfo": "app.coordination.health.types",
+        "to_health_status": "app.coordination.health.types",
+        "from_legacy_health_state": "app.coordination.health.types",
+        "from_legacy_health_level": "app.coordination.health.types",
+        "from_legacy_system_health_level": "app.coordination.health.types",
+        "from_legacy_node_health_state": "app.coordination.health.types",
+        "get_health_score": "app.coordination.health.types",
+        "from_health_score": "app.coordination.health.types",
+    }
+
+    assert health_pkg.__all__ == list(expected)
+    assert len(health_pkg.__all__) == len(set(health_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(health_pkg, name)
+        assert exported.__module__ == module_name
+        assert name in dir(health_pkg)
 
 
 def test_queue_strategies_package_declares_public_exports() -> None:

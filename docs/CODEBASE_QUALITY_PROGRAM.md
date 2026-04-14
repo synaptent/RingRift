@@ -146,6 +146,7 @@ Current objectives:
 - `app.coordination.interfaces` now has that package-surface ratchet too: focused tests lock its protocol exports, and `__dir__()` now makes the intended interface surface explicit for discoverability and future regression checks.
 - `app.coordination.queue_strategies` now follows the same pattern too: its tiny mixin package surface is locked under focused tests, and `__dir__()` now exposes that public package surface intentionally instead of relying on implicit module behavior.
 - `app.coordination.availability` now follows the same pattern too: its package export list is locked under focused tests, and `__dir__()` now makes the node-monitor / recovery / provisioning surface explicit for discoverability.
+- `app.coordination.health` now follows the same pattern too: its canonical health-type package surface is locked under focused tests, and `__dir__()` now makes that public health API explicit for discovery and drift checks.
 
 ## Execution Protocol
 
