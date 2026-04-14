@@ -18,13 +18,21 @@ This package provides abstractions for different cloud GPU providers:
 Abstract base class for all providers:
 
 ```python
-from app.coordination.providers import CloudProvider
+from app.coordination.providers import CloudProvider, GPUType, Instance
 
 class MyProvider(CloudProvider):
-    async def get_instances(self) -> list[Instance]:
+    @property
+    def provider_type(self):
         ...
 
-    async def start_instance(self, instance_id: str) -> bool:
+    @property
+    def name(self) -> str:
+        ...
+
+    async def list_instances(self) -> list[Instance]:
+        ...
+
+    async def scale_up(self, gpu_type: GPUType, count: int = 1) -> list[Instance]:
         ...
 ```
 
@@ -44,32 +52,32 @@ class MyProvider(CloudProvider):
 ### Get Provider by Name
 
 ```python
-from app.coordination.providers import get_provider
+from app.coordination.providers import ProviderType, get_provider
 
-provider = get_provider("lambda")
-instances = await provider.get_instances()
+provider = get_provider(ProviderType.VAST)
+instances = await provider.list_instances()
 ```
 
-### SSH Connection
+### Provider Metadata For A Node
 
 ```python
-from app.coordination.providers import get_provider
+from app.coordination.providers import ProviderRegistry
 
-provider = get_provider("vast")
-ssh_config = provider.get_ssh_config("vast-29129529")
-# Returns: {"host": "ssh6.vast.ai", "port": 19528, "user": "root", ...}
+config = ProviderRegistry.get_for_node("vast-29129529")
+print(config.ringrift_path)
+print(config.ssh_user)
+print(config.ssh_key)
 ```
 
-### Path Conventions
-
-Each provider has different ringrift path conventions:
+### Capacity Snapshot
 
 ```python
-provider = get_provider("runpod")
-path = provider.get_ringrift_path()  # "/workspace/ringrift/ai-service"
+from app.coordination.providers import get_all_providers
 
-provider = get_provider("lambda")
-path = provider.get_ringrift_path()  # "~/ringrift/ai-service" (NFS mount)
+for provider in get_all_providers():
+    if provider.is_configured():
+        gpus = await provider.get_available_gpus()
+        print(provider.name, gpus)
 ```
 
 ## Provider-Specific Notes

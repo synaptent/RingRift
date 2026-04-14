@@ -177,6 +177,7 @@ Current objectives:
 - The deprecated coordination docs are now being aligned with the real archive state too: `app.coordination.deprecated/README.md` no longer describes nonexistent package layouts or archive paths, and the docs ratchet now locks its current role as an archived-name sentinel plus the one remaining legacy sync module.
 - The package README audit is continuing through older service docs too: `app.distributed/README.md` now uses the real host circuit-breaker reset API (`get_host_breaker()`, `reset(target)`, `reset_all()`) instead of nonexistent helpers, and `app.quality/README.md` now points readers at the supported optimized training pipeline entrypoints instead of a dead `app.training.TrainingPipeline` facade.
 - The game-engine docs now match the actual package contract too: `app.game_engine/README.md` no longer mislabels the package as deprecated or shows the wrong `PhaseRequirement` fields, and the docs ratchet now locks the supported `app.game_engine` import surface plus the current phase-requirement example.
+- The coordination package guides are being brought up to the same bar too: `app.coordination.cluster/README.md` now reflects the lazy `health` / `transport` / `p2p` package layout and current health helpers, while `app.coordination.providers/README.md` now uses the enum-based root provider API and `ProviderRegistry` instead of dead string helpers and nonexistent provider methods.
 
 ## Execution Protocol
 

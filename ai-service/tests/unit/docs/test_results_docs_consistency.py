@@ -34,6 +34,8 @@ COORDINATION_DEPRECATED_README = REPO_ROOT / "ai-service" / "app" / "coordinatio
 DISTRIBUTED_README = REPO_ROOT / "ai-service" / "app" / "distributed" / "README.md"
 QUALITY_README = REPO_ROOT / "ai-service" / "app" / "quality" / "README.md"
 GAME_ENGINE_README = REPO_ROOT / "ai-service" / "app" / "game_engine" / "README.md"
+COORDINATION_CLUSTER_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "cluster" / "README.md"
+COORDINATION_PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "providers" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -239,3 +241,34 @@ def test_game_engine_readme_matches_current_package_contract() -> None:
     assert "app._game_engine_legacy" in text
     assert "from app.board_manager import BoardManager" not in text
     assert "New code should use `app.board_manager.BoardManager` directly." not in text
+
+
+def test_coordination_cluster_readme_matches_lazy_package_layout() -> None:
+    text = COORDINATION_CLUSTER_README.read_text(encoding="utf-8")
+
+    assert "from app.coordination.cluster import health" in text
+    assert "health.get_cluster_health_summary()" in text
+    assert "health.get_healthy_nodes()" in text
+    assert "from app.coordination.cluster.health import (" in text
+    assert "manager.health_check()" in text
+    assert "cluster_transport.py" in text
+    assert "p2p_backend.py" in text
+    assert "check_node_health" not in text
+    assert "| `transport.py`" not in text
+    assert "| `p2p.py`" not in text
+
+
+def test_coordination_providers_readme_matches_enum_root_api() -> None:
+    text = COORDINATION_PROVIDERS_README.read_text(encoding="utf-8")
+
+    assert "from app.coordination.providers import ProviderType, get_provider" in text
+    assert "get_provider(ProviderType.VAST)" in text
+    assert "await provider.list_instances()" in text
+    assert "ProviderRegistry.get_for_node" in text
+    assert "get_all_providers()" in text
+    assert "get_available_gpus()" in text
+    assert "async def get_instances" not in text
+    assert "async def start_instance" not in text
+    assert 'get_provider("lambda")' not in text
+    assert "get_ssh_config" not in text
+    assert "get_ringrift_path" not in text
