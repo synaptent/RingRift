@@ -35,6 +35,16 @@ From the repo root:
 
 Those wrappers call [`scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py), which is the supported training engine for the published results.
 
+For supported trainer canaries on the GH200 fleet, deploy with:
+
+```bash
+cd ai-service
+bash scripts/deploy_minimal_loops.sh --dry-run
+bash scripts/deploy_minimal_loops.sh
+```
+
+That deploy path now runs a local minimal-loop preflight before it restarts trainer nodes. Live stage state is written to each work directory's `progress.json`, while durable iteration history is written to `metrics.jsonl`.
+
 ### 3. Verify TypeScript ↔ Python parity
 
 ```bash

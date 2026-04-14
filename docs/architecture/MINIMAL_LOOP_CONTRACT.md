@@ -34,7 +34,10 @@ For iteration `N`, the loop writes:
 - `<work-dir>/combined_NNN.npz` when a sliding training window is used
 - `<work-dir>/models/best.pth`
 - `<work-dir>/models/candidate_NNN.pth`
+- `<work-dir>/progress.json`
 - `<work-dir>/metrics.jsonl`
+
+`progress.json` is the live per-stage status file for operators. It is rewritten at stage boundaries such as self-play start, self-play complete, training complete, evaluation start, and iteration completion.
 
 Resume is based on the number of `iter_*.npz` files plus the latest metrics entries for promotions and estimated Elo.
 
@@ -127,3 +130,16 @@ These gates are part of the proof-run contract. Any coordinator path claiming eq
 Each metrics JSONL entry records iteration, timestamps, self-play metrics, training metrics, evaluation metrics, promotion decision, estimated Elo, total promotions, iteration time, budgets, learning-rate settings, git SHA, and effective learning rate.
 
 S3 heartbeats are best effort and are written under `s3://ringrift-models-20251214/consolidated/heartbeats/<node>.json` with node, config, iteration, Elo, promotions, stage, data-quality score, and experiment parameters.
+
+## Supported Rollout Contract
+
+The supported canary deployment path is `ai-service/scripts/deploy_minimal_loops.sh`.
+
+That script is expected to:
+
+- run a local preflight against `tests/unit/scripts/test_minimal_alphazero_loop.py`
+- deploy `minimal_alphazero_loop.py`, `pipeline_watchdog.py`, and `minimal_loop_supervisor.sh`
+- restart only the selected supported minimal-loop nodes
+- verify that the remote supervisor is alive after launch
+
+The `--skip-preflight` escape hatch exists for emergency operations, but the normal supported path is to keep the preflight enabled.

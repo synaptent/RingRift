@@ -11,6 +11,10 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 - [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
   - Canonical trainer loop for self-play, train, and evaluate on a single config.
 
+- [`deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
+  - Supported canary-trainer deployment entrypoint for the minimal-loop fleet.
+  - Runs a local minimal-loop preflight test slice before restarting trainer nodes.
+
 - [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py)
   - Dedicated policy-bearing Gumbel selfplay worker for role-based fleet nodes.
 
@@ -74,11 +78,13 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 
 ## Current Supported Flow
 
-1. Deploy the role-based runtime with [`deploy_training_service.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_training_service.sh).
-2. Trainers run [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
-3. Selfplay workers run [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py).
-4. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/ingest_policy_selfplay.py).
-5. Fleet state is checked with [`autonomy_fleet_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/autonomy_fleet_check.py).
+1. For supported trainer canaries, deploy with [`deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh).
+2. That script preflights [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py) locally before it restarts remote trainers.
+3. Trainers write live state to `<work-dir>/progress.json` and durable history to `<work-dir>/metrics.jsonl`.
+4. For the broader role-based fleet, use [`deploy_training_service.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_training_service.sh).
+5. Selfplay workers run [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py).
+6. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/ingest_policy_selfplay.py).
+7. Fleet state is checked with [`autonomy_fleet_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/autonomy_fleet_check.py).
 
 ## Everything Else
 
