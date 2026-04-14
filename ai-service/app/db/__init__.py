@@ -70,3 +70,9 @@ def __getattr__(name: str):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     module = importlib.import_module(module_name)
     return getattr(module, name)
+
+
+def __dir__() -> list[str]:
+    """Expose the declared database package surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

@@ -60,3 +60,9 @@ __all__ = [
     # Convenience functions
     "analyze_game_balance",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended analysis surface for discoverability and tests."""
+
+    return sorted(set(globals()) | set(__all__))

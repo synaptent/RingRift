@@ -114,14 +114,22 @@ class TestAllExports:
 
     def test_interfaces_all(self):
         """Test that __all__ in interfaces matches exports."""
-        from app.interfaces import __all__
+        import app.interfaces as interfaces
 
         expected = [
-            "HashProvider",
-            "MoveCacheProvider",
-            "ModelProvider",
+            "DaemonLifecycle",
             "EncodingProvider",
+            "EventEmitter",
+            "EventHandler",
+            "EventSubscriber",
+            "HashProvider",
+            "ModelProvider",
+            "MoveCacheProvider",
         ]
 
+        assert interfaces.__all__ == expected
+        assert len(interfaces.__all__) == len(set(interfaces.__all__))
+
         for name in expected:
-            assert name in __all__, f"{name} should be in __all__"
+            assert name in dir(interfaces)
+            assert hasattr(interfaces, name)
