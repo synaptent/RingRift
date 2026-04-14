@@ -133,11 +133,11 @@ When deprecating a module:
 
 ## Currently Deprecated Modules
 
-| Module                       | Replacement               | Removal Target |
-| ---------------------------- | ------------------------- | -------------- |
-| `orchestrated_training.py`   | `unified_orchestrator.py` | Q1 2026        |
-| `integrated_enhancements.py` | `unified_orchestrator.py` | Q1 2026        |
-| `_game_engine_legacy.py`     | `game_engine/`            | Q2 2026        |
+| Module                                                 | Replacement                                                        | Removal Target |
+| ------------------------------------------------------ | ------------------------------------------------------------------ | -------------- |
+| `archive/deprecated_training/orchestrated_training.py` | `unified_orchestrator.py` + `app.training` compatibility re-export | Q1 2026        |
+| `integrated_enhancements.py`                           | `unified_orchestrator.py`                                          | Q1 2026        |
+| `_game_engine_legacy.py`                               | `game_engine/`                                                     | Q2 2026        |
 
 ---
 

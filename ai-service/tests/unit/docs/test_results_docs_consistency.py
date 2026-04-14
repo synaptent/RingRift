@@ -56,6 +56,11 @@ CONFIG_SOURCES_DOC = REPO_ROOT / "ai-service" / "docs" / "CONFIG_SOURCES.md"
 DEPRECATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_ROADMAP.md"
 DEPRECATED_MODULES_MIGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATED_MODULES_MIGRATION.md"
 MASTER_RUNBOOK_INDEX_DOC = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "MASTER_RUNBOOK_INDEX.md"
+DEPRECATION_TRACKER_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TRACKER.md"
+CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_19.md"
+STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
+ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
+CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -454,3 +459,27 @@ def test_master_runbook_index_uses_current_coordination_helpers() -> None:
     assert "from app.coordination.event_router import get_event_stats" in text
     assert "print(get_event_stats())" in text
     assert "EventRouter.get_instance()" not in text
+
+
+def test_historical_planning_docs_use_archived_training_orchestrator_path() -> None:
+    tracker_text = DEPRECATION_TRACKER_DOC.read_text(encoding="utf-8")
+    status_text = CONSOLIDATION_STATUS_2025_12_19_DOC.read_text(encoding="utf-8")
+    strategic_text = STRATEGIC_IMPROVEMENT_PLAN_DOC.read_text(encoding="utf-8")
+    naming_text = ARCHITECTURE_NAMING_DOC.read_text(encoding="utf-8")
+    roadmap_text = CONSOLIDATION_ROADMAP_DOC.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_training/orchestrated_training.py" in tracker_text
+    assert "app.training` compatibility re-export" in tracker_text
+    assert "archive/deprecated_training/orchestrated_training.py" in status_text
+    assert "archived compatibility layer re-exported from `app.training`" in status_text
+    assert "archive/deprecated_training/orchestrated_training.py" in strategic_text
+    assert "re-exported from `app.training`" in strategic_text
+    assert "archive/deprecated_training/orchestrated_training.py" in naming_text
+    assert "app.training` compatibility re-export" in naming_text
+    assert "archive/deprecated_training/orchestrated_training.py" in roadmap_text
+    assert "compatibility re-export from `app.training`" in roadmap_text
+    assert "app/training/orchestrated_training.py" not in status_text
+    assert "app/training/orchestrated_training.py" not in strategic_text
+    assert "app/training/orchestrated_training.py" not in roadmap_text
+    assert "| `orchestrated_training.py`" not in tracker_text
+    assert "| `orchestrated_training.py`" not in naming_text

@@ -192,9 +192,9 @@ except SyncError as e:
 
 ### 4.3 Complete Deprecated Module Migration
 
-Remove active imports of:
+Remove active compatibility imports of:
 
-- `app/training/orchestrated_training.py` (386 lines)
+- `archive/deprecated_training/orchestrated_training.py` (386 lines; re-exported from `app.training`)
 - `app/training/integrated_enhancements.py` (1,350 lines)
 
 Both are superseded by `UnifiedTrainingOrchestrator`.

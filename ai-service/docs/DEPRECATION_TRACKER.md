@@ -176,17 +176,17 @@ These modules exist only to re-export from canonical locations with deprecation 
 
 ## Priority 6: Training Module Deprecations
 
-| Module                               | Location                            | Replacement                     |
-| ------------------------------------ | ----------------------------------- | ------------------------------- |
-| `orchestrated_training.py`           | `app/training/`                     | `unified_orchestrator.py`       |
-| `integrated_enhancements.py`         | `app/training/`                     | `unified_orchestrator.py`       |
-| `data_pipeline_controller.py`        | `app/training/`                     | `data_pipeline_orchestrator.py` |
-| `checkpointing.py`                   | `app/training/`                     | `checkpoint_unified.py`         |
-| `train_checkpointing.py`             | `app/training/`                     | `checkpoint_unified.py`         |
-| `fault_tolerance.retry_with_backoff` | `app/training/fault_tolerance.py`   | `app.core.error_handler.retry`  |
-| `distributed.DistributedTrainer`     | `app/training/distributed.py`       | `distributed_unified.py`        |
-| `advanced_training.SmartCheckpoint`  | `app/training/advanced_training.py` | `UnifiedCheckpointManager`      |
-| `config.SelfPlayConfig`              | `app/training/config.py`            | `SelfplayConfig`                |
+| Module                                                 | Location                            | Replacement                                                        |
+| ------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------ |
+| `archive/deprecated_training/orchestrated_training.py` | `archive/deprecated_training/`      | `unified_orchestrator.py` + `app.training` compatibility re-export |
+| `integrated_enhancements.py`                           | `app/training/`                     | `unified_orchestrator.py`                                          |
+| `data_pipeline_controller.py`                          | `app/training/`                     | `data_pipeline_orchestrator.py`                                    |
+| `checkpointing.py`                                     | `app/training/`                     | `checkpoint_unified.py`                                            |
+| `train_checkpointing.py`                               | `app/training/`                     | `checkpoint_unified.py`                                            |
+| `fault_tolerance.retry_with_backoff`                   | `app/training/fault_tolerance.py`   | `app.core.error_handler.retry`                                     |
+| `distributed.DistributedTrainer`                       | `app/training/distributed.py`       | `distributed_unified.py`                                           |
+| `advanced_training.SmartCheckpoint`                    | `app/training/advanced_training.py` | `UnifiedCheckpointManager`                                         |
+| `config.SelfPlayConfig`                                | `app/training/config.py`            | `SelfplayConfig`                                                   |
 
 ---
 

@@ -52,7 +52,7 @@
 
 - Added cross-reference documentation to:
   - `app/training/unified_orchestrator.py` (execution-level)
-  - `app/training/orchestrated_training.py` (service-level)
+  - `archive/deprecated_training/orchestrated_training.py` (archived compatibility layer re-exported from `app.training`)
 
 ### 7. Event Wiring Helpers
 

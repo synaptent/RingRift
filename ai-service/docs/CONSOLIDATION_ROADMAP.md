@@ -174,7 +174,7 @@ scripts/
 
 **Training-related (6 overlapping)**:
 
-- `TrainingOrchestrator` (orchestrated_training.py)
+- `TrainingOrchestrator` (`archive/deprecated_training/orchestrated_training.py`; compatibility re-export from `app.training`)
 - `UnifiedTrainingOrchestrator` (unified_orchestrator.py)
 - `TrainingCoordinator` (training_coordinator.py)
 - `TrainingCoordinator` (p2p_integration.py) - DUPLICATE NAME!
@@ -236,7 +236,8 @@ app/coordination/
 2. **Merge training orchestrators**:
    - Keep `UnifiedTrainingOrchestrator` as base
    - Merge features from `TrainingOrchestrator`, `IntegratedTrainingManager`
-   - Deprecate: `orchestrated_training.py`, `integrated_enhancements.py`
+   - Keep `archive/deprecated_training/orchestrated_training.py` as an archived compatibility layer only while migrating older `app.training` imports
+   - Deprecate: `integrated_enhancements.py`
 
 3. **Merge health orchestrators**:
    - Keep `UnifiedHealthManager` (extends CoordinatorBase)
@@ -255,7 +256,7 @@ app/coordination/
 7+ distinct config dataclasses identified:
 
 - `OrchestratorConfig` (unified_orchestrator.py)
-- `TrainingOrchestratorConfig` (orchestrated_training.py)
+- `TrainingOrchestratorConfig` (`archive/deprecated_training/orchestrated_training.py`; compatibility re-export from `app.training`)
 - `SyncOrchestratorConfig` (sync_orchestrator.py, legacy)
 - `CoordinatorConfig` (coordinator_config.py)
 - `GPUGumbelMCTSConfig` (tensor_gumbel_tree.py)
@@ -367,7 +368,7 @@ During consolidation, these unique features MUST be preserved:
 
 - [x] Unify Sequential Halving implementations (Dec 2025)
 - [x] Create unified `GumbelSearchEngine` (Dec 2025)
-- [x] Document training orchestrator consolidation (Dec 2025) - Created ORCHESTRATOR_GUIDE.md - Added deprecation notices to orchestrated_training.py, integrated_enhancements.py - Target: 5 orchestrators → 3 (keeping UnifiedTrainingOrchestrator, TrainingCoordinator, TrainingLifecycleManager)
+- [x] Document training orchestrator consolidation (Dec 2025) - Created ORCHESTRATOR_GUIDE.md - Added deprecation notices to `archive/deprecated_training/orchestrated_training.py` and `integrated_enhancements.py` - Target: 5 orchestrators → 3 (keeping UnifiedTrainingOrchestrator, TrainingCoordinator, TrainingLifecycleManager)
 
 ### Medium-term (1-2 months)
 
@@ -381,7 +382,7 @@ During consolidation, these unique features MUST be preserved:
 - [x] Quality scoring consolidation (Dec 2025) - UnifiedQualityScorer (app/quality/unified_quality.py) is SSoT - Added compute_freshness_score() for backwards compatibility - Deprecated: DataQualityScorer (training_enhancements.py), GameQualityScorer (scripts/lib/data_quality.py)
 - [x] Event system hardening (Dec 2025) - Fixed fire-and-forget asyncio.create_task in event_router.py with error callbacks - Fixed silent print() statements in cross_process_events.py with proper logger.error() - Added dispatch failure tracking metrics
 - [x] Feedback loop completion (Dec 2025) - Eval→curriculum: game_gauntlet.py now emits EVALUATION_COMPLETED events consumed by TournamentToCurriculumWatcher - Cluster→training: training_coordinator.py subscribes to P2P_CLUSTER_HEALTHY/UNHEALTHY, NODE_RECOVERED events - Training blocked when cluster unhealthy
-- [x] Deprecation warnings added (Dec 2025) - orchestrated_training.py, integrated_enhancements.py, training_enhancements.DataQualityScorer, scripts/lib/data_quality.py - Files kept in place (still imported) with runtime DeprecationWarning - Gradual migration to unified modules recommended
+- [x] Deprecation warnings added (Dec 2025) - `archive/deprecated_training/orchestrated_training.py`, `integrated_enhancements.py`, `training_enhancements.DataQualityScorer`, and `scripts/lib/data_quality.py` - Files kept in place (or archived behind compatibility re-exports) with runtime DeprecationWarning - Gradual migration to unified modules recommended
 - [ ] Remove deprecated code (when all imports migrated)
 - [ ] Documentation updates
 
@@ -405,8 +406,8 @@ During consolidation, these unique features MUST be preserved:
 After consolidation, these files should be archived:
 
 ```
-# Move to deprecated/ folder
-app/training/orchestrated_training.py    → merged into unified_orchestrator
+# Archive / retire after migration completes
+archive/deprecated_training/orchestrated_training.py  → compatibility layer; prefer unified_orchestrator + app.training re-export only while migrating
 app/training/integrated_enhancements.py  → features extracted
 app/ai/batched_gumbel_mcts.py           → replaced by GumbelSearchEngine
 app/monitoring/unified_health.py         → merged into unified_health_manager
