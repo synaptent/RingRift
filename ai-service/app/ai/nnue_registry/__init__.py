@@ -35,3 +35,9 @@ __all__ = [
     "promote_nnue_model",
     "print_nnue_registry_status",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended NNUE registry surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

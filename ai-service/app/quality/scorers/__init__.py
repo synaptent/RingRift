@@ -36,3 +36,9 @@ __all__ = [
     "get_game_quality_scorer",
     "reset_game_quality_scorer",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended scorer surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

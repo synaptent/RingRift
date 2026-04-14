@@ -21,3 +21,9 @@ __all__ = [
     "RewardCalculatorMixin",
     "TerminationHandlerMixin",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended env-mixin surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

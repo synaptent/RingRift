@@ -30,3 +30,9 @@ __all__ = [
     "PlacementGenerator",
     "TerritoryGenerator",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended generator surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

@@ -26,3 +26,9 @@ __all__ = [
     "NpzValidator",
     "NpzValidatorConfig",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended validator surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
