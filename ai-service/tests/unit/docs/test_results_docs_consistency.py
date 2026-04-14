@@ -673,4 +673,5 @@ def test_titans_plan_uses_supported_neural_net_surface() -> None:
     assert "def __init__(self, base_model: nn.Module, memory_config: MemoryConfig):" in text
     assert "create_model_for_board(...)" in text
     assert "Changes to `app/ai/ringrift_net.py`" not in text
+    assert "app/ai/ringrift_net.py" not in text
     assert "RingRiftNetWithMemory" not in text

@@ -572,8 +572,8 @@ class NeuralNetWithMemory(nn.Module):
 ```
 
 Instantiate `base_model` through the supported `app.ai.neural_net` facade, for
-example via `create_model_for_board(...)`, rather than targeting a nonexistent
-`app/ai/ringrift_net.py` module.
+example via `create_model_for_board(...)`, rather than relying on older
+one-off model-file paths.
 
 ---
 
