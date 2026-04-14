@@ -30,6 +30,7 @@ INTERFACES_README = REPO_ROOT / "ai-service" / "app" / "interfaces" / "README.md
 METRICS_README = REPO_ROOT / "ai-service" / "app" / "metrics" / "README.md"
 MONITORING_README = REPO_ROOT / "ai-service" / "app" / "monitoring" / "README.md"
 VALIDATION_README = REPO_ROOT / "ai-service" / "app" / "validation" / "README.md"
+COORDINATION_DEPRECATED_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "deprecated" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -183,3 +184,17 @@ def test_validation_readme_matches_supported_validation_surface() -> None:
     assert "each_key" not in text
     assert "pydantic_validator" not in text
     assert "strict=True" not in text
+
+
+def test_deprecated_coordination_readme_matches_current_archive_state() -> None:
+    text = COORDINATION_DEPRECATED_README.read_text(encoding="utf-8")
+
+    assert "_deprecated_sync_coordinator.py" in text
+    assert "app.coordination.event_router" in text
+    assert "app.coordination.unified_health_manager" in text
+    assert "app.coordination.auto_sync_daemon" in text
+    assert "app.coordination.sync_router" in text
+    assert "app.distributed.sync_coordinator" in text
+    assert "archive/deprecated_coordination/README.md" not in text
+    assert "app.coordination.core.events" not in text
+    assert "from app.coordination.cluster import SyncScheduler" not in text
