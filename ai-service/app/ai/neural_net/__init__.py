@@ -285,3 +285,9 @@ __all__ = [
     "transform_policy_index_square",
     "UnifiedNeuralNetFactory",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended neural-net package surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

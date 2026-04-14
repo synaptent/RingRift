@@ -122,3 +122,9 @@ __all__ = [
     "create_replicated_job_assignments",
     "create_replicated_work_queue",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended P2P surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

@@ -172,6 +172,12 @@ __all__ = [
 ]
 
 
+def __dir__() -> list[str]:
+    """Expose the intended tournament surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
 # Singleton registry for convenience
 _default_registry: AIAgentRegistry | None = None
 

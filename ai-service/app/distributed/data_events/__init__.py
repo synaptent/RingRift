@@ -259,3 +259,9 @@ __all__ = [
     "emit_training_threshold",
     "emit_weight_updated",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended data-events surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
