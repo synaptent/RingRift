@@ -86,6 +86,12 @@ EVENT_SUBSCRIPTION_MATRIX_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "archit
 EVENT_WIRING_DIAGRAM_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_WIRING_DIAGRAM.md"
 EVENT_FLOW_INTEGRATION_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_FLOW_INTEGRATION.md"
 P2P_MANAGER_INTEGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "p2p-manager-integration.md"
+EVENT_NAMING_CONVENTION_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_NAMING_CONVENTION.md"
+EVENT_WIRING_VERIFICATION_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "EVENT_WIRING_VERIFICATION.md"
+COORDINATION_EVENT_SYSTEM_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "COORDINATION_EVENT_SYSTEM.md"
+PRIORITY_ACTION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "PRIORITY_ACTION_PLAN_2025_12_26.md"
+COORDINATOR_EVENT_AUDIT_DOC = REPO_ROOT / "ai-service" / "docs" / "audits" / "COORDINATOR_EVENT_AUDIT.md"
+INTEGRATION_MIGRATION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "roadmaps" / "INTEGRATION_MIGRATION_PLAN.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -749,3 +755,26 @@ def test_p2p_manager_guide_uses_supported_circuit_breaker_surface() -> None:
     assert "app/distributed/circuit_breaker.py" in text
     assert "app/coordination/circuit_breaker.py" not in text
     assert "CircuitBreakerConfig" not in text
+
+
+def test_additional_event_docs_use_data_events_package_layout() -> None:
+    naming_text = EVENT_NAMING_CONVENTION_DOC.read_text(encoding="utf-8")
+    wiring_runbook_text = EVENT_WIRING_VERIFICATION_RUNBOOK.read_text(encoding="utf-8")
+    event_system_text = COORDINATION_EVENT_SYSTEM_RUNBOOK.read_text(encoding="utf-8")
+    priority_plan_text = PRIORITY_ACTION_PLAN_DOC.read_text(encoding="utf-8")
+    audit_text = COORDINATOR_EVENT_AUDIT_DOC.read_text(encoding="utf-8")
+    migration_text = INTEGRATION_MIGRATION_PLAN_DOC.read_text(encoding="utf-8")
+
+    assert "app/distributed/data_events/event_types.py" in naming_text
+    assert "ai-service/app/distributed/data_events/" in wiring_runbook_text
+    assert "app/distributed/data_events/event_types.py" in event_system_text
+    assert "re-exported via `app.distributed.data_events`" in event_system_text
+    assert "app/distributed/data_events/event_types.py" in priority_plan_text
+    assert "app/distributed/data_events/event_types.py" in audit_text
+    assert "app/distributed/data_events/event_types.py" in migration_text
+    assert "app/distributed/data_events.py" not in naming_text
+    assert "app/distributed/data_events.py" not in wiring_runbook_text
+    assert "app/distributed/data_events.py" not in event_system_text
+    assert "app/distributed/data_events.py" not in priority_plan_text
+    assert "app/distributed/data_events.py" not in audit_text
+    assert "app/distributed/data_events.py" not in migration_text

@@ -162,7 +162,7 @@
 
 - `app/coordination/job_scheduler.py` - Added preemption support
 - `app/coordination/selfplay_scheduler.py` - Added weight normalization
-- `app/distributed/data_events.py` - Added JOB_PREEMPTED event
+- `app/distributed/data_events/event_types.py` - Added JOB_PREEMPTED event
 - `app/training/selfplay_runner.py` - Added SELFPLAY_RATE_CHANGED subscription, ephemeral sync
 
 ## Commits Pushed

@@ -456,7 +456,7 @@ The following coordinators are deprecated and should not be used:
 ## 8. File References
 
 - **Registry:** `app/coordination/coordination_bootstrap.py:260-464`
-- **Event Types:** `app/distributed/data_events.py:77-356`
+- **Event Types:** `app/distributed/data_events/event_types.py` (`DataEventType`)
 - **Event Mappings:** `app/coordination/event_mappings.py`
 - **Event Emitters:** `app/coordination/event_emitters.py`
 

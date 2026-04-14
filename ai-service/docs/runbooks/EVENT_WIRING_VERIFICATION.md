@@ -106,7 +106,7 @@ When adding a new event type:
 
 ```bash
 # 1. Check if the event is defined
-grep -r "YOUR_NEW_EVENT" ai-service/app/distributed/data_events.py
+grep -r "YOUR_NEW_EVENT" ai-service/app/distributed/data_events/
 
 # 2. Check for emitters
 grep -rn "emit.*YOUR_NEW_EVENT" ai-service/app/coordination/

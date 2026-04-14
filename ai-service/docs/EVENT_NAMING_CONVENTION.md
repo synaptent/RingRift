@@ -433,5 +433,5 @@ variants = get_variants("DATA_SYNC_COMPLETED")
 - [`event_normalization.py`](../app/coordination/event_normalization.py) - Implementation
 - [`event_router.py`](../app/coordination/event_router.py) - Router integration
 - [`event_mappings.py`](../app/coordination/event_mappings.py) - Event type mappings
-- [`data_events.py`](../app/distributed/data_events.py) - DataEventType enum
+- [`data_events/event_types.py`](../app/distributed/data_events/event_types.py) - DataEventType enum
 - [`stage_events.py`](../app/coordination/stage_events.py) - StageEvent enum
