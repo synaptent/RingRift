@@ -5,8 +5,12 @@ This directory contains training modules that have been superseded by consolidat
 ## orchestrated_training.py
 
 **Archived**: December 26, 2025
+**Last Updated**: April 2026
 
-**Reason**: Functionality consolidated into `app/training/unified_orchestrator.py`
+**Reason**: Functionality consolidated into `app/training/unified_orchestrator.py`,
+with the archived compatibility layer now living at
+`archive/deprecated_training/orchestrated_training.py` and re-exported from
+`app.training`.
 
 **Superseded By**:
 
@@ -32,13 +36,18 @@ Manager LIFECYCLE orchestrator for training infrastructure that coordinated:
 
 **Migration**:
 
-Old code using `TrainingOrchestrator`:
+Compatibility import during migration:
 
 ```python
-from app.training.orchestrated_training import TrainingOrchestrator
+from app.training import TrainingOrchestrator, TrainingOrchestratorConfig
+
+config = TrainingOrchestratorConfig()
 orchestrator = TrainingOrchestrator(config)
 await orchestrator.initialize()
 ```
+
+The direct `app.training.orchestrated_training` module path no longer exists in
+the active package tree. Use the `app.training` re-export only while migrating.
 
 New code using `UnifiedTrainingOrchestrator`:
 
@@ -57,18 +66,10 @@ See `app/training/ORCHESTRATOR_GUIDE.md` for complete migration instructions.
 
 **Verification**:
 
-Grep analysis confirmed only 4 references (all documentation and self-references):
-
-```bash
-grep -r "from app.training.orchestrated_training import" --include="*.py" .
-# Results:
-# - app/training/__init__.py: Documentation reference
-# - archive/deprecated_training/orchestrated_training.py: Self-reference
-# - docs/MIGRATION_GUIDE.md: Migration documentation
-# - app/training/ORCHESTRATOR_GUIDE.md: Migration documentation
-```
-
-No active code imports this module - safe to archive.
+The archived implementation lives in
+`archive/deprecated_training/orchestrated_training.py`, and the supported
+compatibility import is `from app.training import TrainingOrchestrator`.
+New training code should use `UnifiedTrainingOrchestrator` directly.
 
 **Deprecation Timeline**:
 

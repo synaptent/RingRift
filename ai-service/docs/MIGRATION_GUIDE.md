@@ -1,6 +1,6 @@
 # Deprecation Migration Guide
 
-**Last Updated**: December 2025
+**Last Updated**: April 2026
 **Document Purpose**: Comprehensive migration guide for deprecated modules in the ai-service codebase.
 
 ---
@@ -27,12 +27,14 @@
 
 ### 1.1 orchestrated_training.py -> unified_orchestrator.py
 
-**Status**: Deprecated December 2025, scheduled for removal Q2 2026
+**Status**: Archived December 2025, compatibility re-export remains in `app.training`
 
 **What was deprecated and why**:
 
 - `TrainingOrchestrator` from `orchestrated_training.py` was a manager lifecycle coordinator
 - Its functionality (checkpoint management, rollback, promotion, curriculum) has been integrated into `UnifiedTrainingOrchestrator`
+- The archived implementation now lives at `archive/deprecated_training/orchestrated_training.py`
+- The direct `app.training.orchestrated_training` module path has been removed from the active package tree
 - Consolidation reduces maintenance burden and provides a single entry point for training
 
 **Deprecation Warning**:
@@ -46,10 +48,10 @@ See app/training/ORCHESTRATOR_GUIDE.md for migration instructions.
 
 #### Code Migration Examples
 
-**Before (Deprecated)**:
+**Before (Compatibility path while migrating)**:
 
 ```python
-from app.training.orchestrated_training import (
+from app.training import (
     TrainingOrchestrator,
     TrainingOrchestratorConfig,
 )
@@ -75,6 +77,9 @@ async with orchestrator.training_context():
 
 await orchestrator.shutdown()
 ```
+
+Use that root-package compatibility import only for short-lived migrations. New
+code should move directly to `UnifiedTrainingOrchestrator`.
 
 **After (New API)**:
 

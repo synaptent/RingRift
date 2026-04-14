@@ -46,6 +46,8 @@ TRAINING_ORCHESTRATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "training" / "O
 COORDINATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "COORDINATOR_GUIDE.md"
 COORDINATION_TRAINING_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "training" / "README.md"
 COORDINATION_DEPRECATION_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "DEPRECATION_GUIDE.md"
+DEPRECATED_TRAINING_README = REPO_ROOT / "ai-service" / "archive" / "deprecated_training" / "README.md"
+AI_SERVICE_MIGRATION_GUIDE = REPO_ROOT / "ai-service" / "docs" / "MIGRATION_GUIDE.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -378,3 +380,23 @@ def test_coordination_deprecation_guide_matches_current_sync_and_event_migration
     assert "`SyncScheduler` (same file)" not in text
     assert "app/coordination/\n├── core/" not in text
     assert "https://github.com/anthropics/ringrift/issues" not in text
+
+
+def test_deprecated_training_readme_uses_current_compatibility_import() -> None:
+    text = DEPRECATED_TRAINING_README.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_training/orchestrated_training.py" in text
+    assert "re-exported from\n`app.training`" in text
+    assert "from app.training import TrainingOrchestrator, TrainingOrchestratorConfig" in text
+    assert "app.training.orchestrated_training" in text
+    assert "from app.training.orchestrated_training import TrainingOrchestrator" not in text
+
+
+def test_ai_service_migration_guide_uses_current_training_compatibility_path() -> None:
+    text = AI_SERVICE_MIGRATION_GUIDE.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_training/orchestrated_training.py" in text
+    assert "from app.training import (" in text
+    assert "The direct `app.training.orchestrated_training` module path has been removed" in text
+    assert "Use that root-package compatibility import only for short-lived migrations." in text
+    assert "from app.training.orchestrated_training import (" not in text
