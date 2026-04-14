@@ -122,9 +122,9 @@ Status: in progress
 
 Current objectives:
 
-- shrink the `app.coordination` package facade itself now that runtime consumers no longer depend on it
-- move historically package-local helpers onto explicit submodules or internal modules
-- keep public API changes narrow and verified with import/package tests
+- add an explicit package-surface ratchet for `app.training`, the largest remaining top-level package facade
+- make `app.training` package discovery consistent with the coordination and distributed package ratchets
+- keep public API changes narrow and verified with focused import/package tests before further contraction
 
 ## Latest Progress
 
@@ -134,9 +134,10 @@ Current objectives:
 - The facade-shrink phase has started: coordination status and aggregated health reporting now live in `app.coordination.status_reporting`, with `app.coordination.__init__` reduced to compatibility wrappers for those helpers.
 - Coordination bootstrap, shutdown, and heartbeat helpers now live in `app.coordination.lifecycle`, further reducing `app.coordination.__init__` from a logic owner to a compatibility entrypoint.
 - The same contraction pattern is now started for `app.training`: runtime consumers were moved off the top-level training facade and a new import-hygiene ratchet confirms zero real runtime `from app.training import ...` consumers outside the package.
+- The next contraction seam is `app.training.__init__`: it is still the largest remaining package facade, so the first step is to lock its declared surface under tests and make `dir(app.training)` reflect that public API intentionally.
 - The same runtime-facade ratchet now covers `app.distributed` too: CMA-ES and archival distributed training scripts now import owning submodules directly, and the distributed import-hygiene ratchet confirms zero `app.distributed` facade imports outside the package.
 - `app.distributed` now also has an explicit package-surface ratchet: focused tests cover key public exports, lazy deprecated symbols, and `dir()` discoverability.
-- The next acceptance bar is a materially smaller `app.coordination.__init__` surface with package tests and import-hygiene tests staying green.
+- The next acceptance bar is an explicit, tested `app.training` package surface, followed by incremental reduction of the `app.training.__init__` logic and export count.
 
 ## Execution Protocol
 
