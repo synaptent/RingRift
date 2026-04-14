@@ -659,11 +659,12 @@ Created `runbooks/HEXAGONAL_PARITY_BUG.md`:
 
 ### 43. Legacy Module Audit ✓
 
-**Neural Net Legacy (`app/ai/_neural_net_legacy.py`):**
+**Neural Net Legacy (`archive/deprecated_ai/_neural_net_legacy.py` via `app/ai/_neural_net_legacy.py`):**
 
 - Migration in progress (Phases 1-4 complete)
 - Remaining to migrate: `NeuralNetAI`, cache functions, move encoding
-- NOT ready for archival - active migration
+- NOT ready for compatibility retirement - active callers should stay on the
+  `app.ai.neural_net` facade
 
 **Game Engine Legacy (`archive/deprecated_ai/_game_engine_legacy.py` via `app/_game_engine_legacy.py`):**
 

@@ -527,15 +527,15 @@ class OpponentMemoryManager:
 
 Integrate memory into the existing CNN architecture.
 
-### Changes to `app/ai/ringrift_net.py`
+### Changes to `app/ai/neural_net/` architecture modules
 
 ```python
 # Add memory-augmented forward pass option
 
-class RingRiftNetWithMemory(nn.Module):
+class NeuralNetWithMemory(nn.Module):
     """RingRift neural network with optional memory augmentation."""
 
-    def __init__(self, base_model: RingRiftNet, memory_config: MemoryConfig):
+    def __init__(self, base_model: nn.Module, memory_config: MemoryConfig):
         super().__init__()
         self.base = base_model
 
@@ -570,6 +570,10 @@ class RingRiftNetWithMemory(nn.Module):
         target = torch.zeros_like(features)  # Placeholder - needs encoding
         self.memory.memorize(features, target, surprise)
 ```
+
+Instantiate `base_model` through the supported `app.ai.neural_net` facade, for
+example via `create_model_for_board(...)`, rather than targeting a nonexistent
+`app/ai/ringrift_net.py` module.
 
 ---
 

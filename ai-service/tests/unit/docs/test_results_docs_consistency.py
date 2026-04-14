@@ -62,6 +62,7 @@ LEGACY_RULES_DIFF_DOC = REPO_ROOT / "ai-service" / "docs" / "specs" / "LEGACY_RU
 AI_NEURAL_NET_INIT = REPO_ROOT / "ai-service" / "app" / "ai" / "neural_net" / "__init__.py"
 STRANDED_FEATURES_DOC = REPO_ROOT / "ai-service" / "docs" / "STRANDED_FEATURES.md"
 TRAIN_REFACTORING_DOC = REPO_ROOT / "ai-service" / "app" / "training" / "TRAIN_REFACTORING.md"
+TITANS_IMPLEMENTATION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "TITANS_IMPLEMENTATION_PLAN.md"
 STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
 ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
@@ -617,6 +618,14 @@ def test_consolidation_status_2025_12_19_uses_archived_game_engine_path() -> Non
     assert "NOT ready for compatibility retirement" in text
 
 
+def test_consolidation_status_2025_12_19_uses_archived_neural_net_path() -> None:
+    text = CONSOLIDATION_STATUS_2025_12_19_DOC.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_ai/_neural_net_legacy.py` via `app/ai/_neural_net_legacy.py`" in text
+    assert "NOT ready for compatibility retirement" in text
+    assert "`app.ai.neural_net` facade" in text
+
+
 def test_legacy_rules_diff_points_to_archived_game_engine_path() -> None:
     text = LEGACY_RULES_DIFF_DOC.read_text(encoding="utf-8")
 
@@ -654,3 +663,14 @@ def test_stranded_features_and_train_refactoring_use_neural_net_facade_story() -
     assert "Retire behind `app.ai.neural_net` facade" in stranded_text
     assert "Migrated to `neural_net/` package" not in stranded_text
     assert "Active callers should stay on the `app.ai.neural_net` facade" in train_refactoring_text
+
+
+def test_titans_plan_uses_supported_neural_net_surface() -> None:
+    text = TITANS_IMPLEMENTATION_PLAN_DOC.read_text(encoding="utf-8")
+
+    assert "Changes to `app/ai/neural_net/` architecture modules" in text
+    assert "class NeuralNetWithMemory(nn.Module):" in text
+    assert "def __init__(self, base_model: nn.Module, memory_config: MemoryConfig):" in text
+    assert "create_model_for_board(...)" in text
+    assert "Changes to `app/ai/ringrift_net.py`" not in text
+    assert "RingRiftNetWithMemory" not in text
