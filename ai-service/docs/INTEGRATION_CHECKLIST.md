@@ -25,7 +25,7 @@ Before merging any new feature, verify:
 **Step 1:** Add to DataEventType enum
 
 ```python
-# app/coordination/data_events.py
+# app/distributed/data_events/event_types.py
 class DataEventType(Enum):
     # ... existing events ...
     MY_NEW_EVENT = "my_new_event"
@@ -34,32 +34,30 @@ class DataEventType(Enum):
 **Step 2:** Add typed emitter function
 
 ```python
-# app/coordination/event_emitters.py
+# app/distributed/data_events/emit.py
 async def emit_my_new_event(
     config_key: str,
     some_data: str,
     **kwargs,
-) -> bool:
+) -> None:
     """Emit MY_NEW_EVENT.
 
     Args:
         config_key: Configuration key (e.g., "hex8_2p")
         some_data: Description of data
-
-    Returns:
-        True if event was published successfully
     """
-    return await _emit_data_event(
+    await emit_data_event(
         DataEventType.MY_NEW_EVENT,
         {
             "config_key": config_key,
             "some_data": some_data,
             **kwargs,
-        }
+        },
+        source="my_component",
     )
 ```
 
-**Step 3:** Update `__all__` in event_emitters.py
+**Step 3:** Re-export the helper from `app/distributed/data_events/__init__.py`
 
 ```python
 __all__ = [
@@ -117,7 +115,7 @@ async def _on_some_event(self, event: dict) -> None:
 grep -rn "emit_my_new_event" app/
 
 # Check event has subscribers
-grep -rn "MY_NEW_EVENT" app/coordination/
+grep -rn "MY_NEW_EVENT" app/distributed/ app/coordination/
 
 # Run event integration tests
 pytest tests/integration/coordination/test_event_flow.py -v -k "my_new_event"

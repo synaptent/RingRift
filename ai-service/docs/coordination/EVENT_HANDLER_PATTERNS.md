@@ -387,5 +387,5 @@ def get_quality_monitor() -> QualityMonitorDaemon:
 - `app/coordination/handler_base.py` - Base class implementation
 - `app/coordination/event_utils.py` - Event extraction utilities
 - `app/coordination/event_router.py` - Event bus implementation
-- `app/coordination/data_events.py` - Event type definitions
+- `app/distributed/data_events/event_types.py` - Event type definitions
 - `docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md` - Event wiring reference

@@ -301,5 +301,5 @@ flowchart TB
 - [EVENT_SUBSCRIPTION_MATRIX.md](EVENT_SUBSCRIPTION_MATRIX.md) - Full emitter/subscriber matrix
 - [FEEDBACK_LOOP_WIRING.md](FEEDBACK_LOOP_WIRING.md) - Feedback loop details
 - [DAEMON_LIFECYCLE.md](DAEMON_LIFECYCLE.md) - Daemon state management
-- `app/coordination/data_events.py` - Event type definitions
+- `app/distributed/data_events/event_types.py` - Event type definitions
 - `app/coordination/event_router.py` - Event bus implementation

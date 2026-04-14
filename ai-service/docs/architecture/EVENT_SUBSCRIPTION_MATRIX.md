@@ -827,5 +827,5 @@ When adding a new event:
 
 - `EVENT_FLOW_INTEGRATION.md` - Event flow diagrams
 - `../EVENT_SYSTEM_REFERENCE.md` - Detailed event documentation
-- `app/coordination/data_events.py` - Event type definitions
+- `app/distributed/data_events/event_types.py` - Event type definitions
 - `app/coordination/event_router.py` - Event bus implementation

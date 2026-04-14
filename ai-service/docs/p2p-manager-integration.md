@@ -341,48 +341,39 @@ def my_function():
 For managers that call external services, integrate circuit breakers:
 
 ```python
-from app.coordination.circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerConfig,
+from app.distributed import (
+    CircuitOpenError,
     CircuitState,
+    get_host_breaker,
 )
 
 class MyManager:
     def __init__(self, orchestrator, config):
         self._orchestrator = orchestrator
         self.config = config
-
-        # Create circuit breaker for external calls
-        self._circuit = CircuitBreaker(
-            name="my_manager_external",
-            config=CircuitBreakerConfig(
-                failure_threshold=5,
-                recovery_timeout=60.0,
-                half_open_max_calls=3,
-            ),
-        )
+        self._circuit = get_host_breaker()
+        self._circuit_target = "my_manager_external"
 
     async def call_external(self) -> dict:
         """Call external service with circuit breaker protection."""
-        if self._circuit.state == CircuitState.OPEN:
+        if self._circuit.get_state(self._circuit_target) == CircuitState.OPEN:
             raise RuntimeError("Circuit breaker open")
 
         try:
-            result = await self._do_external_call()
-            self._circuit.record_success()
-            return result
-        except Exception as e:
-            self._circuit.record_failure()
-            raise
+            async with self._circuit.protected(self._circuit_target):
+                return await self._do_external_call()
+        except CircuitOpenError as exc:
+            raise RuntimeError("Circuit breaker open") from exc
 
     def health_check(self) -> HealthCheckResult:
         # Include circuit breaker state in health
+        status = self._circuit.get_status(self._circuit_target)
         details = {
-            "circuit_state": self._circuit.state.value,
-            "circuit_failure_count": self._circuit.failure_count,
+            "circuit_state": status.state.value,
+            "circuit_failure_count": status.failure_count,
         }
 
-        if self._circuit.state == CircuitState.OPEN:
+        if status.state == CircuitState.OPEN:
             return HealthCheckResult.degraded(
                 "Circuit breaker open",
                 **details,
@@ -563,5 +554,5 @@ class TestMyNewManager:
 
 - `app/coordination/contracts.py` - HealthCheckResult and protocol definitions
 - `app/coordination/safe_event_emitter.py` - Event emission utilities
-- `app/coordination/circuit_breaker.py` - Circuit breaker implementation
+- `app/distributed/circuit_breaker.py` - Shared circuit breaker implementation
 - `scripts/p2p/managers/README.md` - Manager directory overview

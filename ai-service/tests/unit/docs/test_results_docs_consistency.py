@@ -80,6 +80,12 @@ EVENT_SYSTEM_REFERENCE_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_SYSTEM_R
 EVENT_CATALOG_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_CATALOG.md"
 EVENT_PAYLOAD_SCHEMAS_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_PAYLOAD_SCHEMAS.md"
 ADR_EVENT_DRIVEN_ARCHITECTURE_DOC = REPO_ROOT / "ai-service" / "docs" / "adr" / "ADR-001-event-driven-architecture.md"
+INTEGRATION_CHECKLIST_DOC = REPO_ROOT / "ai-service" / "docs" / "INTEGRATION_CHECKLIST.md"
+EVENT_HANDLER_PATTERNS_DOC = REPO_ROOT / "ai-service" / "docs" / "coordination" / "EVENT_HANDLER_PATTERNS.md"
+EVENT_SUBSCRIPTION_MATRIX_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_SUBSCRIPTION_MATRIX.md"
+EVENT_WIRING_DIAGRAM_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_WIRING_DIAGRAM.md"
+EVENT_FLOW_INTEGRATION_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_FLOW_INTEGRATION.md"
+P2P_MANAGER_INTEGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "p2p-manager-integration.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -709,3 +715,37 @@ def test_event_system_docs_use_data_events_package_paths() -> None:
     assert "app/distributed/data_events.py" not in catalog_text
     assert "app/distributed/data_events.py" not in payload_text
     assert "app/distributed/data_events.py" not in adr_text
+
+
+def test_event_integration_guides_use_data_events_package_paths() -> None:
+    checklist_text = INTEGRATION_CHECKLIST_DOC.read_text(encoding="utf-8")
+    patterns_text = EVENT_HANDLER_PATTERNS_DOC.read_text(encoding="utf-8")
+    matrix_text = EVENT_SUBSCRIPTION_MATRIX_ARCH_DOC.read_text(encoding="utf-8")
+    diagram_text = EVENT_WIRING_DIAGRAM_ARCH_DOC.read_text(encoding="utf-8")
+    flow_text = EVENT_FLOW_INTEGRATION_ARCH_DOC.read_text(encoding="utf-8")
+
+    assert "app/distributed/data_events/event_types.py" in checklist_text
+    assert "app/distributed/data_events/emit.py" in checklist_text
+    assert "app/distributed/data_events/__init__.py" in checklist_text
+    assert "app/distributed/data_events/event_types.py" in patterns_text
+    assert "app/distributed/data_events/event_types.py" in matrix_text
+    assert "app/distributed/data_events/event_types.py" in diagram_text
+    assert "app/distributed/data_events/event_types.py" in flow_text
+    assert "app/coordination/data_events.py" not in checklist_text
+    assert "app/coordination/data_events.py" not in patterns_text
+    assert "app/coordination/data_events.py" not in matrix_text
+    assert "app/coordination/data_events.py" not in diagram_text
+    assert "app/coordination/data_events.py" not in flow_text
+
+
+def test_p2p_manager_guide_uses_supported_circuit_breaker_surface() -> None:
+    text = P2P_MANAGER_INTEGRATION_DOC.read_text(encoding="utf-8")
+
+    assert "from app.distributed import (" in text
+    assert "CircuitOpenError" in text
+    assert "get_host_breaker" in text
+    assert 'self._circuit_target = "my_manager_external"' in text
+    assert "status = self._circuit.get_status(self._circuit_target)" in text
+    assert "app/distributed/circuit_breaker.py" in text
+    assert "app/coordination/circuit_breaker.py" not in text
+    assert "CircuitBreakerConfig" not in text
