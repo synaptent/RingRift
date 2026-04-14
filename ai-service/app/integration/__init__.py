@@ -39,6 +39,9 @@ Modules:
     - evaluation_curriculum_bridge: Evaluation → curriculum feedback loop
 """
 
+from __future__ import annotations
+
+import importlib
 from typing import TYPE_CHECKING
 
 # Lazy imports to avoid circular dependencies
@@ -65,8 +68,6 @@ __all__ = [
     "FeedbackSignal",
     "FeedbackSignalRouter",
     "LifecycleConfig",
-    # Auto Elo integration
-    "ModelEloIntegration",
     # Model lifecycle
     "ModelLifecycleManager",
     "OpponentWinRateTracker",
@@ -84,8 +85,6 @@ __all__ = [
     "create_full_selfplay_training_loop",
     "create_lifecycle_manager",
     "create_opponent_tracker",
-    # Factory functions for lazy loading
-    "get_auto_elo_integration",
     "get_evaluation_curriculum_bridge",
     "get_feedback_signal_router",
     "get_model_lifecycle_manager",
@@ -98,8 +97,45 @@ __all__ = [
     "integrate_feedback_with_selfplay",
     "integrate_lifecycle_with_p2p",
     "integrate_selfplay_with_training",
-    "register_model_for_elo",
 ]
+
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "EvaluationCurriculumBridge": ("app.integration.evaluation_curriculum_bridge", "EvaluationCurriculumBridge"),
+    "ExtensionConfig": ("app.integration.unified_loop_extensions", "ExtensionConfig"),
+    "FeedbackAction": ("app.integration.pipeline_feedback", "FeedbackAction"),
+    "FeedbackSignal": ("app.integration.pipeline_feedback", "FeedbackSignal"),
+    "FeedbackSignalRouter": ("app.integration.pipeline_feedback", "FeedbackSignalRouter"),
+    "LifecycleConfig": ("app.integration.model_lifecycle", "LifecycleConfig"),
+    "ModelLifecycleManager": ("app.integration.model_lifecycle", "ModelLifecycleManager"),
+    "OpponentWinRateTracker": ("app.integration.pipeline_feedback", "OpponentWinRateTracker"),
+    "P2PIntegrationConfig": ("app.integration.p2p_integration", "P2PIntegrationConfig"),
+    "P2PIntegrationManager": ("app.integration.p2p_integration", "P2PIntegrationManager"),
+    "PipelineFeedbackController": ("app.integration.pipeline_feedback", "PipelineFeedbackController"),
+    "UnifiedLoopExtensions": ("app.integration.unified_loop_extensions", "UnifiedLoopExtensions"),
+    "create_feedback_controller": ("app.integration.pipeline_feedback", "create_feedback_controller"),
+    "create_feedback_router": ("app.integration.pipeline_feedback", "create_feedback_router"),
+    "create_opponent_tracker": ("app.integration.pipeline_feedback", "create_opponent_tracker"),
+}
+
+_lazy_cache: dict[str, object] = {}
+
+
+def __dir__() -> list[str]:
+    """Expose the intended integration surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
+def __getattr__(name: str) -> object:
+    """Resolve lazy integration exports to their canonical submodules."""
+
+    if name in _LAZY_EXPORTS:
+        if name not in _lazy_cache:
+            module_name, attribute_name = _LAZY_EXPORTS[name]
+            module = importlib.import_module(module_name)
+            _lazy_cache[name] = getattr(module, attribute_name)
+        return _lazy_cache[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_unified_loop_extensions():
@@ -228,15 +264,3 @@ def integrate_evaluation_with_curriculum(feedback_controller, selfplay_coordinat
     """One-line evaluation → curriculum integration."""
     from .evaluation_curriculum_bridge import integrate_evaluation_with_curriculum as _integrate
     return _integrate(feedback_controller, selfplay_coordinator)
-
-
-def get_auto_elo_integration():
-    """Get ModelEloIntegration class."""
-    from .auto_elo_integration import ModelEloIntegration
-    return ModelEloIntegration
-
-
-def register_model_for_elo(model_path):
-    """Register a model for automatic Elo evaluation."""
-    from .auto_elo_integration import register_model_for_elo as _register
-    return _register(model_path)

@@ -119,6 +119,12 @@ from app.core.component_registry import (
 _lazy_cache: dict = {}
 
 
+def __dir__() -> list[str]:
+    """Expose the intended core surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
 def __getattr__(name: str):
     """Lazy import for modules with heavy dependencies."""
 

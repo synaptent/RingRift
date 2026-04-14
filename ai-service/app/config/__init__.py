@@ -108,6 +108,12 @@ _lazy_cache: dict = {}
 HAS_UNIFIED_CONFIG = True
 
 
+def __dir__() -> list[str]:
+    """Expose the intended config surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
 def __getattr__(name: str):
     """Lazy import for all config exports."""
     global HAS_UNIFIED_CONFIG
