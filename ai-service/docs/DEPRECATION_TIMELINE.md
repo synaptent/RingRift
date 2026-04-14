@@ -9,13 +9,13 @@
 
 ### Coordination Module Deprecations (December 2025)
 
-| Module                                      | Status             | Deprecation Date | Target Removal   | Replacement                                                   |
-| ------------------------------------------- | ------------------ | ---------------- | ---------------- | ------------------------------------------------------------- |
-| `app/coordination/node_health_monitor.py`   | Archived (removed) | Dec 2025         | Removed Dec 2025 | `health_check_orchestrator.py`                                |
-| `app/coordination/sync_coordinator.py`      | Deprecated         | Dec 2025         | Q2 2026          | `auto_sync_daemon.py` + `app/distributed/sync_coordinator.py` |
-| `app/coordination/system_health_monitor.py` | Archived (removed) | Dec 2025         | Removed Dec 2025 | `unified_health_manager.py`                                   |
-| `app/coordination/cluster_data_sync.py`     | Archived (removed) | Dec 2025         | Removed Dec 2025 | `AutoSyncDaemon(strategy="broadcast")`                        |
-| `app/coordination/ephemeral_sync.py`        | Archived (removed) | Dec 2025         | Removed Dec 2025 | `AutoSyncDaemon(strategy="ephemeral")`                        |
+| Module                                      | Status             | Deprecation Date | Target Removal   | Replacement                                                                      |
+| ------------------------------------------- | ------------------ | ---------------- | ---------------- | -------------------------------------------------------------------------------- |
+| `app/coordination/node_health_monitor.py`   | Archived (removed) | Dec 2025         | Removed Dec 2025 | `health_check_orchestrator.py`                                                   |
+| `app/coordination/sync_coordinator.py`      | Deprecated shim    | Dec 2025         | Q3 2026          | `auto_sync_daemon.py` + `sync_facade.py` + `app/distributed/sync_coordinator.py` |
+| `app/coordination/system_health_monitor.py` | Archived (removed) | Dec 2025         | Removed Dec 2025 | `unified_health_manager.py`                                                      |
+| `app/coordination/cluster_data_sync.py`     | Archived (removed) | Dec 2025         | Removed Dec 2025 | `AutoSyncDaemon(strategy="broadcast")`                                           |
+| `app/coordination/ephemeral_sync.py`        | Archived (removed) | Dec 2025         | Removed Dec 2025 | `AutoSyncDaemon(strategy="ephemeral")`                                           |
 
 ### Training Module Deprecations (December 2025)
 
@@ -41,11 +41,11 @@ The following modules have been archived to `archive/deprecated_coordination/`:
 
 ### Legacy Rules Engine Components
 
-| Module                       | Status               | Deprecation Date | Target Removal | Replacement                   |
-| ---------------------------- | -------------------- | ---------------- | -------------- | ----------------------------- |
-| `app/_game_engine_legacy.py` | **ACTIVE** (Primary) | -                | Q3 2026        | `app/rules/default_engine.py` |
-| `app/rules/phase_machine.py` | Transitional         | Dec 2025         | Q2 2026        | `app/rules/fsm.py`            |
-| `app/rules/legacy/*`         | Deprecated           | Dec 2025         | Q4 2026        | Canonical rules v9+           |
+| Module                       | Status                           | Deprecation Date | Target Removal | Replacement                     |
+| ---------------------------- | -------------------------------- | ---------------- | -------------- | ------------------------------- |
+| `app/_game_engine_legacy.py` | Deprecated compatibility symlink | Dec 2025         | Q3 2026        | `app.game_engine` stable facade |
+| `app/rules/phase_machine.py` | Transitional                     | Dec 2025         | Q2 2026        | `app/rules/fsm.py`              |
+| `app/rules/legacy/*`         | Deprecated                       | Dec 2025         | Q4 2026        | Canonical rules v9+             |
 
 ### Legacy Rules Submodules
 
@@ -80,35 +80,34 @@ The following modules have been archived to `archive/deprecated_coordination/`:
 - [ ] Mark `phase_machine.py` as deprecated (emit warnings)
 - [ ] Remove `phase_auto_advance.py` (all selfplay now canonical)
 
-### Phase 3: Q3 2026 - GameEngine Decomposition
+### Phase 3: Q3 2026 - GameEngine Compatibility Retirement
 
 - [ ] Enable mutator-first orchestration as default
-- [ ] Mark `_game_engine_legacy.py` GameEngine methods as deprecated
-- [ ] Migrate remaining callers to `DefaultRulesEngine`
-- [ ] Keep GameEngine for reference/validation only
+- [ ] Migrate remaining direct `app._game_engine_legacy` callers to `app.game_engine`
+- [ ] Keep `archive/deprecated_ai/_game_engine_legacy.py` as reference behind the `app.game_engine` facade while the compatibility path exists
+- [ ] Remove direct legacy imports once all callers use the stable package surface
 
 ### Phase 4: Q4 2026 - Legacy Game Removal
 
 - [ ] Remove `app/rules/legacy/*` modules
 - [ ] Drop support for game schema versions < 8
-- [ ] Archive `_game_engine_legacy.py` (read-only reference)
+- [ ] Retire the `app._game_engine_legacy.py` compatibility symlink after migration
 - [ ] Complete migration to canonical-only rules
 
 ---
 
 ## Migration Guides
 
-### Migrating from GameEngine to DefaultRulesEngine
+### Migrating from direct legacy GameEngine imports to app.game_engine
 
 ```python
-# OLD (deprecated)
-from app.game_engine import GameEngine
+# OLD (deprecated direct legacy import)
+from app._game_engine_legacy import GameEngine
 state = GameEngine.apply_move(state, move)
 
-# NEW (canonical)
-from app.rules.default_engine import DefaultRulesEngine
-engine = DefaultRulesEngine()
-state = engine.apply_move(state, move)
+# NEW (stable public API)
+from app.game_engine import GameEngine
+state = GameEngine.apply_move(state, move)
 ```
 
 ### Migrating from phase_machine to fsm
@@ -146,7 +145,7 @@ Deprecated functions will emit warnings using:
 ```python
 import warnings
 warnings.warn(
-    "GameEngine.apply_move is deprecated. Use DefaultRulesEngine.apply_move instead.",
+    "Direct import from app._game_engine_legacy is deprecated. Use from app.game_engine import GameEngine instead.",
     DeprecationWarning,
     stacklevel=2
 )

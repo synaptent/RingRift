@@ -25,11 +25,11 @@ The sync infrastructure has been significantly consolidated in December 2025. Th
 
 ### Deprecated Sync Modules (Q2 2026 Archival)
 
-| Module                                  | LOC   | Replacement                            |
-| --------------------------------------- | ----- | -------------------------------------- |
-| `app/coordination/sync_coordinator.py`  | 1,522 | `app/distributed/sync_coordinator.py`  |
-| `app/coordination/cluster_data_sync.py` | ~400  | `AutoSyncDaemon(strategy="broadcast")` |
-| `app/coordination/ephemeral_sync.py`    | ~350  | `AutoSyncDaemon(strategy="ephemeral")` |
+| Module                                  | LOC   | Replacement                                                                                                                                                                        |
+| --------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/coordination/sync_coordinator.py`  | 1,522 | Thin deprecated shim over `app/coordination/deprecated/_deprecated_sync_coordinator.py`; prefer `auto_sync_daemon.py`, `sync_facade.py`, and `app/distributed/sync_coordinator.py` |
+| `app/coordination/cluster_data_sync.py` | ~400  | `AutoSyncDaemon(strategy="broadcast")`                                                                                                                                             |
+| `app/coordination/ephemeral_sync.py`    | ~350  | `AutoSyncDaemon(strategy="ephemeral")`                                                                                                                                             |
 
 ## Completed Consolidations (December 2025)
 
@@ -70,12 +70,12 @@ The sync infrastructure has been significantly consolidated in December 2025. Th
 
 ### High Priority
 
-#### 1. Sync Coordinator Rename
+#### 1. Sync Coordinator Shim Retirement
 
-- **Issue:** `app/coordination/sync_coordinator.py` deprecated but confusing name
-- **Action:** Rename to `sync_scheduler.py` or archive to `deprecated_sync_coordinator.py`
+- **Issue:** `app/coordination/sync_coordinator.py` now survives only as a thin deprecated shim over the archived implementation in `app/coordination/deprecated/_deprecated_sync_coordinator.py`
+- **Action:** Keep the shim for compatibility while callers migrate, then remove it once `AutoSyncDaemon`, `SyncFacade`, and the distributed `SyncCoordinator` cover remaining use cases
 - **Effort:** 30 minutes
-- **Risk:** Low (already deprecated, just rename)
+- **Risk:** Low (the real implementation is already archived; this is compatibility cleanup)
 
 #### 2. Sync Strategy Unification
 
@@ -155,7 +155,7 @@ await self._emit_event(
 
 ### Next Sprint
 
-1. Rename `app/coordination/sync_coordinator.py` to indicate deprecated status
+1. Remove the thin `app/coordination/sync_coordinator.py` compatibility shim after remaining callers migrate
 2. Add deprecation warnings to `sync_strategies.py` pointing to auto_sync_daemon
 3. Migrate remaining modules to use `HealthCheckHelper`
 

@@ -61,6 +61,8 @@ CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSO
 STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
 ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
+DEPRECATION_TIMELINE_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TIMELINE.md"
+CONSOLIDATION_STATUS_2025_12_28_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_28.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -488,3 +490,30 @@ def test_historical_planning_docs_use_archived_training_orchestrator_path() -> N
     assert "app/training/orchestrated_training.py" not in roadmap_text
     assert "| `orchestrated_training.py`" not in tracker_text
     assert "| `orchestrated_training.py`" not in naming_text
+
+
+def test_deprecation_timeline_matches_current_sync_and_game_engine_surfaces() -> None:
+    text = DEPRECATION_TIMELINE_DOC.read_text(encoding="utf-8")
+
+    assert "`app/coordination/sync_coordinator.py`      | Deprecated shim" in text
+    assert "`auto_sync_daemon.py` + `sync_facade.py` + `app/distributed/sync_coordinator.py`" in text
+    assert "`app/_game_engine_legacy.py` | Deprecated compatibility symlink" in text
+    assert "`app.game_engine` stable facade" in text
+    assert "Migrate remaining direct `app._game_engine_legacy` callers to `app.game_engine`" in text
+    assert "archive/deprecated_ai/_game_engine_legacy.py" in text
+    assert "from app._game_engine_legacy import GameEngine" in text
+    assert "from app.game_engine import GameEngine" in text
+    assert "Direct import from app._game_engine_legacy is deprecated." in text
+    assert "DefaultRulesEngine" not in text
+    assert "app/rules/default_engine.py" not in text
+
+
+def test_sync_consolidation_status_tracks_current_shim_story() -> None:
+    text = CONSOLIDATION_STATUS_2025_12_28_DOC.read_text(encoding="utf-8")
+
+    assert "thin deprecated shim" in text
+    assert "app/coordination/deprecated/_deprecated_sync_coordinator.py" in text
+    assert "`auto_sync_daemon.py`, `sync_facade.py`, and `app/distributed/sync_coordinator.py`" in text
+    assert "#### 1. Sync Coordinator Shim Retirement" in text
+    assert "Rename `app/coordination/sync_coordinator.py`" not in text
+    assert "rename to `sync_scheduler.py`" not in text
