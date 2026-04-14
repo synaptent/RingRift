@@ -665,13 +665,13 @@ Created `runbooks/HEXAGONAL_PARITY_BUG.md`:
 - Remaining to migrate: `NeuralNetAI`, cache functions, move encoding
 - NOT ready for archival - active migration
 
-**Game Engine Legacy (`app/_game_engine_legacy.py`):**
+**Game Engine Legacy (`archive/deprecated_ai/_game_engine_legacy.py` via `app/_game_engine_legacy.py`):**
 
-- Still actively used by 3 files:
+- Still backing 3 compatibility callers/facades:
   - `app/rules/default_engine.py`
   - `app/game_engine/__init__.py`
   - `scripts/detect_gpu_cpu_divergence.py`
-- NOT ready for archival - provides `GameEngine`, `PhaseRequirement`
+- NOT ready for compatibility retirement - active code should continue using the stable `app.game_engine` facade
 
 ---
 

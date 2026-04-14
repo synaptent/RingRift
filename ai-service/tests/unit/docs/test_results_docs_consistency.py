@@ -65,6 +65,9 @@ DEPRECATION_TIMELINE_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TIME
 CONSOLIDATION_STATUS_2025_12_28_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_28.md"
 DEPRECATED_AI_README = REPO_ROOT / "ai-service" / "archive" / "deprecated_ai" / "README.md"
 APP_DEPRECATION_AUDIT = REPO_ROOT / "ai-service" / "app" / "DEPRECATION_AUDIT.md"
+RULES_ENGINE_SURFACE_AUDIT_DOC = REPO_ROOT / "ai-service" / "docs" / "RULES_ENGINE_SURFACE_AUDIT.md"
+CODEBASE_QUALITY_REPORT_DOC = REPO_ROOT / "ai-service" / "docs" / "CODEBASE_QUALITY_REPORT.md"
+CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_19.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -542,3 +545,29 @@ def test_app_deprecation_audit_uses_archived_game_engine_path() -> None:
     assert "Retire direct `app._game_engine_legacy` imports after all callers use `app.game_engine`" in text
     assert "`app.game_engine` facade" in text
     assert "Delete `_neural_net_legacy.py` and `_game_engine_legacy.py`" not in text
+
+
+def test_rules_engine_surface_audit_uses_current_game_engine_facade_story() -> None:
+    text = RULES_ENGINE_SURFACE_AUDIT_DOC.read_text(encoding="utf-8")
+
+    assert "`app/game_engine/` + `app/_game_engine_legacy.py` compatibility path" in text
+    assert "backs the stable\n`app.game_engine` facade" in text
+    assert "`app/_game_engine_legacy.py` | **Deprecated compatibility path**" in text
+    assert "Keep callers on `app.game_engine` while decomposition continues" in text
+    assert "remains the primary rules execution engine" not in text
+
+
+def test_codebase_quality_report_uses_game_engine_facade_retirement_wording() -> None:
+    text = CODEBASE_QUALITY_REPORT_DOC.read_text(encoding="utf-8")
+
+    assert "Reduce direct imports behind `app.game_engine`, then retire compatibility path" in text
+    assert "Archive (Python rules deprecated)" not in text
+
+
+def test_consolidation_status_2025_12_19_uses_archived_game_engine_path() -> None:
+    text = CONSOLIDATION_STATUS_2025_12_19_DOC.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_ai/_game_engine_legacy.py` via `app/_game_engine_legacy.py`" in text
+    assert "Still backing 3 compatibility callers/facades" in text
+    assert "stable `app.game_engine` facade" in text
+    assert "NOT ready for compatibility retirement" in text

@@ -8,9 +8,11 @@
 The RingRift Python implementation uses a **two-layer architecture**:
 
 1. **Canonical Rules Layer** (`app/rules/`): Encodes RingRift game semantics per RULES_CANONICAL_SPEC.md
-2. **Host Adapter Layer** (`app/game_engine/` + `app/_game_engine_legacy.py`): Provides move generation and state transitions
+2. **Host Adapter Layer** (`app/game_engine/` + `app/_game_engine_legacy.py` compatibility path): Provides move generation and state transitions
 
-The legacy monolithic GameEngine (4,482 LOC) remains the primary rules execution engine. The newer rules/ module is being built as a **shadow-first** migration path.
+The archived monolithic GameEngine implementation still backs the stable
+`app.game_engine` facade during migration. The newer `app/rules/` layer is
+being built as a **shadow-first** migration path.
 
 ---
 
@@ -41,10 +43,10 @@ The legacy monolithic GameEngine (4,482 LOC) remains the primary rules execution
 
 ### Legacy / Transitional Modules
 
-| Module                       | Status               | Migration Path                            |
-| ---------------------------- | -------------------- | ----------------------------------------- |
-| `app/_game_engine_legacy.py` | **Active** (Primary) | Being decomposed into validators/mutators |
-| `app/rules/legacy/*`         | **Deprecated**       | Remove v1-v7 support in Q4 2026           |
+| Module                       | Status                            | Migration Path                                                  |
+| ---------------------------- | --------------------------------- | --------------------------------------------------------------- |
+| `app/_game_engine_legacy.py` | **Deprecated compatibility path** | Keep callers on `app.game_engine` while decomposition continues |
+| `app/rules/legacy/*`         | **Deprecated**                    | Remove v1-v7 support in Q4 2026                                 |
 
 ---
 
