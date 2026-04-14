@@ -424,3 +424,8 @@ monitoring/grafana/dashboards/ai-cluster.json
 monitoring/grafana/dashboards/ringrift-full.json
 diagnostics-output/
 diagnostics-output/
+
+# Junk directories from shell expansion errors
+ls/
+cd/
+-la/
