@@ -75,3 +75,9 @@ __all__ = [
     "cached",
     "invalidate_cache",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended caching surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

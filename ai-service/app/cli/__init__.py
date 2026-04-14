@@ -55,3 +55,9 @@ __all__ = [
     "print_table",
     "setup_script",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended CLI surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

@@ -70,3 +70,9 @@ __all__ = [
     "create_temp_db",
     "create_training_state",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended testing surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

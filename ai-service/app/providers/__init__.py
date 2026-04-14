@@ -74,3 +74,9 @@ __all__ = [
     "TailscaleStatus",
     "VastOffer",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended provider surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

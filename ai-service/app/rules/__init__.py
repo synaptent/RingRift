@@ -23,6 +23,12 @@ __all__ = [
 ]
 
 
+def __dir__() -> list[str]:
+    """Expose the intended rules facade surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
 def __getattr__(name: str):
     if name == "get_rules_engine":
         return importlib.import_module("app.rules.factory").get_rules_engine
