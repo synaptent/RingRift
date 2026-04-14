@@ -350,7 +350,7 @@ Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
 - QueuePopulator: Dynamic min_queue_depth per cluster size
 - FeedbackLoopController: Central nervous system with 7+ event subscriptions
 - MasterLoopController: 60s loop with quality-gated training triggers
-- ModelDistributionDaemon: Event-driven model sync on MODEL_PROMOTED
+- UnifiedDistributionDaemon: Event-driven model sync on MODEL_PROMOTED
 
 **Remaining Optimization Opportunities:**
 

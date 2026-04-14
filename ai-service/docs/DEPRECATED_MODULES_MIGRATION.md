@@ -187,19 +187,23 @@ await model_daemon.distribute_model("models/new.pth")
 
 ```python
 from app.coordination.unified_distribution_daemon import (
-    UnifiedDistributionDaemon,
-    DataType,
+    DistributionConfig,
+    get_distribution_daemon,
     wait_for_model_distribution,
     check_model_availability,
 )
 
-# Unified daemon handles both models and NPZ
-daemon = UnifiedDistributionDaemon()
+# Unified daemon handles both models and NPZ via MODEL_PROMOTED /
+# NPZ_EXPORT_COMPLETE events plus availability helpers.
+config = DistributionConfig(verify_checksums=True)
+daemon = get_distribution_daemon(config)
 await daemon.start()
 
-# Distribute specific files
-await daemon.distribute(DataType.MODEL, "models/new.pth")
-await daemon.distribute(DataType.NPZ, "data/training/hex8_2p.npz")
+# Consumers wait for the distribution result rather than calling a direct
+# distribute_model()/distribute_npz() imperative API.
+available = await wait_for_model_distribution("square8", 2, timeout=300)
+if available and check_model_availability("square8", 2):
+    print("Model available on this node")
 ```
 
 ### 5. Queue Populator Migration

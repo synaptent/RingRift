@@ -813,3 +813,19 @@ def test_distribution_docs_use_unified_distribution_surfaces() -> None:
     assert "Creates `ModelSyncDaemon`" not in registry_text
     assert "Creates `ModelDistributionDaemon`" not in registry_text
     assert "Creates `NPZDistributionDaemon`" not in registry_text
+
+
+def test_distribution_planning_and_migration_docs_use_unified_distribution_story() -> None:
+    strategic_text = STRATEGIC_IMPROVEMENT_PLAN_DOC.read_text(encoding="utf-8")
+    migration_text = DEPRECATED_MODULES_MIGRATION_DOC.read_text(encoding="utf-8")
+
+    assert "UnifiedDistributionDaemon: Event-driven model sync on MODEL_PROMOTED" in strategic_text
+    assert "ModelDistributionDaemon: Event-driven model sync on MODEL_PROMOTED" not in strategic_text
+
+    assert "DistributionConfig" in migration_text
+    assert "get_distribution_daemon(config)" in migration_text
+    assert 'wait_for_model_distribution("square8", 2, timeout=300)' in migration_text
+    assert 'check_model_availability("square8", 2)' in migration_text
+    assert "Unified daemon handles both models and NPZ via MODEL_PROMOTED /" in migration_text
+    assert "await daemon.distribute(DataType.MODEL" not in migration_text
+    assert "await daemon.distribute(DataType.NPZ" not in migration_text
