@@ -772,6 +772,19 @@ def main() -> None:
                              f"Stopping to avoid wasting GPU. Fix the issue and restart.")
             break
 
+        # Write progress at iteration start
+        try:
+            (wdir / "progress.json").write_text(json.dumps({
+                "iteration": it, "stage": "selfplay_started",
+                "estimated_elo": round(elo, 1),
+                "total_promotions": promos,
+                "games_target": games_per_iter,
+                "selfplay_budget": selfplay_budget,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, indent=2) + "\n")
+        except OSError:
+            pass
+
         # 1. SELFPLAY
         logger.info(f"[1/5] Selfplay: {games_per_iter} games, budget={selfplay_budget}, "
                      f"randomness={args.selfplay_randomness}")
@@ -785,6 +798,19 @@ def main() -> None:
 
         _push_heartbeat_s3(node_id, config_key, it, elo, promos,
                            stage="selfplay_done", experiment_params=_static_exp_params)
+
+        # Update progress file after selfplay
+        try:
+            (wdir / "progress.json").write_text(json.dumps({
+                "iteration": it, "stage": "selfplay_done",
+                "selfplay_games": sp["completed"],
+                "selfplay_elapsed_s": round(sp["elapsed_s"], 1),
+                "estimated_elo": round(elo, 1),
+                "total_promotions": promos,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, indent=2) + "\n")
+        except OSError:
+            pass
 
         # 2. EXPORT
         logger.info("[2/5] Export JSONL -> NPZ")
@@ -873,6 +899,18 @@ def main() -> None:
         _push_heartbeat_s3(node_id, config_key, it, elo, promos,
                            stage="training_done", experiment_params=training_exp_params)
 
+        # Update progress file after training
+        try:
+            (wdir / "progress.json").write_text(json.dumps({
+                "iteration": it, "stage": "training_done",
+                "training_elapsed_s": round(ti.get("elapsed_s", 0), 1),
+                "estimated_elo": round(elo, 1),
+                "total_promotions": promos,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, indent=2) + "\n")
+        except OSError:
+            pass
+
         # 3.5 PROBE: Verify training actually worked
         if not args.skip_probes:
             probe = run_training_probes(
@@ -890,6 +928,18 @@ def main() -> None:
 
         # 4. EVALUATE — staged evaluation with early exit for clear wins/losses
         logger.info(f"[4/5] Evaluate (staged, up to 400 games, budget={eval_budget})")
+
+        # Update progress before evaluation (the longest stage)
+        try:
+            (wdir / "progress.json").write_text(json.dumps({
+                "iteration": it, "stage": "evaluation_started",
+                "estimated_elo": round(elo, 1),
+                "total_promotions": promos,
+                "eval_budget": eval_budget,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, indent=2) + "\n")
+        except OSError:
+            pass
         qg_tracker = None if args.skip_quality_gate else QualityGateTracker()
         ev = staged_evaluate(str(cpath), str(best), eval_budget,
                              tracker=qg_tracker)
@@ -928,6 +978,22 @@ def main() -> None:
                    **exp_params}
         with open(logf, "a") as f:
             f.write(json.dumps(metrics) + "\n")
+
+        # Write a human-readable progress file so observers don't need to parse JSONL
+        try:
+            progress = wdir / "progress.json"
+            progress.write_text(json.dumps({
+                "iteration": it,
+                "stage": "complete",
+                "estimated_elo": round(elo, 1),
+                "total_promotions": promos,
+                "last_decision": ev.get("decision"),
+                "last_win_rate": ev.get("win_rate"),
+                "iteration_time_s": round(iel, 1),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, indent=2) + "\n")
+        except OSError:
+            pass
         logger.info(f"  iter {it} done in {iel/60:.1f}min | elo~{elo:.0f} | promos={promos}/{it}")
 
         # Push S3 heartbeat for fleet health monitoring (best-effort)
