@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import app.coordination.cluster as cluster_pkg
+import app.coordination.lifecycle as lifecycle_pkg
 import app.coordination.selfplay as selfplay_pkg
 import app.coordination.status_reporting as status_reporting_pkg
 import app.coordination.training as training_pkg
@@ -54,3 +55,17 @@ def test_status_reporting_module_declares_public_exports() -> None:
     for name in status_reporting_pkg.__all__:
         assert name in dir(status_reporting_pkg)
         assert callable(getattr(status_reporting_pkg, name))
+
+
+def test_lifecycle_module_declares_public_exports() -> None:
+    expected = [
+        "initialize_all_coordinators",
+        "shutdown_all_coordinators",
+        "start_coordinator_heartbeats",
+        "stop_coordinator_heartbeats",
+        "is_heartbeat_running",
+    ]
+    assert lifecycle_pkg.__all__ == expected
+    for name in expected:
+        assert name in dir(lifecycle_pkg)
+        assert callable(getattr(lifecycle_pkg, name))

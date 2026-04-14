@@ -48,8 +48,6 @@ import ast
 import importlib
 from pathlib import Path
 
-from app.utils.retry import RetryConfig  # Jan 2026: Centralized retry pattern
-
 # =============================================================================
 # Lazy package exports (April 2026)
 # =============================================================================
@@ -121,76 +119,6 @@ def __dir__() -> list[str]:
     return sorted(set(globals()) | set(__all__))
 
 
-# =============================================================================
-# Module-level singleton placeholders for cleanup in shutdown_all_coordinators
-# =============================================================================
-_selfplay_orchestrator = None
-_pipeline_orchestrator = None
-_task_lifecycle_coordinator = None
-_optimization_coordinator = None
-_metrics_orchestrator = None
-_resource_coordinator = None
-_cache_orchestrator = None
-_event_coordinator = None
-
-
-def _init_with_retry(
-    name: str,
-    init_func,
-    max_retries: int = 3,
-    base_delay: float = 0.5,
-    logger=None,
-) -> tuple:
-    """Initialize a coordinator with retry logic.
-
-    Args:
-        name: Coordinator name for logging
-        init_func: Function that returns (instance, subscribed_flag)
-        max_retries: Maximum retry attempts
-        base_delay: Base delay for exponential backoff
-        logger: Logger instance
-
-    Returns:
-        (instance, success, error_message)
-
-    Jan 2026: Migrated to RetryConfig for centralized retry behavior.
-    """
-    last_error = None
-
-    # Jan 2026: Use RetryConfig for centralized retry pattern
-    retry_config = RetryConfig(max_attempts=max_retries, base_delay=base_delay, max_delay=8.0)
-
-    for attempt in retry_config.attempts():
-        try:
-            instance, subscribed = init_func()
-
-            if not subscribed:
-                raise RuntimeError(f"{name} failed to subscribe to events")
-
-            if logger:
-                if not attempt.is_first:
-                    logger.info(f"[init_with_retry] {name} succeeded on attempt {attempt.number}")
-                else:
-                    logger.info(f"[initialize_all_coordinators] {name} wired")
-
-            return (instance, True, None)
-
-        except Exception as e:
-            last_error = str(e)
-            if logger:
-                logger.warning(
-                    f"[init_with_retry] {name} attempt {attempt.number}/{retry_config.max_attempts} failed: {e}"
-                )
-
-            if attempt.should_retry:
-                attempt.wait()
-
-    if logger:
-        logger.error(f"[initialize_all_coordinators] {name} failed after {retry_config.max_attempts} attempts")
-
-    return (None, False, last_error)
-
-
 def initialize_all_coordinators(
     auto_trigger_pipeline: bool = False,
     heartbeat_threshold: float = 60.0,
@@ -219,198 +147,17 @@ def initialize_all_coordinators(
     Returns:
         Dict with initialization status for each orchestrator
     """
-    import asyncio
-    import logging
+    from app.coordination.lifecycle import (
+        initialize_all_coordinators as _initialize_all_coordinators,
+    )
 
-    logger = logging.getLogger(__name__)
-
-    status = {
-        "dead_letter_queue": False,
-        "task_lifecycle": False,
-        "resources": False,
-        "cache": False,
-        "selfplay": False,
-        "pipeline": False,
-        "optimization": False,
-        "metrics": False,
-        "event_coordinator": False,
-    }
-    errors = {}
-    instances = {}
-
-    wire_task_events = _resolve_export("wire_task_events")
-    wire_resource_events = _resolve_export("wire_resource_events")
-    wire_cache_events = _resolve_export("wire_cache_events")
-    wire_selfplay_events = _resolve_export("wire_selfplay_events")
-    wire_pipeline_events = _resolve_export("wire_pipeline_events")
-    wire_optimization_events = _resolve_export("wire_optimization_events")
-    wire_metrics_events = _resolve_export("wire_metrics_events")
-    get_event_coordinator_stats = _resolve_export("get_event_coordinator_stats")
-    start_event_coordinator = _resolve_export("start_event_coordinator")
-
-    # Define init functions that return (instance, subscribed)
-    def init_task_lifecycle():
-        coord = wire_task_events(heartbeat_threshold=heartbeat_threshold)
-        return (coord, coord._subscribed)
-
-    def init_resources():
-        coord = wire_resource_events()
-        return (coord, coord._subscribed)
-
-    def init_cache():
-        coord = wire_cache_events()
-        return (coord, coord._subscribed)
-
-    def init_selfplay():
-        coord = wire_selfplay_events()
-        return (coord, coord._subscribed)
-
-    def init_pipeline():
-        coord = wire_pipeline_events(auto_trigger=auto_trigger_pipeline)
-        return (coord, coord._subscribed)
-
-    def init_optimization():
-        coord = wire_optimization_events()
-        return (coord, coord._subscribed)
-
-    def init_metrics():
-        coord = wire_metrics_events()
-        return (coord, coord._subscribed)
-
-    # Initialize in dependency order
-    init_order = [
-        ("task_lifecycle", init_task_lifecycle, []),
-        ("resources", init_resources, []),
-        ("cache", init_cache, []),
-        ("selfplay", init_selfplay, ["task_lifecycle"]),
-        ("pipeline", init_pipeline, ["task_lifecycle", "selfplay"]),
-        ("optimization", init_optimization, ["pipeline"]),
-        ("metrics", init_metrics, ["task_lifecycle"]),
-    ]
-
-    # Initialize Dead Letter Queue first
-    dlq = None
-    try:
-        from app.coordination.dead_letter_queue import enable_dead_letter_queue, get_dead_letter_queue
-
-        dlq = get_dead_letter_queue()
-        status["dead_letter_queue"] = True
-        instances["dead_letter_queue"] = dlq
-        logger.info("[initialize_all_coordinators] Dead letter queue initialized")
-    except Exception as e:
-        logger.warning(f"[initialize_all_coordinators] Dead letter queue not available: {e}")
-        status["dead_letter_queue"] = False
-
-    for name, init_func, dependencies in init_order:
-        deps_satisfied = all(status.get(dep, False) for dep in dependencies)
-        if not deps_satisfied:
-            failed_deps = [dep for dep in dependencies if not status.get(dep, False)]
-            logger.warning(
-                f"[initialize_all_coordinators] {name} skipped - dependencies failed: {failed_deps}"
-            )
-            status[name] = False
-            errors[name] = f"Dependencies not satisfied: {failed_deps}"
-            continue
-
-        instance, success, error = _init_with_retry(
-            name,
-            init_func,
-            max_retries=max_retries,
-            base_delay=retry_delay,
-            logger=logger,
-        )
-        status[name] = success
-        if instance:
-            instances[name] = instance
-            if dlq and hasattr(instance, "_bus"):
-                try:
-                    enable_dead_letter_queue(dlq, instance._bus)
-                except (AttributeError, ImportError, TypeError):
-                    pass
-        if error:
-            errors[name] = error
-
-    # Wrap handlers with resilience if requested
-    if wrap_handlers:
-        try:
-            from app.coordination.handler_resilience import make_handlers_resilient
-
-            for name, instance in instances.items():
-                make_handlers_resilient(instance, name)
-            logger.debug("[initialize_all_coordinators] Wrapped handlers with resilience")
-        except ImportError:
-            logger.debug("[initialize_all_coordinators] handler_resilience not available")
-
-    # Start UnifiedEventCoordinator
-    try:
-        from app.core.async_context import fire_and_forget
-
-        stats = get_event_coordinator_stats()
-        if not stats.get("is_running", False):
-            try:
-                asyncio.get_running_loop()
-                fire_and_forget(
-                    start_event_coordinator(),
-                    name="event_coordinator_startup",
-                )
-                status["event_coordinator"] = True
-            except RuntimeError:
-                status["event_coordinator"] = asyncio.run(start_event_coordinator())
-        else:
-            status["event_coordinator"] = True
-        logger.info("[initialize_all_coordinators] UnifiedEventCoordinator started")
-    except Exception as e:
-        logger.error(f"[initialize_all_coordinators] UnifiedEventCoordinator failed: {e}")
-        errors["event_coordinator"] = str(e)
-
-    # Emit COORDINATOR_INIT_FAILED for any failures
-    if errors:
-        try:
-            import time as _time
-
-            from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
-            from app.core.async_context import fire_and_forget
-
-            bus = get_event_bus()
-            for name, error in errors.items():
-                event = DataEvent(
-                    event_type=DataEventType.COORDINATOR_INIT_FAILED,
-                    payload={
-                        "coordinator_name": name,
-                        "error": error,
-                        "timestamp": _time.time(),
-                    },
-                    source="initialize_all_coordinators",
-                )
-                try:
-                    asyncio.get_running_loop()
-                    fire_and_forget(
-                        bus.publish(event),
-                        name=f"emit_coordinator_init_failed_{name}",
-                    )
-                except RuntimeError:
-                    asyncio.run(bus.publish(event))
-        except (AttributeError, ImportError, TypeError):
-            pass
-
-    # Log summary
-    wired_count = sum(1 for k, v in status.items() if v and not k.startswith("_"))
-    total_count = len([k for k in status if not k.startswith("_")])
-
-    if wired_count == total_count:
-        logger.info(
-            f"[initialize_all_coordinators] All {total_count} orchestrators/coordinators initialized"
-        )
-    else:
-        logger.warning(
-            f"[initialize_all_coordinators] Initialized {wired_count}/{total_count} "
-            f"orchestrators/coordinators. Failed: {list(errors.keys())}"
-        )
-
-    status["_errors"] = errors
-    status["_instances"] = list(instances.keys())
-
-    return status
+    return _initialize_all_coordinators(
+        auto_trigger_pipeline=auto_trigger_pipeline,
+        heartbeat_threshold=heartbeat_threshold,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+        wrap_handlers=wrap_handlers,
+    )
 
 
 def get_all_coordinator_status() -> dict:
@@ -453,270 +200,36 @@ async def shutdown_all_coordinators(
     Returns:
         Dict with shutdown status for each coordinator
     """
-    import asyncio
-    import logging
-    import time as _time
-
-    logger = logging.getLogger(__name__)
-    logger.info("[shutdown_all_coordinators] Starting graceful shutdown...")
-
-    status = {}
-    start_time = _time.time()
-
-    if emit_events:
-        # January 2026: Migrated to safe_emit_event_async for consistent event handling.
-        from app.coordination.event_emission_helpers import safe_emit_event_async
-
-        coordinators = [
-            "optimization",
-            "metrics",
-            "pipeline",
-            "selfplay",
-            "cache",
-            "resources",
-            "task_lifecycle",
-        ]
-        for coord_name in coordinators:
-            await safe_emit_event_async(
-                "COORDINATOR_SHUTDOWN",
-                {"coordinator_name": coord_name, "reason": "system_shutdown"},
-                context="shutdown_all_coordinators",
-            )
-
-    shutdown_order = [
-        ("optimization", "get_optimization_coordinator"),
-        ("metrics", "get_metrics_orchestrator"),
-        ("pipeline", "get_pipeline_orchestrator"),
-        ("selfplay", "get_selfplay_orchestrator"),
-        ("cache", "get_cache_orchestrator"),
-        ("resources", "get_resource_coordinator"),
-        ("task_lifecycle", "get_task_lifecycle_coordinator"),
-    ]
-
-    async def _shutdown_coordinator(name: str, getter_name: str) -> tuple:
-        """Shutdown a single coordinator with timeout."""
-        try:
-            getter = _resolve_export(getter_name)
-            coord = getter()
-
-            if hasattr(coord, "shutdown") and asyncio.iscoroutinefunction(coord.shutdown):
-                remaining = timeout_seconds - (_time.time() - start_time)
-                if remaining > 0:
-                    await asyncio.wait_for(coord.shutdown(), timeout=remaining)
-                    return (name, True, None)
-                return (name, False, "timeout exceeded")
-
-            elif hasattr(coord, "stop") and asyncio.iscoroutinefunction(coord.stop):
-                remaining = timeout_seconds - (_time.time() - start_time)
-                if remaining > 0:
-                    await asyncio.wait_for(coord.stop(), timeout=remaining)
-                    return (name, True, None)
-                return (name, False, "timeout exceeded")
-
-            return (name, True, "no lifecycle methods")
-
-        except asyncio.TimeoutError:
-            return (name, False, "shutdown timed out")
-        except Exception as e:
-            return (name, False, str(e))
-
-    for name, getter in shutdown_order:
-        result = await _shutdown_coordinator(name, getter)
-        status[result[0]] = {
-            "success": result[1],
-            "error": result[2],
-        }
-
-        if result[1]:
-            logger.info(f"[shutdown_all_coordinators] {name} shutdown complete")
-        else:
-            logger.warning(f"[shutdown_all_coordinators] {name} shutdown failed: {result[2]}")
-
-    # Cleanup global singletons
-    try:
-        global _selfplay_orchestrator, _pipeline_orchestrator, _task_lifecycle_coordinator
-        global _optimization_coordinator, _metrics_orchestrator, _resource_coordinator
-        global _cache_orchestrator, _event_coordinator
-
-        _selfplay_orchestrator = None
-        _pipeline_orchestrator = None
-        _task_lifecycle_coordinator = None
-        _optimization_coordinator = None
-        _metrics_orchestrator = None
-        _resource_coordinator = None
-        _cache_orchestrator = None
-        _event_coordinator = None
-    except NameError:
-        pass
-
-    try:
-        from app.coordination.handler_resilience import reset_handler_metrics
-
-        reset_handler_metrics()
-    except ImportError:
-        pass
-
-    try:
-        from app.coordination.coordinator_dependencies import reset_dependency_graph
-
-        reset_dependency_graph()
-    except ImportError:
-        pass
-
-    total_time = _time.time() - start_time
-    success_count = sum(1 for s in status.values() if s["success"])
-
-    logger.info(
-        f"[shutdown_all_coordinators] Shutdown complete: {success_count}/{len(status)} "
-        f"coordinators in {total_time:.2f}s"
+    from app.coordination.lifecycle import (
+        shutdown_all_coordinators as _shutdown_all_coordinators,
     )
 
-    return {
-        "status": status,
-        "total_time_seconds": round(total_time, 2),
-        "success_count": success_count,
-        "total_count": len(status),
-    }
-
-
-# =============================================================================
-# Coordinator Heartbeat System (December 2025)
-# =============================================================================
-
-_heartbeat_task = None
-_heartbeat_running = False
-
-
-async def _emit_coordinator_heartbeats(interval_seconds: float = 30.0) -> None:
-    """Background task to emit heartbeats from all coordinators."""
-    import asyncio
-    import logging
-
-    logger = logging.getLogger(__name__)
-    get_selfplay_orchestrator = _resolve_export("get_selfplay_orchestrator")
-    get_pipeline_orchestrator = _resolve_export("get_pipeline_orchestrator")
-    get_task_lifecycle_coordinator = _resolve_export("get_task_lifecycle_coordinator")
-    get_optimization_coordinator = _resolve_export("get_optimization_coordinator")
-    get_metrics_orchestrator = _resolve_export("get_metrics_orchestrator")
-    get_resource_coordinator = _resolve_export("get_resource_coordinator")
-    get_cache_orchestrator = _resolve_export("get_cache_orchestrator")
-
-    _heartbeat_running = True
-    logger.info(f"[HeartbeatManager] Started with {interval_seconds}s interval")
-
-    while _heartbeat_running:
-        # January 2026: Migrated to safe_emit_event_async for consistent event handling.
-        from app.coordination.event_emission_helpers import safe_emit_event_async
-
-        coordinators = [
-            ("selfplay", get_selfplay_orchestrator),
-            ("pipeline", get_pipeline_orchestrator),
-            ("task_lifecycle", get_task_lifecycle_coordinator),
-            ("optimization", get_optimization_coordinator),
-            ("metrics", get_metrics_orchestrator),
-            ("resources", get_resource_coordinator),
-            ("cache", get_cache_orchestrator),
-        ]
-
-        for name, getter in coordinators:
-            try:
-                coord = getter()
-                status = coord.get_status()
-
-                health_score = 1.0
-                if not status.get("subscribed", True):
-                    health_score = 0.5
-                if status.get("paused", False):
-                    health_score = 0.7
-                if status.get("backpressure_active", False):
-                    health_score = 0.6
-
-                await safe_emit_event_async(
-                    "COORDINATOR_HEARTBEAT",
-                    {
-                        "coordinator_name": name,
-                        "health_score": health_score,
-                        "active_handlers": (
-                            status.get("metrics_tracked", 0)
-                            if name == "metrics"
-                            else status.get("active_tasks", 0)
-                        ),
-                        "events_processed": (
-                            status.get("total_invocations", 0)
-                            if "total_invocations" in status
-                            else 0
-                        ),
-                    },
-                    context="heartbeat_manager",
-                )
-            except Exception as e:
-                logger.debug(f"[HeartbeatManager] Failed to emit heartbeat for {name}: {e}")
-
-        try:
-            await asyncio.sleep(interval_seconds)
-        except asyncio.CancelledError:
-            break
-
-    logger.info("[HeartbeatManager] Stopped")
-
-
-def start_coordinator_heartbeats(interval_seconds: float = 30.0) -> bool:
-    """Start the coordinator heartbeat background task.
-
-    Launches an async task that periodically emits COORDINATOR_HEARTBEAT events.
-    These events enable daemon health monitoring, cluster synchronization triggers,
-    and leader election participation.
-
-    Args:
-        interval_seconds: Time between heartbeat emissions (default: 30.0 seconds)
-
-    Returns:
-        True if heartbeat task was started successfully or already running,
-        False if no async event loop is available
-
-    Side Effects:
-        - Sets global _heartbeat_task reference
-        - Starts emitting COORDINATOR_HEARTBEAT events to event router
-        - Events include: node_id, uptime, resource_usage, daemon_health summary
-
-    Thread Safety:
-        Safe to call multiple times; returns True if already running.
-        Call stop_coordinator_heartbeats() to terminate.
-    """
-    import asyncio
-
-    from app.core.async_context import safe_create_task
-
-    global _heartbeat_task
-
-    if _heartbeat_task is not None and not _heartbeat_task.done():
-        return True
-
-    try:
-        asyncio.get_running_loop()
-        _heartbeat_task = safe_create_task(
-            _emit_coordinator_heartbeats(interval_seconds),
-            name="coordinator_heartbeat_emitter",
-        )
-        return True
-    except RuntimeError:
-        return False
-
+    return await _shutdown_all_coordinators(
+        timeout_seconds=timeout_seconds,
+        emit_events=emit_events,
+    )
 
 def stop_coordinator_heartbeats() -> None:
     """Stop the coordinator heartbeat background task."""
-    global _heartbeat_task, _heartbeat_running
+    from app.coordination.lifecycle import stop_coordinator_heartbeats as _stop
 
-    _heartbeat_running = False
-
-    if _heartbeat_task is not None:
-        _heartbeat_task.cancel()
-        _heartbeat_task = None
+    _stop()
 
 
 def is_heartbeat_running() -> bool:
     """Check if heartbeat manager is running."""
-    return _heartbeat_task is not None and not _heartbeat_task.done()
+    from app.coordination.lifecycle import is_heartbeat_running as _is_running
+
+    return _is_running()
+
+
+def start_coordinator_heartbeats(interval_seconds: float = 30.0) -> bool:
+    """Start the coordinator heartbeat background task."""
+    from app.coordination.lifecycle import (
+        start_coordinator_heartbeats as _start_coordinator_heartbeats,
+    )
+
+    return _start_coordinator_heartbeats(interval_seconds=interval_seconds)
 
 
 # =============================================================================

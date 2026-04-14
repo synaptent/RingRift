@@ -132,6 +132,7 @@ Current objectives:
 - Runtime coordination imports were reduced from three intentional top-level facade consumers to zero real runtime facade consumers outside the package itself.
 - `run_random_selfplay.py`, the CLI coordination-status command, and `scripts/p2p/startup_infrastructure.py` now import explicit owning modules instead of the top-level `app.coordination` package.
 - The facade-shrink phase has started: coordination status and aggregated health reporting now live in `app.coordination.status_reporting`, with `app.coordination.__init__` reduced to compatibility wrappers for those helpers.
+- Coordination bootstrap, shutdown, and heartbeat helpers now live in `app.coordination.lifecycle`, further reducing `app.coordination.__init__` from a logic owner to a compatibility entrypoint.
 - The next acceptance bar is a materially smaller `app.coordination.__init__` surface with package tests and import-hygiene tests staying green.
 
 ## Execution Protocol
