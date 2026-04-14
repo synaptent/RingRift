@@ -6,6 +6,7 @@ This module contains cloud provider-specific management code for the distributed
 
 | Module                 | Description                                                 |
 | ---------------------- | ----------------------------------------------------------- |
+| `vast_manager.py`      | Vast.ai instance management                                 |
 | `base.py`              | Base class `CloudProviderManager` defining common interface |
 | `aws_manager.py`       | AWS EC2 instance management                                 |
 | `lambda_manager.py`    | Lambda Labs GPU instance management                         |
@@ -15,10 +16,13 @@ This module contains cloud provider-specific management code for the distributed
 ## Usage
 
 ```python
-from app.providers.lambda_manager import LambdaManager
+from app.providers import LambdaManager, VastManager
 
-manager = LambdaManager()
-instances = await manager.list_instances()
+vast_manager = VastManager()
+instances = await vast_manager.list_instances()
+
+lambda_manager = LambdaManager()
+lambda_instances = await lambda_manager.list_instances()
 ```
 
 ## Common Interface
@@ -26,9 +30,10 @@ instances = await manager.list_instances()
 All managers implement:
 
 - `list_instances()` - List active instances
-- `get_instance_status(instance_id)` - Get instance health
+- `get_instance(instance_id)` - Get current instance details
+- `check_health(instance)` - Run provider-specific health checks
 - `terminate_instance(instance_id)` - Terminate instance
-- `get_ssh_config(instance_id)` - Get SSH connection config
+- `run_ssh_command(instance, command)` - Run remote commands over SSH
 
 ## Integration
 
@@ -40,9 +45,8 @@ Used by:
 
 ## Status Updates (December 2025)
 
-**Lambda Account Status**: Lambda Labs account restored December 28, 2025.
-6 GH200 nodes (96GB each) are now available for training workloads. The `lambda_manager.py`
-module is active again for Lambda node management.
+**Lambda Account Status**: `LambdaManager` remains available via the package root and is loaded lazily.
+Use it when Lambda Labs infrastructure is configured for the current environment.
 
 **Idle Daemon Consolidation**: `lambda_idle_daemon.py` and `vast_idle_daemon.py` have been
 consolidated into `unified_idle_shutdown_daemon.py` which provides provider-agnostic idle detection

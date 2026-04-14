@@ -36,6 +36,7 @@ QUALITY_README = REPO_ROOT / "ai-service" / "app" / "quality" / "README.md"
 GAME_ENGINE_README = REPO_ROOT / "ai-service" / "app" / "game_engine" / "README.md"
 COORDINATION_CLUSTER_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "cluster" / "README.md"
 COORDINATION_PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "providers" / "README.md"
+PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "providers" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -272,3 +273,17 @@ def test_coordination_providers_readme_matches_enum_root_api() -> None:
     assert 'get_provider("lambda")' not in text
     assert "get_ssh_config" not in text
     assert "get_ringrift_path" not in text
+
+
+def test_providers_readme_matches_current_manager_surface() -> None:
+    text = PROVIDERS_README.read_text(encoding="utf-8")
+
+    assert "`vast_manager.py`" in text
+    assert "from app.providers import LambdaManager, VastManager" in text
+    assert "vast_manager = VastManager()" in text
+    assert "list_instances()" in text
+    assert "get_instance(instance_id)" in text
+    assert "check_health(instance)" in text
+    assert "run_ssh_command(instance, command)" in text
+    assert "get_instance_status(instance_id)" not in text
+    assert "get_ssh_config(instance_id)" not in text
