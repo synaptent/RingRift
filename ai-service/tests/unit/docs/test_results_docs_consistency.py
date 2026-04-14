@@ -26,6 +26,7 @@ OPERATOR_ENTRYPOINT_DOCS = (
 )
 INTEGRATION_README = REPO_ROOT / "ai-service" / "app" / "integration" / "README.md"
 UTILS_README = REPO_ROOT / "ai-service" / "app" / "utils" / "README.md"
+INTERFACES_README = REPO_ROOT / "ai-service" / "app" / "interfaces" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -133,3 +134,12 @@ def test_utils_readme_explains_supported_root_helpers() -> None:
     assert "app.utils.resource_guard" in text
     assert "app.utils.canonical_naming" in text
     assert "app.utils.debug_utils" in text
+
+
+def test_interfaces_readme_uses_current_hashing_example() -> None:
+    text = INTERFACES_README.read_text(encoding="utf-8")
+
+    assert "from app.core.zobrist import ZobristHash" in text
+    assert "SearchCache" in text
+    assert "from app.ai import MCTSNode" not in text
+    assert "from app.zobrist import ZobristHasher" not in text

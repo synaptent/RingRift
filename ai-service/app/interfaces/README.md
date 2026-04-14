@@ -86,27 +86,26 @@ class MoveEncoder(EncodingProvider):
 ## Usage Pattern
 
 ```python
-# In app.ai (depends on interface, not implementation)
+# In consumer code (depends on interface, not implementation)
 from app.interfaces import HashProvider
 
-class MCTSNode:
+class SearchCache:
     def __init__(self, hasher: HashProvider):
         self.hasher = hasher
 
     def get_position_hash(self, state):
         return self.hasher.hash_position(state)
 
-# In app.zobrist (provides implementation)
+# In app.core.zobrist (provides implementation)
 from app.interfaces import HashProvider
 
-class ZobristHasher(HashProvider):
+class ZobristHash(HashProvider):
     ...
 
 # In main code (wires things together)
-from app.ai import MCTSNode
-from app.zobrist import ZobristHasher
+from app.core.zobrist import ZobristHash
 
-node = MCTSNode(hasher=ZobristHasher())
+cache = SearchCache(hasher=ZobristHash())
 ```
 
 ## Benefits
