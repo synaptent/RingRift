@@ -543,7 +543,7 @@ _get_throttle_factor = None
 _report_queue_depth = None
 
 try:
-    from app.coordination import (
+    from app.coordination.queue_monitor import (
         QueueType,
         get_throttle_factor,
         report_queue_depth,
@@ -645,7 +645,7 @@ _acquire_sync_lock = None
 _release_sync_lock = None
 
 try:
-    from app.coordination import (
+    from app.coordination.sync_mutex import (
         acquire_sync_lock,
         release_sync_lock,
         sync_lock,
@@ -718,12 +718,12 @@ _release_bandwidth = None
 _bandwidth_allocation = None
 
 try:
-    from app.coordination import (
-        TransferPriority,
+    from app.coordination.sync_bandwidth import (
         bandwidth_allocation,
         release_bandwidth,
         request_bandwidth,
     )
+    from app.coordination.types import TransferPriority
     _TransferPriority = TransferPriority
     _request_bandwidth = request_bandwidth
     _release_bandwidth = release_bandwidth
@@ -800,7 +800,7 @@ _record_task_completion = None
 _estimate_task_duration = None
 
 try:
-    from app.coordination import (
+    from app.coordination.duration_scheduler import (
         can_schedule_task,
         estimate_task_duration,
         record_task_completion,
@@ -922,11 +922,11 @@ _subscribe_process = None
 _CrossProcessEventPoller = None
 
 try:
-    from app.coordination import (
+    from app.coordination.event_router import (
         CrossProcessEventPoller,
         ack_event,
-        poll_events,
-        publish_event,
+        cp_poll_events as poll_events,
+        cp_publish as publish_event,
         subscribe_process,
     )
     _publish_event = publish_event
@@ -1030,7 +1030,7 @@ _should_scale_down_targets = None
 _set_backpressure = None
 
 try:
-    from app.coordination import (
+    from app.coordination.resource_targets import (
         get_cluster_summary,
         get_host_targets,
         get_resource_targets,

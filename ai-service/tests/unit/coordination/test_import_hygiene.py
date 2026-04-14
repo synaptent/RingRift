@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -12,6 +13,7 @@ RATCHET_FILES = (
     "ai-service/app/coordination/daemon_registry.py",
     "ai-service/app/coordination/event_emitters_extended.py",
     "ai-service/app/coordination/event_handler_decorator.py",
+    "ai-service/app/coordination/helpers.py",
     "ai-service/app/coordination/training_protocol.py",
     "ai-service/app/distributed/unified_data_sync.py",
     "ai-service/app/distributed/cluster_coordinator.py",
@@ -30,6 +32,33 @@ RATCHET_FILES = (
 
 def test_selected_runtime_modules_avoid_top_level_coordination_facade() -> None:
     for relative_path in RATCHET_FILES:
-        text = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
-        assert "from app.coordination import" not in text, relative_path
-        assert "import app.coordination as" not in text, relative_path
+        tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "app.coordination":
+                raise AssertionError(relative_path)
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "app.coordination":
+                        raise AssertionError(relative_path)
+
+
+def test_runtime_facade_import_sites_are_explicitly_inventory_controlled() -> None:
+    allowed = {
+        "ai-service/scripts/archive/selfplay/run_random_selfplay.py",
+        "ai-service/scripts/cli.py",
+        "ai-service/scripts/p2p/startup_infrastructure.py",
+    }
+
+    actual: set[str] = set()
+    for root in (REPO_ROOT / "ai-service" / "app", REPO_ROOT / "ai-service" / "scripts"):
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "app.coordination":
+                    actual.add(str(path.relative_to(REPO_ROOT)))
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "app.coordination":
+                            actual.add(str(path.relative_to(REPO_ROOT)))
+
+    assert actual == allowed
