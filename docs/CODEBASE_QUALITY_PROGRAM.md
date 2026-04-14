@@ -149,6 +149,7 @@ Current objectives:
 - `app.coordination.health` now follows the same pattern too: its canonical health-type package surface is locked under focused tests, and `__dir__()` now makes that public health API explicit for discovery and drift checks.
 - `app.coordination.feedback`, `app.coordination.mixins`, and `app.coordination.node_availability` now follow the same pattern too: their package surfaces are locked under focused tests, and each package now exposes its intended public API explicitly via `__dir__()` for discovery and drift checks.
 - `app.coordination.providers` now follows the same pattern too: its provider base types, registry exports, and package-level factory functions are locked under focused tests, and `__dir__()` now exposes that public provider API intentionally.
+- `app.coordination.hashgraph` now follows the same pattern too: its full consensus / DAG / promotion public surface is locked under focused tests, and `__dir__()` now makes that large but intentional package API explicit for discovery and drift checks.
 
 ## Execution Protocol
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import app.coordination.availability as availability_pkg
 import app.coordination.cluster as cluster_pkg
 import app.coordination.feedback as feedback_pkg
+import app.coordination.hashgraph as hashgraph_pkg
 import app.coordination.health as health_pkg
 import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
@@ -133,6 +134,79 @@ def test_feedback_package_declares_public_exports() -> None:
         exported = getattr(feedback_pkg, name)
         assert exported.__module__ == module_name
         assert name in dir(feedback_pkg)
+
+
+def test_hashgraph_package_declares_public_exports() -> None:
+    export_groups = [
+        (
+            "app.coordination.hashgraph.event",
+            ["HashgraphEvent", "EventType", "canonical_json", "compute_event_hash"],
+        ),
+        (
+            "app.coordination.hashgraph.dag",
+            ["HashgraphDAG", "DAGNode", "AncestryResult"],
+        ),
+        (
+            "app.coordination.hashgraph.consensus",
+            ["ConsensusEngine", "ConsensusResult", "VirtualVote", "StronglySeeingResult"],
+        ),
+        (
+            "app.coordination.hashgraph.famous_witnesses",
+            ["WitnessSelector", "WitnessInfo", "FameStatus", "RoundInfo"],
+        ),
+        (
+            "app.coordination.hashgraph.evaluation_consensus",
+            [
+                "EvaluationConsensusManager",
+                "EvaluationConsensusConfig",
+                "EvaluationResult",
+                "ConsensusEvaluationResult",
+                "EvaluationEventType",
+                "get_evaluation_consensus_manager",
+                "reset_evaluation_consensus_manager",
+            ],
+        ),
+        (
+            "app.coordination.hashgraph.gossip_ancestry",
+            [
+                "GossipAncestryTracker",
+                "GossipAncestryConfig",
+                "AncestryEvent",
+                "ValidationResult",
+                "ValidationStatus",
+                "add_ancestry_to_payload",
+                "validate_ancestry",
+                "has_ancestry_fields",
+                "get_gossip_ancestry_tracker",
+                "reset_gossip_ancestry_tracker",
+            ],
+        ),
+        (
+            "app.coordination.hashgraph.promotion_consensus",
+            [
+                "PromotionConsensusManager",
+                "PromotionConsensusConfig",
+                "PromotionProposal",
+                "PromotionVote",
+                "PromotionCertificate",
+                "PromotionConsensusResult",
+                "EvaluationEvidence",
+                "PromotionEventType",
+                "VoteType",
+                "get_promotion_consensus_manager",
+                "reset_promotion_consensus_manager",
+            ],
+        ),
+    ]
+
+    expected = [name for _, names in export_groups for name in names]
+    assert hashgraph_pkg.__all__ == expected
+    assert len(hashgraph_pkg.__all__) == len(set(hashgraph_pkg.__all__))
+    for module_name, names in export_groups:
+        for name in names:
+            exported = getattr(hashgraph_pkg, name)
+            assert exported.__module__ == module_name
+            assert name in dir(hashgraph_pkg)
 
 
 def test_mixins_package_declares_public_exports() -> None:
