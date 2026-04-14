@@ -19,7 +19,7 @@ from app.metrics import (
     record_selfplay_batch,
     record_training_run,
     record_model_promotion,
-    record_evaluation_result,
+    record_evaluation,
 )
 
 # Record selfplay progress
@@ -44,8 +44,17 @@ record_training_run(
 record_model_promotion(
     board_type="hex8",
     num_players=2,
-    model_id="hex8_2p_v3",
-    elo_improvement=45,
+    elo_gain=45,
+    new_elo=1979.8,
+)
+
+# Record evaluation tournament
+record_evaluation(
+    board_type="hex8",
+    num_players=2,
+    games=40,
+    elo_delta=18.4,
+    win_rate=0.58,
 )
 ```
 
@@ -84,23 +93,23 @@ All metrics include labels for filtering:
 
 ### API Request Metrics
 
-For application-level metrics (imported from `app.metrics_base`):
+For app-level request metrics re-exported from `app.metrics_base`:
 
 ```python
 from app.metrics import (
     AI_MOVE_REQUESTS,
     AI_MOVE_LATENCY,
-    ACTIVE_GAMES,
+    AI_ERRORS,
 )
 
 # Increment request counter
-AI_MOVE_REQUESTS.labels(board_type="hex8", player_count=2).inc()
+AI_MOVE_REQUESTS.labels(ai_type="gumbel", difficulty="8", outcome="success").inc()
 
 # Record latency
-AI_MOVE_LATENCY.labels(board_type="hex8").observe(0.15)
+AI_MOVE_LATENCY.labels(ai_type="gumbel", difficulty="8").observe(0.15)
 
-# Set gauge
-ACTIVE_GAMES.set(42)
+# Record error
+AI_ERRORS.labels(error_type="timeout", difficulty="8", board_type="hex8").inc()
 ```
 
 ## Grafana Integration
@@ -128,16 +137,15 @@ increase(model_promotions_total[24h])
 
 ## Usage with Orchestrator
 
-The P2P orchestrator automatically records metrics:
+The P2P orchestrator and unified loop can record stage-level progress through the root facade:
 
 ```python
-# Orchestrator records on job completion
-from app.metrics import record_job_completion
+from app.metrics import record_pipeline_iteration, record_pipeline_stage
 
-record_job_completion(
-    job_type="selfplay",
-    node_id="gpu-node-1",
-    success=True,
+record_pipeline_stage(
+    stage="selfplay",
     duration_seconds=120.5,
 )
+
+record_pipeline_iteration(orchestrator="unified_ai_loop")
 ```

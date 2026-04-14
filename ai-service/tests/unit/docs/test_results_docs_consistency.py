@@ -27,6 +27,8 @@ OPERATOR_ENTRYPOINT_DOCS = (
 INTEGRATION_README = REPO_ROOT / "ai-service" / "app" / "integration" / "README.md"
 UTILS_README = REPO_ROOT / "ai-service" / "app" / "utils" / "README.md"
 INTERFACES_README = REPO_ROOT / "ai-service" / "app" / "interfaces" / "README.md"
+METRICS_README = REPO_ROOT / "ai-service" / "app" / "metrics" / "README.md"
+MONITORING_README = REPO_ROOT / "ai-service" / "app" / "monitoring" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -143,3 +145,26 @@ def test_interfaces_readme_uses_current_hashing_example() -> None:
     assert "SearchCache" in text
     assert "from app.ai import MCTSNode" not in text
     assert "from app.zobrist import ZobristHasher" not in text
+
+
+def test_metrics_readme_matches_supported_root_exports() -> None:
+    text = METRICS_README.read_text(encoding="utf-8")
+
+    assert "record_evaluation(" in text
+    assert "record_pipeline_stage(" in text
+    assert "record_pipeline_iteration(" in text
+    assert "AI_ERRORS" in text
+    assert "record_evaluation_result" not in text
+    assert "ACTIVE_GAMES" not in text
+    assert "record_job_completion" not in text
+
+
+def test_monitoring_readme_separates_root_and_submodule_tools() -> None:
+    text = MONITORING_README.read_text(encoding="utf-8")
+
+    assert "MonitoringManager" in text
+    assert "from app.monitoring.predictive_alerts import PredictiveAlertConfig, PredictiveAlertManager" in text
+    assert "from app.monitoring.training_dashboard import DashboardServer, MetricsCollector" in text
+    assert "from app.monitoring import P2PHealthMonitor" not in text
+    assert "from app.monitoring import PredictiveAlertMonitor" not in text
+    assert "from app.monitoring import TrainingDashboard" not in text

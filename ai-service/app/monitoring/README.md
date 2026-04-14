@@ -9,9 +9,14 @@ This module provides comprehensive monitoring:
 - Centralized alert thresholds
 - Base classes for health monitors
 - Cluster-wide health checks
-- P2P-integrated monitoring
-- Predictive alerting
-- Training dashboard
+- P2P-integrated monitoring via `MonitoringManager`
+- Unified cluster and health orchestration at the package root
+
+Advanced monitoring tools still live in submodules:
+
+- `app.monitoring.p2p_monitoring` for Prometheus/Grafana leader handoff internals
+- `app.monitoring.predictive_alerts` for predictive alerting
+- `app.monitoring.training_dashboard` for the dashboard server and collector
 
 ## Key Components
 
@@ -99,51 +104,61 @@ result = composite.check_health()
 ### P2P Integration
 
 ```python
-from app.monitoring import P2PHealthMonitor
+from app.monitoring import MonitoringManager
 
-# Monitor integrated with P2P orchestrator
-monitor = P2PHealthMonitor(
-    p2p_port=8770,
-    check_interval=30,
+manager = MonitoringManager(node_id="leader-1")
+manager.update_peers(
+    [
+        {"node_id": "gpu-node-1", "host": "10.0.0.11", "is_alive": True},
+        {"node_id": "gpu-node-2", "host": "10.0.0.12", "is_alive": True},
+    ]
 )
 
-# Automatically reports to P2P leader
-monitor.start_background_checks()
+await manager.start_as_leader()
+await manager.stop()
 ```
 
 ### Predictive Alerts
 
 ```python
-from app.monitoring import PredictiveAlertMonitor
+from app.monitoring.predictive_alerts import PredictiveAlertConfig, PredictiveAlertManager
 
-# Predict issues before they happen
-predictor = PredictiveAlertMonitor(
-    history_hours=24,
-    prediction_horizon_hours=6,
+predictor = PredictiveAlertManager(
+    PredictiveAlertConfig(
+        disk_prediction_hours=6,
+        elo_trend_window_hours=8,
+    )
 )
 
-# Check for predicted issues
-predictions = predictor.predict_issues()
-for pred in predictions:
-    print(f"Predicted: {pred.issue_type} in {pred.hours_until}")
+predictor.record_disk_usage("gpu-node-1", 82.0)
+predictor.record_elo("hex8_2p_best", 1979.8)
+
+alerts = await predictor.run_all_checks(
+    node_ids=["gpu-node-1"],
+    model_ids=["hex8_2p_best"],
+    last_training_time=0,
+)
 ```
 
 ### Training Dashboard
 
 ```python
-from app.monitoring import TrainingDashboard
+from pathlib import Path
 
-# Real-time training metrics
-dashboard = TrainingDashboard()
-dashboard.update_metrics(
+from app.monitoring.training_dashboard import DashboardServer, MetricsCollector
+
+collector = MetricsCollector(db_path=Path("data/metrics/training_metrics.db"))
+collector.record_training_step(
     epoch=15,
+    step=300,
     loss=0.023,
     accuracy=0.76,
     learning_rate=0.0001,
+    model_id="hex8_2p_v3",
 )
 
-# Export to file
-dashboard.save_snapshot("training_progress.json")
+dashboard = DashboardServer(collector)
+# dashboard.run(port=8080)
 ```
 
 ## Threshold Categories

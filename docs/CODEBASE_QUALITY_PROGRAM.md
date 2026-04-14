@@ -172,6 +172,7 @@ Current objectives:
 - The remaining utility-facing surfaces now follow the same pattern too: `app.utils` now advertises only the root helpers it actually resolves, `app.rules.legacy` now has explicit discoverability, and focused tests ratchet both package surfaces under cheap targeted verification.
 - The package READMEs are being brought under the same standards too: `app.integration/README.md` now documents the real root facade and submodule escape hatches, `app.utils/README.md` now states the supported root-vs-submodule split explicitly, and focused docs tests lock that guidance so the examples do not drift back to dead imports.
 - The package README cleanup is expanding one seam at a time: `app.interfaces/README.md` now uses the current hashing example (`app.core.zobrist.ZobristHash`) instead of the stale `app.ai`/`app.zobrist` wiring, and the docs ratchet now locks that correction too.
+- The package README cleanup is continuing through the service facades too: `app.metrics/README.md` now uses real root helpers (`record_evaluation`, `record_pipeline_stage`, `record_pipeline_iteration`) instead of dead names, and `app.monitoring/README.md` now separates the supported root facade from advanced submodule-only tools like predictive alerts and the training dashboard.
 
 ## Execution Protocol
 
