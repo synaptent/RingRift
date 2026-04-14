@@ -3,15 +3,21 @@
 **Created**: December 2025
 **Purpose**: Clarify orchestrator roles and migration path
 
+This guide covers in-process training orchestration. For supported trainer
+canaries, operators should deploy `ai-service/scripts/minimal_alphazero_loop.py`
+via `ai-service/scripts/deploy_minimal_loops.sh` and monitor `progress.json`
+plus `metrics.jsonl`; that rollout path is separate from the orchestration
+classes described below.
+
 ## Current Architecture (5 Orchestrators)
 
-| Class                         | File                       | Lines | Role                              |
-| ----------------------------- | -------------------------- | ----- | --------------------------------- |
-| `UnifiedTrainingOrchestrator` | unified_orchestrator.py    | 1,853 | **PRIMARY** - Step-level training |
-| `TrainingCoordinator`         | training_coordinator.py    | 1,034 | Cluster-wide job coordination     |
-| `TrainingLifecycleManager`    | lifecycle_integration.py   | 548   | Service lifecycle management      |
-| `TrainingOrchestrator`        | orchestrated_training.py   | 379   | _DEPRECATED_ - Manager lifecycle  |
-| `IntegratedTrainingManager`   | integrated_enhancements.py | 1,310 | _DEPRECATED_ - Enhancements       |
+| Class                         | File                                                         | Lines | Role                              |
+| ----------------------------- | ------------------------------------------------------------ | ----- | --------------------------------- |
+| `UnifiedTrainingOrchestrator` | unified_orchestrator.py                                      | 2,216 | **PRIMARY** - Step-level training |
+| `TrainingCoordinator`         | `../coordination/training_coordinator.py`                    | 1,862 | Cluster-wide job coordination     |
+| `TrainingLifecycleManager`    | lifecycle_integration.py                                     | 548   | Service lifecycle management      |
+| `TrainingOrchestrator`        | `../../archive/deprecated_training/orchestrated_training.py` | 386   | _ARCHIVED_ compatibility surface  |
+| `IntegratedTrainingManager`   | integrated_enhancements.py                                   | 1,350 | _DEPRECATED_ - Enhancements       |
 
 ## Target Architecture (3 Orchestrators)
 
@@ -59,15 +65,17 @@
 
 ## Migration Guide
 
-### For `TrainingOrchestrator` users (orchestrated_training.py)
+### For `TrainingOrchestrator` users (archived compatibility layer)
 
-**DEPRECATED**: This class is deprecated as of December 2025.
+`TrainingOrchestrator` now comes from the archived compatibility module
+`archive.deprecated_training.orchestrated_training` and is re-exported from
+`app.training` for migrations.
 
 Replace with:
 
 ```python
 # Old
-from app.training.orchestrated_training import TrainingOrchestrator
+from app.training import TrainingOrchestrator
 orchestrator = TrainingOrchestrator(config)
 await orchestrator.initialize()
 
@@ -133,9 +141,9 @@ loss = orchestrator.train_step(batch)
 | Background evaluation | IntegratedTrainingManager | UnifiedTrainingOrchestrator | ✅ Done |
 | ELO sampling          | IntegratedTrainingManager | UnifiedTrainingOrchestrator | ✅ Done |
 
-## Files to Archive (after migration)
+## Archived Compatibility Surface
 
-Once all users have migrated:
-
-- `app/training/orchestrated_training.py` → archive
-- `app/training/integrated_enhancements.py` → archive (keep enhancement modules)
+- `archive/deprecated_training/orchestrated_training.py` contains the archived
+  `TrainingOrchestrator` compatibility layer.
+- `app/training/integrated_enhancements.py` remains present for legacy imports,
+  but new code should migrate to `UnifiedTrainingOrchestrator`.

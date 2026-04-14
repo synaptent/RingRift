@@ -1,7 +1,15 @@
 # Coordination Package Export Tiers
 
-**Analysis Date**: December 28, 2025
-**Current State**: 568 exports in `__all__`, 2,223 LOC in `__init__.py`
+**Analysis Date**: April 14, 2026
+**Current State**: 594 exports in `__all__`, 251 LOC in `__init__.py`
+
+The root package is now a thin lazy facade backed by `_exports_core.py`,
+`_exports_sync.py`, `_exports_daemon.py`, `_exports_events.py`,
+`_exports_orchestrators.py`, and `_exports_utils.py`. Focused tests in
+`tests/unit/coordination/test_package_exports.py` and
+`tests/unit/coordination/test_import_hygiene.py` now lock that public surface
+and keep runtime code off the package root unless the compatibility layer is
+intentional.
 
 ## Usage Analysis
 
@@ -123,39 +131,28 @@ from app.coordination import (
 )
 ```
 
-## Refactoring Roadmap
+## Current Guardrails
 
-### Phase 1: Documentation (Q1 2026)
+- `app.coordination.__dir__()` exposes the intended root surface explicitly.
+- `tests/unit/coordination/test_package_exports.py` ratchets the package root.
+- `tests/unit/coordination/test_import_hygiene.py` keeps new runtime callers off
+  the root facade.
+- The root module stays small because it resolves exports lazily through the
+  `_exports_*.py` shims instead of importing the whole coordination tree eagerly.
 
-- [x] Create this tier classification
-- [ ] Update CLAUDE.md with import recommendations
-- [ ] Add deprecation comments to Tier 3 re-exports
+## Next Cleanup Opportunities
 
-### Phase 2: Create Public API (Q2 2026)
-
-- [ ] Create `app/coordination/public.py` with ~30 Tier 1 exports
-- [ ] Update callers to use direct imports
-- [ ] Add deprecation warnings for Tier 3 from `__init__.py`
-
-### Phase 3: Slim Down **init** (Q3 2026)
-
-- [ ] Remove Tier 3 re-exports from `__init__.py`
-- [ ] Keep only Tier 1 + Tier 2 (~130 exports)
-- [ ] Reduce `__init__.py` from 2,223 to ~500 LOC
-
-## Impact Summary
-
-| Metric            | Current | Target (Q3 2026) |
-| ----------------- | ------- | ---------------- |
-| `__all__` items   | 568     | ~130             |
-| `__init__.py` LOC | 2,223   | ~500             |
-| Import time       | ~500ms  | ~100ms           |
+- Continue draining runtime callers toward focused submodules where that reduces
+  dependency fan-out.
+- Shrink historical compatibility exports only after callers have been removed
+  and ratcheted.
+- Keep rejecting broad root imports such as `from app.coordination import *`.
 
 ## Notes
 
-The current bloated `__init__.py` is the result of historical accumulation where
-every new module's exports were added to maintain "convenient" package-level access.
-Modern Python practice favors explicit submodule imports for:
+The package root is no longer a bloated eager-import module; it is now a thin
+lazy facade that still preserves a large historical compatibility surface.
+Modern Python practice still favors explicit submodule imports for:
 
 1. **Clarity**: Readers know exactly where a symbol comes from
 2. **Performance**: Only load what you need

@@ -57,7 +57,6 @@ app/training/
 │
 ├── Orchestration
 │   ├── unified_orchestrator.py     # Unified training orchestration (RECOMMENDED)
-│   ├── orchestrated_training.py    # DEPRECATED - use unified_orchestrator.py
 │   ├── optimization_orchestrator.py # Hyperparameter optimization
 │   └── per_orchestrator.py         # Prioritized experience replay
 │
@@ -77,6 +76,10 @@ app/training/
     ├── auxiliary_tasks.py          # Auxiliary training objectives
     └── adversarial_positions.py    # Hard position mining
 ```
+
+Historical `TrainingOrchestrator` compatibility lives in
+`archive/deprecated_training/orchestrated_training.py` and is re-exported from
+`app.training` only for migration compatibility.
 
 ## Quick Start
 
@@ -866,11 +869,11 @@ learner.update_from_game(winner)
 
 The following modules are deprecated and will be removed in Q2 2026:
 
-| Deprecated Module                         | Replacement                            | Notes                          |
-| ----------------------------------------- | -------------------------------------- | ------------------------------ |
-| `orchestrated_training.py`                | `unified_orchestrator.py`              | Unified training orchestration |
-| `integrated_enhancements.py`              | `unified_orchestrator.py`              | Consolidated enhancements      |
-| `training_enhancements.DataQualityScorer` | `unified_quality.UnifiedQualityScorer` | See `unified_quality.py`       |
+| Deprecated Module                                      | Replacement                            | Notes                        |
+| ------------------------------------------------------ | -------------------------------------- | ---------------------------- |
+| `archive/deprecated_training/orchestrated_training.py` | `unified_orchestrator.py`              | Archived compatibility layer |
+| `integrated_enhancements.py`                           | `unified_orchestrator.py`              | Consolidated enhancements    |
+| `training_enhancements.DataQualityScorer`              | `unified_quality.UnifiedQualityScorer` | See `unified_quality.py`     |
 
 ## Related Documentation
 

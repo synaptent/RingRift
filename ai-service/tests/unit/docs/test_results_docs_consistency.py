@@ -41,6 +41,8 @@ COORDINATION_PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "coordination
 PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "providers" / "README.md"
 COORDINATION_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "README.md"
 TRAINING_README = REPO_ROOT / "ai-service" / "app" / "training" / "README.md"
+COORDINATION_EXPORT_TIERS_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "EXPORT_TIERS.md"
+TRAINING_ORCHESTRATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "training" / "ORCHESTRATOR_GUIDE.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -311,3 +313,29 @@ def test_training_readme_distinguishes_local_and_supported_operator_paths() -> N
     assert "minimal_alphazero_loop.py" in text
     assert "progress.json" in text
     assert "metrics.jsonl" in text
+    assert "archive/deprecated_training/orchestrated_training.py" in text
+
+
+def test_coordination_export_tiers_guide_matches_lazy_facade_state() -> None:
+    text = COORDINATION_EXPORT_TIERS_GUIDE.read_text(encoding="utf-8")
+
+    assert "594 exports in `__all__`, 251 LOC in `__init__.py`" in text
+    assert "_exports_core.py" in text
+    assert "tests/unit/coordination/test_package_exports.py" in text
+    assert "tests/unit/coordination/test_import_hygiene.py" in text
+    assert "568 exports" not in text
+    assert "2,223 LOC" not in text
+    assert "public.py" not in text
+
+
+def test_training_orchestrator_guide_matches_archived_orchestrator_reality() -> None:
+    text = TRAINING_ORCHESTRATOR_GUIDE.read_text(encoding="utf-8")
+
+    assert "deploy_minimal_loops.sh" in text
+    assert "minimal_alphazero_loop.py" in text
+    assert "progress.json" in text
+    assert "metrics.jsonl" in text
+    assert "archive.deprecated_training.orchestrated_training" in text
+    assert "from app.training import TrainingOrchestrator" in text
+    assert "from app.training.orchestrated_training import TrainingOrchestrator" not in text
+    assert "`app/training/orchestrated_training.py` → archive" not in text
