@@ -31,7 +31,7 @@
 
 **What was deprecated and why**:
 
-- `TrainingOrchestrator` from `orchestrated_training.py` was a manager lifecycle coordinator
+- `TrainingOrchestrator` from the archived `archive/deprecated_training/orchestrated_training.py` implementation was a manager lifecycle coordinator
 - Its functionality (checkpoint management, rollback, promotion, curriculum) has been integrated into `UnifiedTrainingOrchestrator`
 - The archived implementation now lives at `archive/deprecated_training/orchestrated_training.py`
 - The direct `app.training.orchestrated_training` module path has been removed from the active package tree
@@ -635,15 +635,15 @@ The router automatically maps between event systems:
 
 ## Timeline Summary
 
-| Module                       | Deprecated    | Removal Target |
-| ---------------------------- | ------------- | -------------- |
-| `orchestrated_training.py`   | December 2025 | Q2 2026        |
-| `integrated_enhancements.py` | December 2025 | Q2 2026        |
-| `_neural_net_legacy.py`      | December 2025 | Q1 2026        |
-| `stage_events.py`            | December 2025 | Q2 2026        |
-| `cross_process_events.py`    | December 2025 | Q2 2026        |
-| Non-canonical databases      | December 2025 | Ongoing        |
-| v1/v1_mps model formats      | Pre-2025      | Q1 2026        |
+| Module                                                 | Deprecated    | Removal Target |
+| ------------------------------------------------------ | ------------- | -------------- |
+| `archive/deprecated_training/orchestrated_training.py` | December 2025 | Q2 2026        |
+| `integrated_enhancements.py`                           | December 2025 | Q2 2026        |
+| `_neural_net_legacy.py`                                | December 2025 | Q1 2026        |
+| `stage_events.py`                                      | December 2025 | Q2 2026        |
+| `cross_process_events.py`                              | December 2025 | Q2 2026        |
+| Non-canonical databases                                | December 2025 | Ongoing        |
+| v1/v1_mps model formats                                | Pre-2025      | Q1 2026        |
 
 ---
 

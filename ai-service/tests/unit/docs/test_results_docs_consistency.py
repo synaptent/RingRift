@@ -409,10 +409,15 @@ def test_ai_service_migration_guide_uses_current_training_compatibility_path() -
     text = AI_SERVICE_MIGRATION_GUIDE.read_text(encoding="utf-8")
 
     assert "archive/deprecated_training/orchestrated_training.py" in text
+    assert (
+        "TrainingOrchestrator` from the archived `archive/deprecated_training/orchestrated_training.py` implementation"
+        in text
+    )
     assert "from app.training import (" in text
     assert "The direct `app.training.orchestrated_training` module path has been removed" in text
     assert "Use that root-package compatibility import only for short-lived migrations." in text
     assert "from app.training.orchestrated_training import (" not in text
+    assert "| `orchestrated_training.py`" not in text
 
 
 def test_training_docstrings_use_current_archived_orchestrator_story() -> None:
