@@ -564,21 +564,30 @@ async def handle_quality_update(event):
 
 ```python
 from app.quality import get_quality_scorer, is_training_worthy
-from app.training import TrainingPipeline
+from app.training.optimized_pipeline import get_optimized_pipeline
 
 scorer = get_quality_scorer()
+pipeline = get_optimized_pipeline()
 
-# Filter games by quality
-def quality_filter(games):
-    return [
-        g for g in games
-        if is_training_worthy(scorer.compute_game_quality(g).final_score)
-    ]
-
-pipeline = TrainingPipeline(
-    data_filter=quality_filter,
-)
+quality = scorer.compute_game_quality(game_data)
+if is_training_worthy(quality.final_score):
+    should_train, reason = pipeline.should_train(
+        "square8_2p",
+        games_since_training=800,
+        current_elo=1600.0,
+    )
+    if should_train:
+        result = pipeline.run_training(
+            "square8_2p",
+            db_paths=["data/games/canonical_square8_2p.db"],
+        )
+        print(result.message)
+    else:
+        print(f"Training deferred: {reason}")
 ```
+
+Use `app.training.train_loop.run_training_loop` for the full selfplay -> train -> evaluate loop. Use
+`get_optimized_pipeline()` when integrating quality gates with direct export and training decisions.
 
 ---
 

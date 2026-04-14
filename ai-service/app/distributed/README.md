@@ -284,21 +284,22 @@ Prevents cascade failures by isolating failing nodes:
 ```python
 from app.distributed import (
     CircuitBreaker,
+    CircuitOpenError,
     CircuitState,
     get_host_breaker,
     get_training_breaker,
 )
 
-# Get circuit breaker for a specific host
-breaker = get_host_breaker("100.x.x.1")
+# Get the shared host circuit breaker registry
+breaker = get_host_breaker()
 
 # Check if circuit is open (failing)
-if breaker.state == CircuitState.OPEN:
+if breaker.get_state("100.x.x.1") == CircuitState.OPEN:
     print("Host is currently unavailable")
 
 # Execute with circuit breaker protection
 try:
-    async with breaker:
+    async with breaker.protected("100.x.x.1"):
         result = await sync_to_host("100.x.x.1")
 except CircuitOpenError:
     print("Circuit is open, skipping this host")
@@ -647,16 +648,16 @@ from app.distributed import (
 
 async def select_healthy_hosts(hosts: list[str]) -> list[str]:
     healthy = []
+    breaker = get_host_breaker()
 
     for host in hosts:
         # Check circuit breaker
-        breaker = get_host_breaker(host)
-        if breaker.state == CircuitState.OPEN:
+        if breaker.get_state(host) == CircuitState.OPEN:
             continue
 
         # Check health
         try:
-            async with breaker:
+            async with breaker.protected(host):
                 summary = await get_health_summary(host)
                 if summary.status == "healthy":
                     healthy.append(host)
@@ -700,13 +701,14 @@ stats = await full_cluster_sync(timeout=1200)
 ```python
 from app.distributed import get_host_breaker
 
-# Reset a specific breaker
-breaker = get_host_breaker("100.x.x.1")
-breaker.reset()
+# Get the shared host circuit breaker registry
+breaker = get_host_breaker()
 
-# Or reset all breakers
-from app.distributed.circuit_breaker import reset_all_breakers
-reset_all_breakers()
+# Reset one tracked host target
+breaker.reset("100.x.x.1")
+
+# Or clear all tracked host breaker state
+breaker.reset_all()
 ```
 
 #### WAL Recovery Issues

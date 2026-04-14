@@ -31,6 +31,8 @@ METRICS_README = REPO_ROOT / "ai-service" / "app" / "metrics" / "README.md"
 MONITORING_README = REPO_ROOT / "ai-service" / "app" / "monitoring" / "README.md"
 VALIDATION_README = REPO_ROOT / "ai-service" / "app" / "validation" / "README.md"
 COORDINATION_DEPRECATED_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "deprecated" / "README.md"
+DISTRIBUTED_README = REPO_ROOT / "ai-service" / "app" / "distributed" / "README.md"
+QUALITY_README = REPO_ROOT / "ai-service" / "app" / "quality" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -198,3 +200,29 @@ def test_deprecated_coordination_readme_matches_current_archive_state() -> None:
     assert "archive/deprecated_coordination/README.md" not in text
     assert "app.coordination.core.events" not in text
     assert "from app.coordination.cluster import SyncScheduler" not in text
+
+
+def test_distributed_readme_uses_real_circuit_breaker_reset_api() -> None:
+    text = DISTRIBUTED_README.read_text(encoding="utf-8")
+
+    assert "breaker = get_host_breaker()" in text
+    assert 'breaker.get_state("100.x.x.1")' in text
+    assert 'async with breaker.protected("100.x.x.1")' in text
+    assert 'breaker.reset("100.x.x.1")' in text
+    assert "breaker.reset_all()" in text
+    assert 'get_host_breaker("100.x.x.1")' not in text
+    assert "get_host_breaker(host)" not in text
+    assert "reset_all_breakers" not in text
+
+
+def test_quality_readme_uses_supported_training_entrypoints() -> None:
+    text = QUALITY_README.read_text(encoding="utf-8")
+
+    assert "from app.training.optimized_pipeline import get_optimized_pipeline" in text
+    assert "pipeline = get_optimized_pipeline()" in text
+    assert "pipeline.should_train(" in text
+    assert "pipeline.run_training(" in text
+    assert "canonical_square8_2p.db" in text
+    assert "app.training.train_loop.run_training_loop" in text
+    assert "from app.training import TrainingPipeline" not in text
+    assert "data_filter=quality_filter" not in text
