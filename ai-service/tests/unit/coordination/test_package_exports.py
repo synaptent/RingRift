@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import app.coordination.availability as availability_pkg
 import app.coordination.cluster as cluster_pkg
+import app.coordination.feedback as feedback_pkg
 import app.coordination.health as health_pkg
 import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
+import app.coordination.mixins as mixins_pkg
+import app.coordination.node_availability as node_availability_pkg
 import app.coordination.queue_strategies as queue_strategies_pkg
 import app.coordination.selfplay as selfplay_pkg
 import app.coordination.status_reporting as status_reporting_pkg
@@ -108,6 +111,72 @@ def test_health_package_declares_public_exports() -> None:
         exported = getattr(health_pkg, name)
         assert exported.__module__ == module_name
         assert name in dir(health_pkg)
+
+
+def test_feedback_package_declares_public_exports() -> None:
+    expected = {
+        "FeedbackClusterHealthMixin": "app.coordination.feedback.cluster_health_mixin",
+        "ExplorationBoostMixin": "app.coordination.feedback.exploration_boost",
+        "QualityFeedbackMixin": "app.coordination.feedback.quality_feedback",
+        "EloVelocityAdaptationMixin": "app.coordination.feedback.elo_velocity_mixin",
+        "TrainingCurriculumFeedbackMixin": "app.coordination.feedback.training_curriculum_mixin",
+        "LossMonitoringMixin": "app.coordination.feedback.loss_monitoring_mixin",
+        "EvaluationFeedbackMixin": "app.coordination.feedback.evaluation_feedback_mixin",
+        "RegressionHandlingMixin": "app.coordination.feedback.regression_handling_mixin",
+        "SelfplayFeedbackMixin": "app.coordination.feedback.selfplay_feedback_mixin",
+    }
+
+    assert feedback_pkg.__all__ == list(expected)
+    assert len(feedback_pkg.__all__) == len(set(feedback_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(feedback_pkg, name)
+        assert exported.__module__ == module_name
+        assert name in dir(feedback_pkg)
+
+
+def test_mixins_package_declares_public_exports() -> None:
+    expected = {
+        "HealthCheckMixin": "app.coordination.mixins.health_check_mixin",
+        "DownloadProgress": "app.coordination.mixins.import_mixin",
+        "ImportDaemonMixin": "app.coordination.mixins.import_mixin",
+        "ImportValidationResult": "app.coordination.mixins.import_mixin",
+        "EventSubscriptionMixin": "app.coordination.mixins.lifecycle_mixin",
+        "LifecycleMixin": "app.coordination.mixins.lifecycle_mixin",
+        "LifecycleState": "app.coordination.mixins.lifecycle_mixin",
+        "DataPipelineOrchestratorProtocol": "app.coordination.pipeline_mixin_base",
+        "PipelineMixinBase": "app.coordination.pipeline_mixin_base",
+        "AutoSyncDaemonProtocol": "app.coordination.sync_mixin_base",
+        "SyncMixinBase": "app.coordination.sync_mixin_base",
+    }
+
+    assert mixins_pkg.__all__ == list(expected)
+    assert len(mixins_pkg.__all__) == len(set(mixins_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(mixins_pkg, name)
+        assert exported.__module__ == module_name
+        assert name in dir(mixins_pkg)
+
+
+def test_node_availability_package_declares_public_exports() -> None:
+    expected = {
+        "ProviderInstanceState": "app.coordination.node_availability.state_checker",
+        "InstanceInfo": "app.coordination.node_availability.state_checker",
+        "StateChecker": "app.coordination.node_availability.state_checker",
+        "STATE_TO_YAML_STATUS": "builtins",
+        "ConfigUpdater": "app.coordination.node_availability.config_updater",
+        "ConfigUpdateResult": "app.coordination.node_availability.config_updater",
+        "NodeAvailabilityDaemon": "app.coordination.node_availability.daemon",
+        "NodeAvailabilityConfig": "app.coordination.node_availability.daemon",
+        "get_node_availability_daemon": "app.coordination.node_availability.daemon",
+        "reset_daemon_instance": "app.coordination.node_availability.daemon",
+    }
+
+    assert node_availability_pkg.__all__ == list(expected)
+    assert len(node_availability_pkg.__all__) == len(set(node_availability_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(node_availability_pkg, name)
+        assert getattr(exported, "__module__", type(exported).__module__) == module_name
+        assert name in dir(node_availability_pkg)
 
 
 def test_queue_strategies_package_declares_public_exports() -> None:

@@ -56,3 +56,9 @@ __all__ = [
     "get_node_availability_daemon",
     "reset_daemon_instance",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended package surface for discoverability and tests."""
+
+    return sorted(set(globals()) | set(__all__))
