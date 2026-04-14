@@ -37,3 +37,9 @@ __all__ = [
     "ScaleRecommendation",
     "ScaleAction",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended package surface for discoverability and tests."""
+
+    return sorted(set(globals()) | set(__all__))

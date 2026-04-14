@@ -145,6 +145,7 @@ Current objectives:
 - The next narrow coordination seam is `app.coordination.interfaces`: it is already a small, dependency-light protocol module, so the right move there is to ratchet its declared protocol surface and make package discovery intentional instead of leaving it implicit.
 - `app.coordination.interfaces` now has that package-surface ratchet too: focused tests lock its protocol exports, and `__dir__()` now makes the intended interface surface explicit for discoverability and future regression checks.
 - `app.coordination.queue_strategies` now follows the same pattern too: its tiny mixin package surface is locked under focused tests, and `__dir__()` now exposes that public package surface intentionally instead of relying on implicit module behavior.
+- `app.coordination.availability` now follows the same pattern too: its package export list is locked under focused tests, and `__dir__()` now makes the node-monitor / recovery / provisioning surface explicit for discoverability.
 
 ## Execution Protocol
 

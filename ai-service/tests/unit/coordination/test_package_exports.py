@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import app.coordination.availability as availability_pkg
 import app.coordination.cluster as cluster_pkg
 import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
@@ -40,6 +41,30 @@ def test_cluster_package_declares_public_exports() -> None:
     assert "health" in dir(cluster_pkg)
     assert "transport" in dir(cluster_pkg)
     assert "p2p" in dir(cluster_pkg)
+
+
+def test_availability_package_declares_public_exports() -> None:
+    expected = {
+        "NodeMonitor": "app.coordination.availability.node_monitor",
+        "HealthCheckLayer": "app.coordination.availability.node_monitor",
+        "NodeHealthResult": "app.coordination.availability.node_monitor",
+        "RecoveryEngine": "app.coordination.availability.recovery_engine",
+        "RecoveryAction": "app.coordination.enums",
+        "RecoveryResult": "app.coordination.availability.recovery_engine",
+        "Provisioner": "app.coordination.availability.provisioner",
+        "ProvisionResult": "app.coordination.availability.provisioner",
+        "CapacityPlanner": "app.coordination.availability.capacity_planner",
+        "CapacityBudget": "app.coordination.availability.capacity_planner",
+        "ScaleRecommendation": "app.coordination.availability.capacity_planner",
+        "ScaleAction": "app.coordination.enums",
+    }
+
+    assert availability_pkg.__all__ == list(expected)
+    assert len(availability_pkg.__all__) == len(set(availability_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(availability_pkg, name)
+        assert exported.__module__ == module_name
+        assert name in dir(availability_pkg)
 
 
 def test_interfaces_module_declares_protocol_surface() -> None:
