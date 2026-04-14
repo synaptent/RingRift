@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import app.coordination.cluster as cluster_pkg
 import app.coordination.selfplay as selfplay_pkg
+import app.coordination.status_reporting as status_reporting_pkg
 import app.coordination.training as training_pkg
 
 
@@ -46,3 +47,10 @@ def test_selfplay_package_dir_lists_lazy_scheduler_exports() -> None:
     ):
         assert name in selfplay_pkg.__all__
         assert name in dir(selfplay_pkg)
+
+
+def test_status_reporting_module_declares_public_exports() -> None:
+    assert status_reporting_pkg.__all__ == ["get_all_coordinator_status", "get_system_health"]
+    for name in status_reporting_pkg.__all__:
+        assert name in dir(status_reporting_pkg)
+        assert callable(getattr(status_reporting_pkg, name))
