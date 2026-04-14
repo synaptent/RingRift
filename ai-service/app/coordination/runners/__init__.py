@@ -158,3 +158,12 @@ from app.coordination.runners.operations_runners import (  # noqa: E402, F401
     create_voter_health_monitor,
     create_pipeline_completeness_monitor,
 )
+
+__all__ = [name for name in globals() if name.startswith("create_")]
+
+
+def __dir__() -> list[str]:
+    """Expose only the public runner-factory surface for discoverability."""
+
+    public_globals = {name for name in globals() if not name.startswith("_")}
+    return sorted(public_globals | set(__all__))

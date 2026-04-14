@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 import app.coordination.availability as availability_pkg
 import app.coordination.cluster as cluster_pkg
+import app.coordination.deprecated as deprecated_pkg
 import app.coordination.feedback as feedback_pkg
 import app.coordination.hashgraph as hashgraph_pkg
 import app.coordination.health as health_pkg
@@ -14,6 +17,7 @@ import app.coordination.node_availability as node_availability_pkg
 import app.coordination.node_availability.providers as node_availability_providers_pkg
 import app.coordination.providers as providers_pkg
 import app.coordination.queue_strategies as queue_strategies_pkg
+import app.coordination.runners as runners_pkg
 import app.coordination.selfplay as selfplay_pkg
 import app.coordination.status_reporting as status_reporting_pkg
 import app.coordination.training as training_pkg
@@ -48,6 +52,25 @@ def test_cluster_package_declares_public_exports() -> None:
     assert "health" in dir(cluster_pkg)
     assert "transport" in dir(cluster_pkg)
     assert "p2p" in dir(cluster_pkg)
+
+
+def test_deprecated_package_lists_archived_modules_and_raises_clear_errors() -> None:
+    archived_names = {
+        "cross_process_events",
+        "event_emitters",
+        "health_check_orchestrator",
+        "host_health_policy",
+        "system_health_monitor",
+        "auto_evaluation_daemon",
+        "sync_coordinator",
+        "queue_populator_daemon",
+    }
+
+    assert archived_names.issubset(set(dir(deprecated_pkg)))
+    with pytest.raises(ImportError, match="app\\.coordination\\.deprecated\\.sync_coordinator has been archived"):
+        _ = deprecated_pkg.sync_coordinator
+    with pytest.raises(ImportError, match="Use app\\.coordination\\.auto_sync_daemon \\+ sync_router instead"):
+        _ = deprecated_pkg.sync_coordinator
 
 
 def test_availability_package_declares_public_exports() -> None:
@@ -135,6 +158,29 @@ def test_feedback_package_declares_public_exports() -> None:
         exported = getattr(feedback_pkg, name)
         assert exported.__module__ == module_name
         assert name in dir(feedback_pkg)
+
+
+def test_runners_package_declares_factory_only_public_exports() -> None:
+    expected_subset = {
+        "create_auto_sync",
+        "create_cluster_monitor",
+        "create_training_coordinator",
+        "create_model_sync",
+        "create_job_scheduler",
+        "create_feedback_loop",
+        "create_node_availability",
+        "create_pipeline_completeness_monitor",
+    }
+
+    assert len(runners_pkg.__all__) == 127
+    assert len(runners_pkg.__all__) == len(set(runners_pkg.__all__))
+    assert expected_subset.issubset(set(runners_pkg.__all__))
+    assert all(name.startswith("create_") for name in runners_pkg.__all__)
+    assert "_wait_for_daemon" not in runners_pkg.__all__
+    assert "_wait_for_daemon" not in dir(runners_pkg)
+    for name in expected_subset:
+        assert callable(getattr(runners_pkg, name))
+        assert name in dir(runners_pkg)
 
 
 def test_hashgraph_package_declares_public_exports() -> None:

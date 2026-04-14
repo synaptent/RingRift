@@ -21,22 +21,29 @@ Archived December 27, 2025 (3,339 LOC total):
 
 import warnings
 
+_ARCHIVED_MODULES = {
+    "cross_process_events": "event_router",
+    "event_emitters": "event_router",
+    "health_check_orchestrator": "unified_health_manager",
+    "host_health_policy": "unified_health_manager",
+    "system_health_monitor": "unified_health_manager",
+    "auto_evaluation_daemon": "daemon_manager with EVALUATION_DAEMON",
+    "sync_coordinator": "auto_sync_daemon + sync_router",
+    "queue_populator_daemon": "queue_populator",
+}
+
+
+def __dir__() -> list[str]:
+    """Expose archived module names so migration targets stay discoverable."""
+
+    public_globals = {name for name in globals() if not name.startswith("_")}
+    return sorted(public_globals | set(_ARCHIVED_MODULES))
+
 
 def __getattr__(name: str):
     """Raise clear error for archived modules."""
-    archived_modules = {
-        "cross_process_events": "event_router",
-        "event_emitters": "event_router",
-        "health_check_orchestrator": "unified_health_manager",
-        "host_health_policy": "unified_health_manager",
-        "system_health_monitor": "unified_health_manager",
-        "auto_evaluation_daemon": "daemon_manager with EVALUATION_DAEMON",
-        "sync_coordinator": "auto_sync_daemon + sync_router",
-        "queue_populator_daemon": "queue_populator",
-    }
-
-    if name in archived_modules:
-        replacement = archived_modules[name]
+    if name in _ARCHIVED_MODULES:
+        replacement = _ARCHIVED_MODULES[name]
         raise ImportError(
             f"app.coordination.deprecated.{name} has been archived. "
             f"Use app.coordination.{replacement} instead. "
