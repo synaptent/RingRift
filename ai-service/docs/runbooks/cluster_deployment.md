@@ -418,7 +418,8 @@ After training completes, models must be distributed to all nodes for selfplay a
 
 ### Automatic Model Distribution
 
-The `ModelDistributionDaemon` automatically syncs models after promotion:
+The `MODEL_DISTRIBUTION` daemon, backed by `UnifiedDistributionDaemon`,
+automatically syncs models after promotion:
 
 ```bash
 # Verify daemon is running
@@ -701,7 +702,7 @@ ssh worker-node "netstat -tuln | grep -E '8770|8765'"
 
 **Symptoms:**
 
-- `ModelDistributionDaemon` shows errors
+- `MODEL_DISTRIBUTION` / `UnifiedDistributionDaemon` shows errors
 - Selfplay fails with "model not found"
 - Checksum verification failures
 

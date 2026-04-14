@@ -173,18 +173,23 @@ else:
     print(f"Transfer failed after {result.retries} retries: {result.error}")
 ```
 
-### 5. Model Distribution with BitTorrent (`app/coordination/model_distribution_daemon.py`)
+### 5. Unified Distribution with BitTorrent (`app/coordination/unified_distribution_daemon.py`)
 
-The model distribution daemon now uses BitTorrent for large models:
+The unified distribution daemon now uses BitTorrent for large models:
 
 ```python
-config = ModelDistributionConfig(
+from app.coordination.unified_distribution_daemon import (
+    DistributionConfig,
+    get_distribution_daemon,
+)
+
+config = DistributionConfig(
     use_bittorrent_for_large_files=True,
-    bittorrent_size_threshold_bytes=50_000_000,  # 50MB
+    bittorrent_threshold_bytes=50_000_000,  # 50MB
     verify_checksums=True,
 )
 
-daemon = ModelDistributionDaemon(config)
+daemon = get_distribution_daemon(config)
 await daemon.start()
 ```
 
@@ -193,6 +198,9 @@ await daemon.start()
 1. BitTorrent for files > 50MB (piece-level verification)
 2. HTTP streaming (fast for smaller files)
 3. rsync fallback (reliable but slower)
+
+The same daemon handles NPZ distribution after `NPZ_EXPORT_COMPLETE` events, so
+model and training-data delivery share the same transport and verification path.
 
 ### 6. Per-Provider Bandwidth Limits (`app/coordination/sync_bandwidth.py`)
 

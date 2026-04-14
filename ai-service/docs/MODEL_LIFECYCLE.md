@@ -122,16 +122,17 @@ models_essential/
 
 ### 4.2 Automated Model Distribution (December 2025)
 
-Models are automatically distributed across the cluster via `ModelDistributionDaemon`:
+Models are automatically distributed across the cluster via the
+`MODEL_DISTRIBUTION` daemon, backed by `UnifiedDistributionDaemon`:
 
 ```
 MODEL_PROMOTED event
         │
         ▼
 ┌──────────────────────┐
-│ ModelDistributionDaemon │
+│ UnifiedDistributionDaemon │
 │  - Subscribes to EVENT_ROUTER │
-│  - Detects promotion events    │
+│  - Detects promotion events   │
 └──────────┬───────────┘
            │
            ▼
@@ -172,7 +173,7 @@ Training data (NPZ files) are distributed using similar infrastructure:
 ```bash
 # NPZ files are automatically distributed when:
 # 1. EXPORT_COMPLETED event fires
-# 2. NPZDistributionDaemon detects new NPZ files
+# 2. UnifiedDistributionDaemon detects NPZ exports
 # 3. BitTorrent is preferred for large files (>50MB)
 ```
 

@@ -101,9 +101,9 @@ Data synchronization across the cluster.
 - `create_sync_coordinator()` → Creates `SyncCoordinator` (deprecated)
 - `create_gossip_sync()` → Creates `GossipSyncDaemon`
 - `create_ephemeral_sync()` → Uses `ephemeral_sync.get_ephemeral_sync_daemon()` (deprecated)
-- `create_model_sync()` → Creates `ModelSyncDaemon`
-- `create_model_distribution()` → Creates `ModelDistributionDaemon`
-- `create_npz_distribution()` → Creates `NPZDistributionDaemon` (deprecated)
+- `create_model_sync()` → Compatibility wrapper backed by `UnifiedDistributionDaemon`
+- `create_model_distribution()` → Starts the `MODEL_DISTRIBUTION` runner backed by `UnifiedDistributionDaemon`
+- `create_npz_distribution()` → Deprecated no-op compatibility runner
 - `create_external_drive_sync()` → Creates `ExternalDriveSyncDaemon`
 - `create_cluster_data_sync()` → AutoSyncDaemon(strategy="broadcast") (deprecated wrapper)
 - `create_training_node_watcher()` → Creates `TrainingActivityDaemon` (in `training_activity_daemon.py`)

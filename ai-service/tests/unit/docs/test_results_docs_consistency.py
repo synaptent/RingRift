@@ -92,6 +92,10 @@ COORDINATION_EVENT_SYSTEM_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbook
 PRIORITY_ACTION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "PRIORITY_ACTION_PLAN_2025_12_26.md"
 COORDINATOR_EVENT_AUDIT_DOC = REPO_ROOT / "ai-service" / "docs" / "audits" / "COORDINATOR_EVENT_AUDIT.md"
 INTEGRATION_MIGRATION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "roadmaps" / "INTEGRATION_MIGRATION_PLAN.md"
+RESILIENT_TRANSFER_GUIDE_DOC = REPO_ROOT / "ai-service" / "docs" / "RESILIENT_TRANSFER_GUIDE.md"
+MODEL_LIFECYCLE_DOC = REPO_ROOT / "ai-service" / "docs" / "MODEL_LIFECYCLE.md"
+CLUSTER_DEPLOYMENT_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "cluster_deployment.md"
+DAEMON_REGISTRY_DOC = REPO_ROOT / "ai-service" / "docs" / "DAEMON_REGISTRY.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -778,3 +782,34 @@ def test_additional_event_docs_use_data_events_package_layout() -> None:
     assert "app/distributed/data_events.py" not in priority_plan_text
     assert "app/distributed/data_events.py" not in audit_text
     assert "app/distributed/data_events.py" not in migration_text
+
+
+def test_distribution_docs_use_unified_distribution_surfaces() -> None:
+    transfer_text = RESILIENT_TRANSFER_GUIDE_DOC.read_text(encoding="utf-8")
+    lifecycle_text = MODEL_LIFECYCLE_DOC.read_text(encoding="utf-8")
+    deployment_text = CLUSTER_DEPLOYMENT_RUNBOOK.read_text(encoding="utf-8")
+    registry_text = DAEMON_REGISTRY_DOC.read_text(encoding="utf-8")
+
+    assert "app/coordination/unified_distribution_daemon.py" in transfer_text
+    assert "DistributionConfig(" in transfer_text
+    assert "get_distribution_daemon(config)" in transfer_text
+    assert "bittorrent_threshold_bytes=50_000_000" in transfer_text
+    assert "NPZ_EXPORT_COMPLETE" in transfer_text
+    assert "ModelDistributionConfig(" not in transfer_text
+    assert "ModelDistributionDaemon(config)" not in transfer_text
+
+    assert "MODEL_DISTRIBUTION" in lifecycle_text
+    assert "UnifiedDistributionDaemon" in lifecycle_text
+    assert "NPZDistributionDaemon" not in lifecycle_text
+    assert "ModelDistributionDaemon" not in lifecycle_text
+
+    assert "`MODEL_DISTRIBUTION` daemon" in deployment_text
+    assert "UnifiedDistributionDaemon" in deployment_text
+    assert "ModelDistributionDaemon" not in deployment_text
+
+    assert "`create_model_sync()` → Compatibility wrapper backed by `UnifiedDistributionDaemon`" in registry_text
+    assert "`create_model_distribution()` → Starts the `MODEL_DISTRIBUTION` runner backed by `UnifiedDistributionDaemon`" in registry_text
+    assert "`create_npz_distribution()` → Deprecated no-op compatibility runner" in registry_text
+    assert "Creates `ModelSyncDaemon`" not in registry_text
+    assert "Creates `ModelDistributionDaemon`" not in registry_text
+    assert "Creates `NPZDistributionDaemon`" not in registry_text
