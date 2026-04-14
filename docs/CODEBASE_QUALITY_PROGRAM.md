@@ -169,6 +169,7 @@ Current objectives:
 - The main AI and quality facades now follow the same pattern too: `app.ai` and `app.quality` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints while tolerating the expected deprecation warnings from legacy AI aliases.
 - The remaining medium lazy facades now follow the same pattern too: `app.config`, `app.core`, and `app.integration` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under the same cheap verification style.
 - The next re-export packages now follow the same pattern too: `app.ai.neural_net`, `app.p2p`, `app.tournament`, and `app.distributed.data_events` now expose explicit `__dir__()` surfaces, and focused package-export tests lock their advertised entrypoints without broadening the verification cost.
+- The remaining utility-facing surfaces now follow the same pattern too: `app.utils` now advertises only the root helpers it actually resolves, `app.rules.legacy` now has explicit discoverability, and focused tests ratchet both package surfaces under cheap targeted verification.
 
 ## Execution Protocol
 

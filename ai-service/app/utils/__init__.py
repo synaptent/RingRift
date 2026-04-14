@@ -31,13 +31,6 @@ Use direct imports like `from app.utils.torch_utils import X` for heavy dependen
 from __future__ import annotations
 
 __all__ = [
-    "debug_utils",
-    "disk_utils",
-    "env_config",
-    "numpy_utils",
-    "torch_utils",
-    "game_discovery",
-    "retry",
     # Safe NPZ loading (numpy_utils)
     "safe_load_npz",
     # Device management (lazy)
@@ -93,6 +86,12 @@ from app.utils.env_config import (
 # =============================================================================
 
 _lazy_cache: dict = {}
+
+
+def __dir__() -> list[str]:
+    """Expose the intended utility surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
 
 
 def __getattr__(name: str):

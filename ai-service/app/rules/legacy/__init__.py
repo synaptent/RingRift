@@ -106,3 +106,9 @@ __all__ = [
     "get_phase_injection_stats",
     "reset_phase_injection_stats",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended legacy-rules surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
