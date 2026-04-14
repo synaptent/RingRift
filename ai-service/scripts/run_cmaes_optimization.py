@@ -127,15 +127,17 @@ except ImportError:
 
 # Distributed evaluation imports (optional - only needed for --distributed mode)
 try:
-    from app.distributed import (
+    from app.distributed.client import (
         DistributedEvaluator,
         QueueDistributedEvaluator,
+    )
+    from app.distributed.discovery import (
         discover_workers,
         filter_healthy_workers,
         parse_manual_workers,
         wait_for_workers,
-        write_games_to_db,
     )
+    from app.distributed.game_collector import write_games_to_db
     from app.distributed.hosts import (
         HostConfig,
         load_remote_hosts,

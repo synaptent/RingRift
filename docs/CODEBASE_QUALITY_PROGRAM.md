@@ -134,6 +134,7 @@ Current objectives:
 - The facade-shrink phase has started: coordination status and aggregated health reporting now live in `app.coordination.status_reporting`, with `app.coordination.__init__` reduced to compatibility wrappers for those helpers.
 - Coordination bootstrap, shutdown, and heartbeat helpers now live in `app.coordination.lifecycle`, further reducing `app.coordination.__init__` from a logic owner to a compatibility entrypoint.
 - The same contraction pattern is now started for `app.training`: runtime consumers were moved off the top-level training facade and a new import-hygiene ratchet confirms zero real runtime `from app.training import ...` consumers outside the package.
+- The same runtime-facade ratchet now covers `app.distributed` too: CMA-ES and archival distributed training scripts now import owning submodules directly, and the distributed import-hygiene ratchet confirms zero `app.distributed` facade imports outside the package.
 - The next acceptance bar is a materially smaller `app.coordination.__init__` surface with package tests and import-hygiene tests staying green.
 
 ## Execution Protocol
