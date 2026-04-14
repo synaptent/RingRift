@@ -285,7 +285,7 @@ class PreflightChecker:
 
         # Generate data module
         try:
-            from app.training import generate_data
+            import app.training.generate_data as generate_data
             from app.training.generate_data import (
                 create_initial_state,
             )

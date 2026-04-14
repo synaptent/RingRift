@@ -217,14 +217,14 @@ class AutoPromotionEngine:
     def _ensure_gauntlet(self) -> Any:
         """Lazy-load the gauntlet module."""
         if self._gauntlet_module is None:
-            from app.training import game_gauntlet
+            import app.training.game_gauntlet as game_gauntlet
             self._gauntlet_module = game_gauntlet
         return self._gauntlet_module
 
     def _ensure_significance(self) -> Any:
         """Lazy-load the significance module."""
         if self._significance_module is None:
-            from app.training import significance
+            import app.training.significance as significance
             self._significance_module = significance
         return self._significance_module
 
