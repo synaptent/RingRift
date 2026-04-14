@@ -79,6 +79,8 @@ def __getattr__(name: str) -> type:
     if name in _AI_CLASSES:
         import importlib
         module = importlib.import_module(_AI_CLASSES[name])
+        if name == "EBMOAI":
+            return getattr(module, "EBMOAI", getattr(module, "EBMO_AI"))
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -120,3 +122,9 @@ __all__ = [
     "select_ai_type",
     "uses_neural_net",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended AI package surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

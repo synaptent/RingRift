@@ -109,3 +109,9 @@ __all__ = [
     "get_quality_category",
     "get_quality_scorer",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended quality surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
