@@ -20,6 +20,8 @@ RATCHET_FILES = (
     "ai-service/app/distributed/event_helpers.py",
     "ai-service/app/training/background_selfplay.py",
     "ai-service/app/execution/backends.py",
+    "ai-service/scripts/archive/selfplay/run_random_selfplay.py",
+    "ai-service/scripts/cli.py",
     "ai-service/scripts/p2p/managers/selfplay/job_targeting.py",
     "ai-service/scripts/p2p/mixins/status_monitoring_mixin.py",
     "ai-service/scripts/run_model_elo_tournament.py",
@@ -44,8 +46,6 @@ def test_selected_runtime_modules_avoid_top_level_coordination_facade() -> None:
 
 def test_runtime_facade_import_sites_are_explicitly_inventory_controlled() -> None:
     allowed = {
-        "ai-service/scripts/archive/selfplay/run_random_selfplay.py",
-        "ai-service/scripts/cli.py",
         "ai-service/scripts/p2p/startup_infrastructure.py",
     }
 

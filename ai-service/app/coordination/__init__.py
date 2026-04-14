@@ -419,25 +419,11 @@ def get_all_coordinator_status() -> dict:
     Returns:
         Dict with status from each orchestrator
     """
-    get_selfplay_orchestrator = _resolve_export("get_selfplay_orchestrator")
-    get_pipeline_orchestrator = _resolve_export("get_pipeline_orchestrator")
-    get_task_lifecycle_coordinator = _resolve_export("get_task_lifecycle_coordinator")
-    get_optimization_coordinator = _resolve_export("get_optimization_coordinator")
-    get_metrics_orchestrator = _resolve_export("get_metrics_orchestrator")
-    get_resource_coordinator = _resolve_export("get_resource_coordinator")
-    get_cache_orchestrator = _resolve_export("get_cache_orchestrator")
-    get_event_coordinator_stats = _resolve_export("get_event_coordinator_stats")
+    from app.coordination.status_reporting import (
+        get_all_coordinator_status as _get_all_coordinator_status,
+    )
 
-    return {
-        "selfplay": get_selfplay_orchestrator().get_status(),
-        "pipeline": get_pipeline_orchestrator().get_status(),
-        "task_lifecycle": get_task_lifecycle_coordinator().get_status(),
-        "optimization": get_optimization_coordinator().get_status(),
-        "metrics": get_metrics_orchestrator().get_status(),
-        "resources": get_resource_coordinator().get_status(),
-        "cache": get_cache_orchestrator().get_status(),
-        "event_coordinator": get_event_coordinator_stats(),
-    }
+    return _get_all_coordinator_status()
 
 
 def get_system_health() -> dict:

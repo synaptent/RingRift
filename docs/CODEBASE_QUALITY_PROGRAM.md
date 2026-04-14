@@ -122,9 +122,15 @@ Status: in progress
 
 Current objectives:
 
-- align the public results documents to the April 13 state
-- refresh checked-in results artifacts
-- mark point-in-time operational docs so they stop conflicting with current claims
+- drain the remaining low-risk `app.coordination` top-level facade consumers
+- move single-purpose helpers into explicit submodules before shrinking the facade
+- keep the remaining `startup_infrastructure.py` import fan-out isolated for a dedicated pass
+
+## Latest Progress
+
+- Public docs and results snapshots were aligned to the April 13 state and guarded by consistency tests.
+- Runtime coordination imports were reduced to three intentional top-level facade consumers.
+- The next cleanup slice moves `run_random_selfplay.py` and the CLI coordination-status command onto explicit submodules, leaving only `scripts/p2p/startup_infrastructure.py` as the remaining runtime facade consumer.
 
 ## Execution Protocol
 

@@ -405,7 +405,7 @@ def cmd_coord_status(args: argparse.Namespace) -> int:
     import json as json_module
 
     try:
-        from app.coordination import get_all_coordinator_status
+        from app.coordination.status_reporting import get_all_coordinator_status
 
         status = get_all_coordinator_status()
 
