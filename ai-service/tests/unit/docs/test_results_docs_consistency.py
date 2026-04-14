@@ -29,6 +29,7 @@ UTILS_README = REPO_ROOT / "ai-service" / "app" / "utils" / "README.md"
 INTERFACES_README = REPO_ROOT / "ai-service" / "app" / "interfaces" / "README.md"
 METRICS_README = REPO_ROOT / "ai-service" / "app" / "metrics" / "README.md"
 MONITORING_README = REPO_ROOT / "ai-service" / "app" / "monitoring" / "README.md"
+VALIDATION_README = REPO_ROOT / "ai-service" / "app" / "validation" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -168,3 +169,17 @@ def test_monitoring_readme_separates_root_and_submodule_tools() -> None:
     assert "from app.monitoring import P2PHealthMonitor" not in text
     assert "from app.monitoring import PredictiveAlertMonitor" not in text
     assert "from app.monitoring import TrainingDashboard" not in text
+
+
+def test_validation_readme_matches_supported_validation_surface() -> None:
+    text = VALIDATION_README.read_text(encoding="utf-8")
+
+    assert "validate_all" in text
+    assert "each_item" in text
+    assert "is_non_negative" in text
+    assert "is_instance" in text
+    assert "is_one_of" not in text
+    assert "each_value" not in text
+    assert "each_key" not in text
+    assert "pydantic_validator" not in text
+    assert "strict=True" not in text

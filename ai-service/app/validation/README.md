@@ -8,7 +8,6 @@ This module provides standardized validation:
 
 - Common validators (range, pattern, enum)
 - Validation result handling
-- Pydantic integration helpers
 - Domain-specific validators
 
 ## Key Components
@@ -39,8 +38,9 @@ from app.validation import (
     matches_pattern,
     is_positive,
     is_not_empty,
-    is_one_of,
     has_length,
+    is_non_negative,
+    is_instance,
 )
 
 # Range check
@@ -55,29 +55,31 @@ validate(count, is_positive)
 # Non-empty string/list
 validate(name, is_not_empty)
 
-# Enum values
-validate(status, is_one_of("pending", "running", "completed"))
-
 # Length constraint
-validate(items, has_length(min=1, max=100))
+validate(items, has_length(min_len=1, max_len=100))
+
+# Type / numeric constraints
+validate(timeout, is_instance(int), is_non_negative)
 ```
 
 ### Chained Validation
 
 ```python
-from app.validation import validate, each_value, each_key
+from app.validation import each_item, has_keys, validate, validate_all
 
-# Validate dict values
-result = validate(
-    config,
-    has_keys("host", "port", "timeout"),
-    each_value(is_not_empty),
-)
+# Validate required config keys
+result = validate(config, has_keys("host", "port", "timeout"))
 
 # Validate list items
 result = validate(
     scores,
     each_item(in_range(0, 1)),
+)
+
+# Validate every config key in a list
+result = validate_all(
+    config_keys,
+    is_not_empty,
 )
 ```
 
@@ -111,14 +113,8 @@ result = validate(data, my_validator)
 if result.is_valid:
     proceed(data)
 else:
-    for error in result.errors:
-        print(f"Field: {error.field}, Message: {error.message}")
-
-# Raise on invalid
-try:
-    result.raise_if_invalid()
-except ValidationError as e:
-    handle_error(e)
+    print(result.errors)
+    raise ValidationError(result.error_message, result.field)
 ```
 
 ### Custom Validators
@@ -138,23 +134,14 @@ class IsValidGameId(Validator):
 validate(game_id, IsValidGameId())
 ```
 
-### Pydantic Integration
+### Batch Validation
 
 ```python
-from app.validation import pydantic_validator
+from app.validation import validate_all, is_valid_model_path
 
-# Create Pydantic-compatible validator
-@pydantic_validator
-def validate_port(v):
-    if not 1 <= v <= 65535:
-        raise ValueError("Port must be 1-65535")
-    return v
-
-# Use in Pydantic model
-class Config(BaseModel):
-    port: int
-
-    _validate_port = validator("port", allow_reuse=True)(validate_port)
+result = validate_all(model_paths, is_valid_model_path)
+if not result:
+    print(result.errors)
 ```
 
 ## Error Handling
@@ -162,10 +149,7 @@ class Config(BaseModel):
 ```python
 from app.validation import ValidationError
 
-try:
-    validate(config, strict=True)  # Raises on failure
-except ValidationError as e:
-    print(f"Validation failed: {e}")
-    for field, errors in e.field_errors.items():
-        print(f"  {field}: {errors}")
+result = validate(config, has_keys("host", "port"))
+if not result:
+    raise ValidationError(result.error_message, result.field)
 ```
