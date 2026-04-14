@@ -1,25 +1,25 @@
 # Coordination Module Deprecation Guide
 
-**Last Updated:** December 2025
+**Last Updated:** April 2026
 **Removal Target:** Q2 2026
 
 This guide documents all deprecated modules in `app/coordination/` and their replacements.
 
 ## Quick Reference
 
-| Deprecated Module                             | Replacement                                         | Status           |
-| --------------------------------------------- | --------------------------------------------------- | ---------------- |
-| `auto_evaluation_daemon.py`                   | `evaluation_daemon.py` + `auto_promotion_daemon.py` | Emits warning    |
-| `replication_monitor.py`                      | `unified_replication_daemon.py`                     | Emits warning    |
-| `replication_repair_daemon.py`                | `unified_replication_daemon.py`                     | Emits warning    |
-| `cross_process_events.py`                     | `event_router.py`                                   | Archived         |
-| `sync_coordinator.py` (class SyncCoordinator) | `SyncScheduler` (same file)                         | Alias exists     |
-| `bandwidth_manager.py`                        | `resources/bandwidth.py`                            | Emits warning    |
-| `system_health_monitor.py` (scoring)          | `unified_health_manager.py`                         | Removed Dec 2025 |
-| `tracing.py`                                  | `core_utils.py`                                     | Emits warning    |
-| `distributed_lock.py`                         | `core_utils.py`                                     | Emits warning    |
-| `event_mappings.py`                           | `core_events.py`                                    | Emits warning    |
-| `event_normalization.py`                      | `core_events.py`                                    | Emits warning    |
+| Deprecated Module                               | Replacement                                                         | Status           |
+| ----------------------------------------------- | ------------------------------------------------------------------- | ---------------- |
+| `auto_evaluation_daemon.py`                     | `evaluation_daemon.py` + `auto_promotion_daemon.py`                 | Emits warning    |
+| `replication_monitor.py`                        | `unified_replication_daemon.py`                                     | Emits warning    |
+| `replication_repair_daemon.py`                  | `unified_replication_daemon.py`                                     | Emits warning    |
+| `cross_process_events.py`                       | `event_router.py`                                                   | Archived         |
+| `sync_coordinator.py` (class `SyncCoordinator`) | `app.coordination.sync_facade` + `app.distributed.sync_coordinator` | Deprecated shim  |
+| `bandwidth_manager.py`                          | `resources/bandwidth.py`                                            | Emits warning    |
+| `system_health_monitor.py` (scoring)            | `unified_health_manager.py`                                         | Removed Dec 2025 |
+| `tracing.py`                                    | `core_utils.py`                                                     | Emits warning    |
+| `distributed_lock.py`                           | `core_utils.py`                                                     | Emits warning    |
+| `event_mappings.py`                             | `core_events.py`                                                    | Emits warning    |
+| `event_normalization.py`                        | `core_events.py`                                                    | Emits warning    |
 
 ## Phase 5: Module Consolidation (December 2025)
 
@@ -178,9 +178,10 @@ from app.coordination.event_router import (
 )
 
 # Or use the unified event system
-from app.coordination.event_router import EventRouter, emit
-router = EventRouter.get_instance()
-await emit("EVENT_TYPE", {"data": "value"})
+from app.coordination.event_router import get_router, publish
+
+router = get_router()
+await publish("EVENT_TYPE", {"data": "value"})
 ```
 
 ### 4. Sync Coordinator Alias
@@ -202,6 +203,9 @@ await sync("models", targets=["all"])
 # For low-level transport execution use:
 from app.distributed.sync_coordinator import SyncCoordinator
 coordinator = SyncCoordinator.get_instance()
+
+# For compatibility with older scheduling imports, the deprecated shim
+# still re-exports SyncScheduler from app.coordination.sync_coordinator.
 ```
 
 ### 5. Health Scoring
@@ -283,20 +287,14 @@ Already moved to `app/coordination/deprecated/`:
 - `_deprecated_host_health_policy.py` → `cluster.health`
 - `_deprecated_system_health_monitor.py` → `cluster.health`
 
-## Package Structure
+## Current Structure Notes
 
-The coordination module is being reorganized into focused packages:
+The current coordination tree uses:
 
-```
-app/coordination/
-├── core/                    # Event system, tasks, pipeline
-├── cluster/                 # Health, sync, transport, P2P
-├── training/                # Training orchestration, scheduling
-├── resources/               # Bandwidth, thresholds, optimization
-└── deprecated/              # Archived modules with shims
-```
-
-See `app/coordination/deprecated/README.md` for the full package migration guide.
+- focused subpackages such as `cluster/`, `training/`, `availability/`,
+  `providers/`, and `deprecated/`
+- a thin root facade in `app.coordination.__init__` backed by `_exports_*.py`
+- focused migration notes in `app/coordination/deprecated/README.md`
 
 ## Checking Your Code
 
@@ -317,4 +315,4 @@ grep -rE "from app\.coordination\.(auto_evaluation_daemon|replication_monitor|re
 
 - See `app/coordination/deprecated/README.md` for package structure
 - See `app/coordination/COORDINATOR_GUIDE.md` for usage patterns
-- File issues at https://github.com/anthropics/ringrift/issues
+- Use the current RingRift repository issue tracker for follow-up migration work

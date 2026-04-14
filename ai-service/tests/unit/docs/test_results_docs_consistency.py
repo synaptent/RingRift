@@ -45,6 +45,7 @@ COORDINATION_EXPORT_TIERS_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordinati
 TRAINING_ORCHESTRATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "training" / "ORCHESTRATOR_GUIDE.md"
 COORDINATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "COORDINATOR_GUIDE.md"
 COORDINATION_TRAINING_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "training" / "README.md"
+COORDINATION_DEPRECATION_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "DEPRECATION_GUIDE.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -362,3 +363,18 @@ def test_coordination_training_readme_matches_current_package_exports() -> None:
     assert "release_training_slot" in text
     assert "TRAINING_COMPLETED" in text
     assert "`TRAINING_COMPLETE` - Training finished successfully" not in text
+
+
+def test_coordination_deprecation_guide_matches_current_sync_and_event_migrations() -> None:
+    text = COORDINATION_DEPRECATION_GUIDE.read_text(encoding="utf-8")
+
+    assert "app.coordination.sync_facade" in text
+    assert "app.distributed.sync_coordinator" in text
+    assert "from app.coordination.event_router import get_router, publish" in text
+    assert "router = get_router()" in text
+    assert "await publish(\"EVENT_TYPE\", {\"data\": \"value\"})" in text
+    assert "thin root facade in `app.coordination.__init__` backed by `_exports_*.py`" in text
+    assert "EventRouter.get_instance()" not in text
+    assert "`SyncScheduler` (same file)" not in text
+    assert "app/coordination/\n├── core/" not in text
+    assert "https://github.com/anthropics/ringrift/issues" not in text
