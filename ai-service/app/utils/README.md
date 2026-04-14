@@ -58,6 +58,8 @@ The utils package provides cross-cutting utilities used throughout the AI servic
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+The package root re-exports only the most common helpers. Import specialized modules like `app.utils.paths`, `app.utils.resource_guard`, `app.utils.canonical_naming`, and `app.utils.debug_utils` directly instead of expecting the root package to proxy every utility module.
+
 ### Quick Imports
 
 ```python

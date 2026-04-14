@@ -24,6 +24,8 @@ OPERATOR_ENTRYPOINT_DOCS = (
     DOCS_ROOT / "architecture" / "MINIMAL_LOOP_CONTRACT.md",
     DOCS_ROOT / "architecture" / "TRAINING_INFRASTRUCTURE_STRATEGY.md",
 )
+INTEGRATION_README = REPO_ROOT / "ai-service" / "app" / "integration" / "README.md"
+UTILS_README = REPO_ROOT / "ai-service" / "app" / "utils" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -106,3 +108,28 @@ def test_todo_routes_readers_to_current_sources() -> None:
     assert "RESEARCH_SNAPSHOT.md" in text
     assert "CODEBASE_QUALITY_PROGRAM.md" in text
     assert "## Current Training Snapshot" not in text
+
+
+def test_integration_readme_matches_supported_root_facade() -> None:
+    text = INTEGRATION_README.read_text(encoding="utf-8")
+
+    assert "PipelineFeedbackController" in text
+    assert "FeedbackAction" in text
+    assert "ModelLifecycleManager" in text
+    assert "LifecycleConfig" in text
+    assert "P2PIntegrationManager" in text
+    assert "P2PIntegrationConfig" in text
+    assert "EvaluationCurriculumBridge" in text
+    assert "from app.integration import PipelineFeedback, FeedbackType" not in text
+    assert "from app.integration import ModelLifecycle, ModelStage" not in text
+    assert "from app.integration import P2PIntegration\n" not in text
+
+
+def test_utils_readme_explains_supported_root_helpers() -> None:
+    text = UTILS_README.read_text(encoding="utf-8")
+
+    assert "The package root re-exports only the most common helpers." in text
+    assert "app.utils.paths" in text
+    assert "app.utils.resource_guard" in text
+    assert "app.utils.canonical_naming" in text
+    assert "app.utils.debug_utils" in text

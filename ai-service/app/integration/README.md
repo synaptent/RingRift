@@ -1,112 +1,157 @@
 # Integration Module
 
-Pipeline integration components connecting training, evaluation, and optimization.
+Pipeline integration components connecting training, evaluation, promotion, and P2P coordination.
 
 ## Overview
 
-This module provides integration components that connect training, evaluation, and optimization into a cohesive self-improvement system:
+`app.integration` is a thin root facade over the main coordination submodules:
 
-- Pipeline feedback loops
-- Model lifecycle management
-- P2P cluster integration
+- Pipeline feedback: `PipelineFeedbackController`, `FeedbackAction`, `FeedbackSignal`, `FeedbackSignalRouter`
+- Model lifecycle: `ModelLifecycleManager`, `LifecycleConfig`
+- P2P cluster integration: `P2PIntegrationManager`, `P2PIntegrationConfig`
+- Evaluation-to-curriculum bridge: `EvaluationCurriculumBridge`
 
-## Key Components
+For richer types that are not re-exported at the package root, import from the canonical submodule directly. Common examples are `EvaluationResult` and `LifecycleStage` from `app.integration.model_lifecycle`.
+
+## Supported Root Imports
+
+```python
+from app.integration import (
+    EvaluationCurriculumBridge,
+    FeedbackAction,
+    FeedbackSignal,
+    FeedbackSignalRouter,
+    LifecycleConfig,
+    ModelLifecycleManager,
+    P2PIntegrationConfig,
+    P2PIntegrationManager,
+    PipelineFeedbackController,
+    create_evaluation_bridge,
+    create_feedback_controller,
+    create_feedback_router,
+    create_lifecycle_manager,
+)
+```
+
+## Key Workflows
 
 ### Pipeline Feedback
 
 ```python
-from app.integration import PipelineFeedback, FeedbackType
+from pathlib import Path
 
-# Create feedback loop
-feedback = PipelineFeedback()
-
-# Record training result
-feedback.record(
-    feedback_type=FeedbackType.TRAINING_COMPLETE,
-    model_id="hex8_2p_v3",
-    metrics={"loss": 0.025, "accuracy": 0.76},
+from app.integration import (
+    FeedbackAction,
+    create_feedback_controller,
+    create_feedback_router,
 )
 
-# Get recommendations for next training cycle
-recommendations = feedback.get_recommendations()
+controller = create_feedback_controller(Path("."))
+router = create_feedback_router()
+
+
+async def handle_cmaes(signal):
+    return True
+
+
+router.register_handler(FeedbackAction.TRIGGER_CMAES, handle_cmaes, name="cmaes")
+
+await controller.on_stage_complete(
+    "evaluation",
+    {
+        "config_key": "hex8_2p",
+        "elo": 1530.0,
+        "win_rate": 0.42,
+        "games_played": 40,
+    },
+)
+
+summary = controller.get_state_summary()
+pending = controller.get_pending_actions()
 ```
 
 ### Model Lifecycle
 
 ```python
-from app.integration import ModelLifecycle, ModelStage
+from pathlib import Path
 
-# Track model through stages
-lifecycle = ModelLifecycle()
+from app.integration import LifecycleConfig, ModelLifecycleManager
+from app.integration.model_lifecycle import EvaluationResult
 
-# Register new model
-lifecycle.register_model(
-    model_id="hex8_2p_v3",
-    stage=ModelStage.TRAINING,
+manager = ModelLifecycleManager(
+    LifecycleConfig(
+        registry_dir="data/model_registry",
+        model_storage_dir="data/models",
+    )
 )
 
-# Promote after evaluation
-lifecycle.promote_model(
-    model_id="hex8_2p_v3",
-    stage=ModelStage.EVALUATION,
-    elo_delta=45,
+model_id, version = await manager.register_model(
+    name="hex8_2p_v3",
+    model_path=Path("data/models/hex8_2p_v3.pth"),
+    training_config={"board_type": "hex8", "num_players": 2},
+    tags=["candidate"],
 )
 
-# Move to production
-lifecycle.promote_to_production("hex8_2p_v3")
+await manager.submit_evaluation(
+    model_id,
+    version,
+    EvaluationResult(
+        model_id=model_id,
+        version=version,
+        elo=1545.0,
+        games_played=60,
+        win_rate=0.56,
+    ),
+)
 ```
 
 ### P2P Integration
 
 ```python
-from app.integration import P2PIntegration
+from app.integration import P2PIntegrationConfig, P2PIntegrationManager
 
-# Connect to cluster
-p2p = P2PIntegration(port=8770)
-
-# Submit training job
-job_id = p2p.submit_job(
-    job_type="training",
-    config={
-        "board_type": "hex8",
-        "num_players": 2,
-        "epochs": 50,
-    },
+manager = P2PIntegrationManager(
+    P2PIntegrationConfig(
+        p2p_base_url="http://localhost:8770",
+        target_selfplay_games_per_hour=1000,
+    )
 )
 
-# Monitor progress
-status = p2p.get_job_status(job_id)
+await manager.start()
+
+cycle_status = await manager.start_improvement_cycle(
+    phases=["selfplay", "training", "evaluation"]
+)
+training_status = await manager.trigger_training(wait_for_completion=False)
+
+await manager.stop()
 ```
 
-## Feedback Types
+### Evaluation → Curriculum Bridge
 
-| Type                 | Description                |
-| -------------------- | -------------------------- |
-| `TRAINING_COMPLETE`  | Training run finished      |
-| `EVALUATION_RESULT`  | Model evaluation completed |
-| `PROMOTION_DECISION` | Model promoted or rejected |
-| `PIPELINE_ERROR`     | Error in pipeline step     |
+```python
+from pathlib import Path
 
-## Model Stages
+from app.integration import create_evaluation_bridge, create_feedback_controller
 
-| Stage        | Description                     |
-| ------------ | ------------------------------- |
-| `TRAINING`   | Model being trained             |
-| `EVALUATION` | Model under evaluation          |
-| `STAGING`    | Approved for production testing |
-| `PRODUCTION` | Active production model         |
-| `RETIRED`    | Superseded by newer model       |
+feedback = create_feedback_controller(Path("."))
+bridge = create_evaluation_bridge(feedback_controller=feedback)
 
-## Integration Flow
-
-```
-Selfplay → Training → Evaluation → Promotion → Production
-    ↑                                    |
-    └────── Feedback Loop ←──────────────┘
+await feedback.on_stage_complete(
+    "evaluation",
+    {
+        "config_key": "square8_3p",
+        "elo": 1534.9,
+        "win_rate": 0.20,
+        "games_played": 40,
+    },
+)
 ```
 
 ## See Also
 
-- `app.p2p` - P2P orchestration
-- `app.evaluation` - Benchmark framework
-- `app.training` - Training pipeline
+- `app.integration.pipeline_feedback` for controller internals and signal routing details
+- `app.integration.model_lifecycle` for `EvaluationResult`, `LifecycleStage`, and promotion logic
+- `app.integration.p2p_integration` for bridge internals and cluster operations
+- `app.p2p` for the lower-level cluster protocol adapters
+- `app.training` for the training pipeline itself

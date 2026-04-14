@@ -170,6 +170,7 @@ Current objectives:
 - The remaining medium lazy facades now follow the same pattern too: `app.config`, `app.core`, and `app.integration` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under the same cheap verification style.
 - The next re-export packages now follow the same pattern too: `app.ai.neural_net`, `app.p2p`, `app.tournament`, and `app.distributed.data_events` now expose explicit `__dir__()` surfaces, and focused package-export tests lock their advertised entrypoints without broadening the verification cost.
 - The remaining utility-facing surfaces now follow the same pattern too: `app.utils` now advertises only the root helpers it actually resolves, `app.rules.legacy` now has explicit discoverability, and focused tests ratchet both package surfaces under cheap targeted verification.
+- The package READMEs are being brought under the same standards too: `app.integration/README.md` now documents the real root facade and submodule escape hatches, `app.utils/README.md` now states the supported root-vs-submodule split explicitly, and focused docs tests lock that guidance so the examples do not drift back to dead imports.
 
 ## Execution Protocol
 
