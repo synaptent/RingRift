@@ -139,6 +139,8 @@ Current objectives:
 - The same runtime-facade ratchet now covers `app.distributed` too: CMA-ES and archival distributed training scripts now import owning submodules directly, and the distributed import-hygiene ratchet confirms zero `app.distributed` facade imports outside the package.
 - `app.distributed` now also has an explicit package-surface ratchet: focused tests cover key public exports, lazy deprecated symbols, and `dir()` discoverability.
 - `app.metrics` now has the first half of the same treatment too: runtime facade consumers were drained, and the next acceptance bar is a package-surface ratchet so `dir(app.metrics)` and its declared exports stay aligned under test.
+- `app.metrics` now has that package-surface ratchet too: focused tests cover key exports, rollback helpers, and `dir(app.metrics)` discoverability.
+- The next large package seam is `app.errors`: it appears to be an intentional public entrypoint rather than a facade to drain immediately, so the first move there is to lock its declared hierarchy and aliases under package-surface tests before considering any contraction.
 
 ## Execution Protocol
 
