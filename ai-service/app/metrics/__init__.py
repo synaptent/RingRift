@@ -56,6 +56,8 @@ from app.metrics_base import (
     # Promotion metrics
     record_promotion_decision,
     record_promotion_execution,
+    record_auto_rollback,
+    record_rollback_check,
     # Elo reconciliation metrics
     record_elo_drift,
     record_elo_sync,
@@ -358,9 +360,11 @@ __all__ = [
     "record_pipeline_iteration",
     "record_pipeline_stage",
     # Promotion and Elo reconciliation metrics
+    "record_auto_rollback",
     "record_promotion_decision",
     "record_promotion_execution",
     "record_promotion_rejection",
+    "record_rollback_check",
     # Helper functions
     "record_selfplay_batch",
     "record_sync_coordinator_op",
@@ -390,6 +394,11 @@ __all__ = [
     "update_sync_sources_count",
     "update_sync_stats",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended package surface for discoverability and tests."""
+    return sorted(set(globals()) | set(__all__))
 
 # Import catalog (December 2025)
 from app.metrics.catalog import (
