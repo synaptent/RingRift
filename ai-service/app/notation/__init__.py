@@ -26,3 +26,9 @@ __all__ = [
     "parse_pgn",
     "position_to_algebraic",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended notation surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

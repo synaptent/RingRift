@@ -23,3 +23,9 @@ __all__ = [
     "StorageBackend",
     "get_storage_backend",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended storage surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

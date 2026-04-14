@@ -25,3 +25,9 @@ __all__ = [
     "TraceConfig",
     "TracingState",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended observability surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
