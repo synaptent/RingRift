@@ -424,3 +424,9 @@ def __getattr__(name: str) -> type:
         }
         return symbols[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Expose both eager exports and lazy deprecated symbols."""
+
+    return sorted(set(globals()) | set(__all__) | _CLUSTER_COORDINATOR_SYMBOLS)
