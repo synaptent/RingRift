@@ -161,6 +161,7 @@ Current objectives:
 - The next low-risk package ratchets are landing outside coordination too: `app.interfaces`, `app.analysis`, and `app.db` now expose explicit `__dir__()` surfaces, and focused tests lock their declared package exports so those entrypoints stay intentional instead of relying on implicit module discovery.
 - The same package-surface cleanup now covers three more small top-level packages too: `app.observability`, `app.storage`, and `app.notation` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under cheap verification.
 - Another narrow package wave is now covered too: `app.events`, `app.sync`, and `app.validation` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under the same cheap ratchet pattern.
+- The same pattern now covers two more service entrypoints too: `app.evaluation` and `app.execution` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under cheap verification.
 
 ## Execution Protocol
 

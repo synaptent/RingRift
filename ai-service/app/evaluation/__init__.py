@@ -104,3 +104,9 @@ __all__ = [
     "MoveQuality",
     "TaskGenerator",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended evaluation surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

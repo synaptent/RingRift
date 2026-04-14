@@ -102,3 +102,9 @@ __all__ = [
     "run_ssh_command",
     "run_ssh_command_async",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended execution surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
