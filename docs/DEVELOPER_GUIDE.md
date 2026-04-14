@@ -57,6 +57,17 @@ The supported research path is the minimal loop:
 
 - [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
 - [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
+- [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
+
+For supported trainer canaries:
+
+```bash
+cd ai-service
+bash scripts/deploy_minimal_loops.sh --dry-run
+bash scripts/deploy_minimal_loops.sh
+```
+
+That deploy path preflights the minimal-loop test slice locally before it restarts trainer nodes. During a run, treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log.
 
 Useful status and validation commands:
 
@@ -128,6 +139,7 @@ If you are changing rules:
 If you are changing training or replay logic:
 
 - prefer the minimal loop and the parity/validation scripts
+- keep `deploy_minimal_loops.sh` and the minimal-loop smoke tests aligned with any trainer-path changes
 - keep data provenance explicit
 - avoid pulling legacy DBs or models back into the supported path
 

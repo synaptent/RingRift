@@ -71,6 +71,21 @@ These scripts had explicit deprecation, supersession, or legacy-compatibility la
 
 The most-used script references were gathered from `package.json`, `CLAUDE.md`, `CLAUDE.local.md`, and deployment scripts. Every referenced top-level Python entrypoint already uses `argparse`, `click`, or `typer`; the only referenced Python file without a CLI parser was `ai-service/scripts/p2p/constants.py`, which is a constants module copied by a deploy helper rather than an executable script. No additional help-text edits were needed for Task 27.
 
+## Supported Operator Entrypoints
+
+If you are operating the current supported training path, start with these before browsing the full inventory:
+
+- `./scripts/run_proven_experiment.sh <config>`: local reproducibility wrapper for the supported minimal loop.
+- `ai-service/scripts/deploy_minimal_loops.sh`: supported canary-trainer rollout path for the minimal-loop fleet.
+- `ai-service/scripts/minimal_alphazero_loop.py`: canonical trainer loop used by the published results.
+- `ai-service/scripts/training_dashboard.py`: lightweight status view over active minimal-loop work directories.
+- `ai-service/scripts/autonomy_fleet_check.py`: current fleet-health summary for the role-based GH200 deployment.
+
+Operational note:
+
+- `deploy_minimal_loops.sh` now runs a local preflight against `tests/unit/scripts/test_minimal_alphazero_loop.py` before it restarts trainer nodes.
+- Live stage state is written to each trainer work directory's `progress.json`; durable history is written to `metrics.jsonl`.
+
 ## Inventory
 
 | File                                                          | Category   | CLI | Last Modified |  LOC |

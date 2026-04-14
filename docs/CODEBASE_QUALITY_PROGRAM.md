@@ -156,6 +156,7 @@ Current objectives:
 - The minimal training loop now has a direct regression guard too: focused tests lock its subprocess entrypoint to `app.training.train` and ratchet the critical loop files away from top-level `app.training`, `app.coordination`, and `app.distributed` facade imports so future cleanups cannot silently route the trainer through those package entrypoints.
 - The minimal-loop rollout path is now guarded too: `scripts/deploy_minimal_loops.sh` runs a local preflight against the minimal-loop test slice before restarting trainer nodes, with an explicit `--skip-preflight` escape hatch for emergencies. The deploy-script contract tests lock that behavior under dry-run.
 - The operator docs now point to that supported rollout path more clearly too: `ai-service/README.md`, `ai-service/scripts/README.md`, and `docs/architecture/MINIMAL_LOOP_CONTRACT.md` now describe `deploy_minimal_loops.sh`, the preflight expectation, and `progress.json` as the live stage-status file for trainer work directories.
+- Broader repo navigation now matches that story better too: `docs/DEVELOPER_GUIDE.md` and `docs/SCRIPT_INVENTORY.md` now call out the supported minimal-loop operator entrypoints explicitly instead of leaving them buried in the larger script/doc surface.
 
 ## Execution Protocol
 
