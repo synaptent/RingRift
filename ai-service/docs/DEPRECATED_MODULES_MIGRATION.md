@@ -41,11 +41,11 @@ This document consolidates all deprecated modules across the RingRift AI service
 
 ### Training Layer (`app/training/`)
 
-| Deprecated Module                         | Replacement                            | Status     | Removal |
-| ----------------------------------------- | -------------------------------------- | ---------- | ------- |
-| `integrated_enhancements.py`              | `unified_orchestrator.py`              | Deprecated | Q2 2026 |
-| `orchestrated_training.py`                | `unified_orchestrator.py`              | Deprecated | Q2 2026 |
-| `training_enhancements.DataQualityScorer` | `unified_quality.UnifiedQualityScorer` | Deprecated | Q2 2026 |
+| Deprecated Module                                      | Replacement                                                        | Status     | Removal |
+| ------------------------------------------------------ | ------------------------------------------------------------------ | ---------- | ------- |
+| `integrated_enhancements.py`                           | `unified_orchestrator.py`                                          | Deprecated | Q2 2026 |
+| `archive/deprecated_training/orchestrated_training.py` | `unified_orchestrator.py` + `app.training` compatibility re-export | Archived   | Q2 2026 |
+| `training_enhancements.DataQualityScorer`              | `unified_quality.UnifiedQualityScorer`                             | Deprecated | Q2 2026 |
 
 ### AI Layer (`app/ai/`)
 

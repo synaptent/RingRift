@@ -775,7 +775,7 @@ update_threshold("disk", "warning", 95)
 
 **December 2025 Deprecations**:
 
-1. **`orchestrated_training.py`** - Use `unified_orchestrator.py` instead
+1. **`archive/deprecated_training/orchestrated_training.py`** - archived compatibility layer; prefer `unified_orchestrator.py` and use the `app.training` re-export only while migrating
 2. **`integrated_enhancements.py`** - Use `unified_orchestrator.py` instead
 3. **`training_enhancements.DataQualityScorer`** - Use `unified_quality.UnifiedQualityScorer`
 4. **Lambda Labs configuration** - Account terminated Dec 2025

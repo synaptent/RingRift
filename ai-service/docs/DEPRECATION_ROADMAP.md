@@ -55,11 +55,11 @@ This document tracks all deprecated modules, functions, and exports scheduled fo
 
 ### Training Modules
 
-| Module                       | Replacement               | Status     |
-| ---------------------------- | ------------------------- | ---------- |
-| `orchestrated_training.py`   | `unified_orchestrator.py` | DEPRECATED |
-| `integrated_enhancements.py` | `unified_orchestrator.py` | DEPRECATED |
-| `unified_ai_loop.py`         | `master_loop.py`          | DEPRECATED |
+| Module                                                 | Replacement                                                        | Status     |
+| ------------------------------------------------------ | ------------------------------------------------------------------ | ---------- |
+| `archive/deprecated_training/orchestrated_training.py` | `unified_orchestrator.py` + `app.training` compatibility re-export | ARCHIVED   |
+| `integrated_enhancements.py`                           | `unified_orchestrator.py`                                          | DEPRECATED |
+| `unified_ai_loop.py`                                   | `master_loop.py`                                                   | DEPRECATED |
 
 ### Deprecated Exports (Already Removed Dec 2025)
 

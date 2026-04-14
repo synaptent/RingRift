@@ -165,14 +165,14 @@ python scripts/launch_daemons.py --status
 ```bash
 # Sync status
 python -c "
-from app.coordination.sync_coordinator import SyncCoordinator
-print(SyncCoordinator.get_instance().get_stats())
+from app.coordination import get_sync_scheduler
+print(get_sync_scheduler().get_stats())
 "
 
 # Event router health
 python -c "
-from app.coordination.event_router import EventRouter
-print(EventRouter.get_instance().get_health_summary())
+from app.coordination.event_router import get_event_stats
+print(get_event_stats())
 "
 
 # Daemon manager health

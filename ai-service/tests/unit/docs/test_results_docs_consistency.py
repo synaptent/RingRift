@@ -52,6 +52,10 @@ UNIFIED_TRAINING_ORCHESTRATOR = REPO_ROOT / "ai-service" / "app" / "training" / 
 P2P_INTEGRATION = REPO_ROOT / "ai-service" / "app" / "integration" / "p2p_integration.py"
 MODEL_LIFECYCLE = REPO_ROOT / "ai-service" / "app" / "integration" / "model_lifecycle.py"
 ARCHIVED_TRAINING_ORCHESTRATOR = REPO_ROOT / "ai-service" / "archive" / "deprecated_training" / "orchestrated_training.py"
+CONFIG_SOURCES_DOC = REPO_ROOT / "ai-service" / "docs" / "CONFIG_SOURCES.md"
+DEPRECATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_ROADMAP.md"
+DEPRECATED_MODULES_MIGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATED_MODULES_MIGRATION.md"
+MASTER_RUNBOOK_INDEX_DOC = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "MASTER_RUNBOOK_INDEX.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -426,3 +430,27 @@ def test_training_docstrings_use_current_archived_orchestrator_story() -> None:
 
     assert "from app.training import TrainingOrchestrator" in archived_text
     assert "from app.training.orchestrated_training import TrainingOrchestrator" not in archived_text
+
+
+def test_ai_service_deprecation_docs_use_archived_training_path() -> None:
+    config_text = CONFIG_SOURCES_DOC.read_text(encoding="utf-8")
+    roadmap_text = DEPRECATION_ROADMAP_DOC.read_text(encoding="utf-8")
+    migration_text = DEPRECATED_MODULES_MIGRATION_DOC.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_training/orchestrated_training.py" in config_text
+    assert "archive/deprecated_training/orchestrated_training.py" in roadmap_text
+    assert "app.training` compatibility re-export" in roadmap_text
+    assert "archive/deprecated_training/orchestrated_training.py" in migration_text
+    assert "app.training` compatibility re-export" in migration_text
+    assert "| `orchestrated_training.py`" not in roadmap_text
+    assert "| `orchestrated_training.py`" not in migration_text
+
+
+def test_master_runbook_index_uses_current_coordination_helpers() -> None:
+    text = MASTER_RUNBOOK_INDEX_DOC.read_text(encoding="utf-8")
+
+    assert "from app.coordination import get_sync_scheduler" in text
+    assert "print(get_sync_scheduler().get_stats())" in text
+    assert "from app.coordination.event_router import get_event_stats" in text
+    assert "print(get_event_stats())" in text
+    assert "EventRouter.get_instance()" not in text
