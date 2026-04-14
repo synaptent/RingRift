@@ -83,11 +83,11 @@ These modules have been archived to `archive/deprecated_*/` but still exist for 
 
 ### AI Archive (`archive/deprecated_ai/`)
 
-| Module                   | Archived Date | Replacement           |
-| ------------------------ | ------------- | --------------------- |
-| `_neural_net_legacy.py`  | Dec 2025      | `app/ai/neural_net/*` |
-| `_game_engine_legacy.py` | Dec 2025      | `app/rules/fsm.py`    |
-| `_deprecated_legacy.py`  | Dec 2025      | Various replacements  |
+| Module                   | Archived Date | Replacement          |
+| ------------------------ | ------------- | -------------------- |
+| `_neural_net_legacy.py`  | Dec 2025      | `app/ai/neural_net`  |
+| `_game_engine_legacy.py` | Dec 2025      | `app/game_engine`    |
+| `_deprecated_legacy.py`  | Dec 2025      | Various replacements |
 
 ---
 

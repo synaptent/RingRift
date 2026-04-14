@@ -95,15 +95,15 @@ As of the Dec 2025 snapshot, all 66 daemon types had factory implementations in 
 
 ### Large Files Needing Decomposition
 
-| File                                    | Lines | Functions | Recommendation                                                                 |
-| --------------------------------------- | ----- | --------- | ------------------------------------------------------------------------------ |
-| `app/ai/_neural_net_legacy.py`          | 7,080 | 150+      | Archive or split by architecture                                               |
-| `app/training/train.py`                 | 5,033 | 80+       | Split: data loading, training loop, evaluation                                 |
-| `app/_game_engine_legacy.py`            | 4,479 | 100+      | Reduce direct imports behind `app.game_engine`, then retire compatibility path |
-| `app/training/training_enhancements.py` | 4,107 | 70+       | Split by enhancement type                                                      |
-| `app/ai/gpu_parallel_games.py`          | 3,989 | 60+       | Split: game logic, move gen, tensor ops                                        |
-| `app/training/advanced_training.py`     | 3,430 | 50+       | Merge relevant parts into main train.py                                        |
-| `app/ai/mcts_ai.py`                     | 3,340 | 40+       | Keep (MCTS is complex)                                                         |
+| File                                    | Lines | Functions | Recommendation                                                                   |
+| --------------------------------------- | ----- | --------- | -------------------------------------------------------------------------------- |
+| `app/ai/_neural_net_legacy.py`          | 7,080 | 150+      | Reduce direct imports behind `app.ai.neural_net`, then retire compatibility path |
+| `app/training/train.py`                 | 5,033 | 80+       | Split: data loading, training loop, evaluation                                   |
+| `app/_game_engine_legacy.py`            | 4,479 | 100+      | Reduce direct imports behind `app.game_engine`, then retire compatibility path   |
+| `app/training/training_enhancements.py` | 4,107 | 70+       | Split by enhancement type                                                        |
+| `app/ai/gpu_parallel_games.py`          | 3,989 | 60+       | Split: game logic, move gen, tensor ops                                          |
+| `app/training/advanced_training.py`     | 3,430 | 50+       | Merge relevant parts into main train.py                                          |
+| `app/ai/mcts_ai.py`                     | 3,340 | 40+       | Keep (MCTS is complex)                                                           |
 
 ### Duplicate Constants
 

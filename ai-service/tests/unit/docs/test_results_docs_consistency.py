@@ -59,6 +59,7 @@ MASTER_RUNBOOK_INDEX_DOC = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "MAS
 DEPRECATION_TRACKER_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TRACKER.md"
 CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_19.md"
 LEGACY_RULES_DIFF_DOC = REPO_ROOT / "ai-service" / "docs" / "specs" / "LEGACY_RULES_DIFF.md"
+AI_NEURAL_NET_INIT = REPO_ROOT / "ai-service" / "app" / "ai" / "neural_net" / "__init__.py"
 STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
 ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
@@ -537,6 +538,17 @@ def test_deprecated_ai_readme_uses_current_game_engine_facade_story() -> None:
     assert "app/rules/game_engine.py" not in text
 
 
+def test_deprecated_ai_readme_uses_current_neural_net_facade_story() -> None:
+    text = DEPRECATED_AI_README.read_text(encoding="utf-8")
+
+    assert "supported public API for active code is now the stable `app.ai.neural_net`" in text
+    assert "from app.ai._neural_net_legacy import NeuralNetAI, encode_move_for_board" in text
+    assert "from app.ai.neural_net import NeuralNetAI, encode_move_for_board" in text
+    assert "`app/ai/_neural_net_legacy.py` compatibility symlink" in text
+    assert "`app/ai/neural_net/__init__.py`" in text
+    assert "`app.ai.nnue_policy` directly" in text
+
+
 def test_app_deprecation_audit_uses_archived_game_engine_path() -> None:
     text = APP_DEPRECATION_AUDIT.read_text(encoding="utf-8")
 
@@ -546,6 +558,16 @@ def test_app_deprecation_audit_uses_archived_game_engine_path() -> None:
     assert "Retire direct `app._game_engine_legacy` imports after all callers use `app.game_engine`" in text
     assert "`app.game_engine` facade" in text
     assert "Delete `_neural_net_legacy.py` and `_game_engine_legacy.py`" not in text
+
+
+def test_app_deprecation_audit_uses_neural_net_facade_story() -> None:
+    text = APP_DEPRECATION_AUDIT.read_text(encoding="utf-8")
+
+    assert "| `app/ai/_neural_net_legacy.py` | DEPRECATED | `app.ai.neural_net` facade" in text
+    assert "154 (via `app.ai.neural_net`)" in text
+    assert "Retire direct `app.ai._neural_net_legacy` imports after callers use `app.ai.neural_net`" in text
+    assert "| `app/ai/neural_net/` (package) | DEPRECATED" not in text
+    assert "Delete `_neural_net_legacy.py`" not in text
 
 
 def test_rules_engine_surface_audit_uses_current_game_engine_facade_story() -> None:
@@ -565,6 +587,13 @@ def test_codebase_quality_report_uses_game_engine_facade_retirement_wording() ->
     assert "Archive (Python rules deprecated)" not in text
 
 
+def test_codebase_quality_report_uses_neural_net_facade_retirement_wording() -> None:
+    text = CODEBASE_QUALITY_REPORT_DOC.read_text(encoding="utf-8")
+
+    assert "Reduce direct imports behind `app.ai.neural_net`, then retire compatibility path" in text
+    assert "Archive or split by architecture" not in text
+
+
 def test_consolidation_status_2025_12_19_uses_archived_game_engine_path() -> None:
     text = CONSOLIDATION_STATUS_2025_12_19_DOC.read_text(encoding="utf-8")
 
@@ -579,3 +608,25 @@ def test_legacy_rules_diff_points_to_archived_game_engine_path() -> None:
 
     assert "archive/deprecated_ai/_game_engine_legacy.py` via `app/_game_engine_legacy.py" in text
     assert "| Legacy engine" in text
+
+
+def test_neural_net_package_docstring_uses_supported_facade_story() -> None:
+    text = AI_NEURAL_NET_INIT.read_text(encoding="utf-8")
+
+    assert "stable public surface for RingRift neural-network models" in text
+    assert "Active code should import from" in text
+    assert "app.ai._neural_net_legacy" in text
+    assert "compatibility path" in text
+    assert "archived monolithic implementation" in text
+
+
+def test_neural_net_deprecation_docs_use_stable_package_replacements() -> None:
+    timeline_text = DEPRECATION_TIMELINE_DOC.read_text(encoding="utf-8")
+    tracker_text = DEPRECATION_TRACKER_DOC.read_text(encoding="utf-8")
+
+    assert "`app/ai/_neural_net_legacy.py` | Deprecated compatibility symlink" in timeline_text
+    assert "`app/ai/neural_net` stable facade" in timeline_text
+    assert "`_neural_net_legacy.py`  | Dec 2025      | `app/ai/neural_net`" in tracker_text
+    assert "`_game_engine_legacy.py` | Dec 2025      | `app/game_engine`" in tracker_text
+    assert "app/ai/neural_net/*" not in timeline_text
+    assert "app/ai/neural_net/*" not in tracker_text

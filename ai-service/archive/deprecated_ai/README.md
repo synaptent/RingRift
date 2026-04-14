@@ -62,7 +62,10 @@ The original monolithic neural network implementation containing:
 - Training utilities (data augmentation, etc.)
 
 **Why deprecated:**
-Superseded by the modular `app/ai/neural_net/` package which provides:
+The archived monolithic implementation still exists for compatibility, but the
+supported public API for active code is now the stable `app.ai.neural_net`
+package facade (plus targeted modules like `app.ai.nnue_policy` when callers
+need NNUE-specific types):
 
 - Cleaner separation of concerns (encoding, architecture, utilities)
 - Better testability with smaller, focused modules
@@ -75,11 +78,21 @@ Superseded by the modular `app/ai/neural_net/` package which provides:
 # Old (deprecated)
 from app.ai._neural_net_legacy import NeuralNetAI, encode_move_for_board
 
-# New (recommended)
+# New (stable public API)
 from app.ai.neural_net import NeuralNetAI, encode_move_for_board
 ```
 
-**Note:** The symlink at `app/ai/_neural_net_legacy.py` points to this archived file for backward compatibility. Imports from `app.ai._neural_net_legacy` will continue to work but emit deprecation warnings.
+**Migration Notes**:
+
+- The archived implementation lives here and is still reachable through the
+  `app/ai/_neural_net_legacy.py` compatibility symlink.
+- The stable import surface is `app/ai/neural_net/__init__.py`, which
+  re-exports the supported neural-network helpers and remaining compatibility
+  symbols while migration continues.
+- NNUE-specific code should import `app.ai.nnue_policy` directly rather than
+  reaching into the archived module.
+- Direct legacy imports emit deprecation warnings and should be migrated to the
+  stable package facade.
 
 ---
 

@@ -53,10 +53,9 @@ This document tracks deprecated modules and their replacements as part of the co
 
 ### Neural Network
 
-| Module                         | Status     | Replacement                 | Notes                                     |
-| ------------------------------ | ---------- | --------------------------- | ----------------------------------------- |
-| `app/ai/_neural_net_legacy.py` | DEPRECATED | `nnue.py`, `nnue_policy.py` | CNN policy net, being phased out for NNUE |
-| `app/ai/neural_net/` (package) | DEPRECATED | `nnue_policy.py`            | Re-exports from legacy module             |
+| Module                         | Status     | Replacement                | Notes                                                 |
+| ------------------------------ | ---------- | -------------------------- | ----------------------------------------------------- |
+| `app/ai/_neural_net_legacy.py` | DEPRECATED | `app.ai.neural_net` facade | Archived implementation behind stable package surface |
 
 ### Tournament/Elo
 
@@ -173,10 +172,10 @@ sync = UnifiedDataSyncService.get_instance()
 
 ### Assessment (December 2025)
 
-| Module                                         | LOC   | Classes/Functions | Import Sites                |
-| ---------------------------------------------- | ----- | ----------------- | --------------------------- |
-| `app/ai/_neural_net_legacy.py`                 | 6,931 | 33                | 154 (via facade)            |
-| `archive/deprecated_ai/_game_engine_legacy.py` | 4,435 | 4                 | 154 (via `app.game_engine`) |
+| Module                                         | LOC   | Classes/Functions | Import Sites                  |
+| ---------------------------------------------- | ----- | ----------------- | ----------------------------- |
+| `app/ai/_neural_net_legacy.py`                 | 6,931 | 33                | 154 (via `app.ai.neural_net`) |
+| `archive/deprecated_ai/_game_engine_legacy.py` | 4,435 | 4                 | 154 (via `app.game_engine`)   |
 
 ### Migration Strategy
 
@@ -204,7 +203,7 @@ sync = UnifiedDataSyncService.get_instance()
 
 1. Verify all imports resolve to new modules
 2. Run full test suite
-3. Delete `_neural_net_legacy.py`
+3. Retire direct `app.ai._neural_net_legacy` imports after callers use `app.ai.neural_net`
 4. Retire direct `app._game_engine_legacy` imports after all callers use `app.game_engine`
 
 ### Blockers
@@ -297,14 +296,14 @@ elo.record_match(
 
 ## Migration Tracking (December 2025)
 
-| Module                       | Replacement              | Status  | Deadline | Notes                                   |
-| ---------------------------- | ------------------------ | ------- | -------- | --------------------------------------- |
-| `error_recovery_coordinator` | `unified_health_manager` | REMOVED | Complete | File deleted                            |
-| `recovery_manager`           | `unified_health_manager` | REMOVED | Complete | File deleted                            |
-| `unified_elo_db`             | `elo_service`            | ACTIVE  | Q2 2026  | Has runtime warning                     |
-| `distributed.py` (trainer)   | `distributed_unified.py` | ACTIVE  | Q2 2026  | Has runtime warning                     |
-| `_neural_net_legacy.py`      | `nnue_policy.py`         | ACTIVE  | Q1 2026  | 154 import sites                        |
-| `_game_engine_legacy.py`     | `app.game_engine` facade | ACTIVE  | Q2 2026  | Archived target + compatibility symlink |
+| Module                       | Replacement                | Status  | Deadline | Notes                                   |
+| ---------------------------- | -------------------------- | ------- | -------- | --------------------------------------- |
+| `error_recovery_coordinator` | `unified_health_manager`   | REMOVED | Complete | File deleted                            |
+| `recovery_manager`           | `unified_health_manager`   | REMOVED | Complete | File deleted                            |
+| `unified_elo_db`             | `elo_service`              | ACTIVE  | Q2 2026  | Has runtime warning                     |
+| `distributed.py` (trainer)   | `distributed_unified.py`   | ACTIVE  | Q2 2026  | Has runtime warning                     |
+| `_neural_net_legacy.py`      | `app.ai.neural_net` facade | ACTIVE  | Q1 2026  | Archived target + compatibility symlink |
+| `_game_engine_legacy.py`     | `app.game_engine` facade   | ACTIVE  | Q2 2026  | Archived target + compatibility symlink |
 
 ## Event Router Migration Status
 

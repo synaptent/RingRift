@@ -58,9 +58,9 @@ The following modules have been archived to `archive/deprecated_coordination/`:
 
 ### Neural Network Legacy
 
-| Module                         | Status                 | Target Removal | Replacement           |
-| ------------------------------ | ---------------------- | -------------- | --------------------- |
-| `app/ai/_neural_net_legacy.py` | Constants consolidated | Q2 2026        | `app/ai/neural_net/*` |
+| Module                         | Status                           | Target Removal | Replacement                       |
+| ------------------------------ | -------------------------------- | -------------- | --------------------------------- |
+| `app/ai/_neural_net_legacy.py` | Deprecated compatibility symlink | Q2 2026        | `app/ai/neural_net` stable facade |
 
 ---
 

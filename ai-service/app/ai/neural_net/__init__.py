@@ -1,16 +1,19 @@
-"""Neural network package for RingRift AI.
+"""Supported neural-network facade for RingRift AI.
 
-This package contains the neural network implementations for the RingRift
-AI system, including CNN architectures for different board types and
-the NeuralNetAI wrapper class.
+This package is the stable public surface for RingRift neural-network models,
+encoders, and helper utilities. Active code should import from
+``app.ai.neural_net`` (or narrower submodules such as ``app.ai.nnue_policy``
+when appropriate), while direct imports from ``app.ai._neural_net_legacy``
+are deprecated compatibility paths to the archived monolithic implementation.
 
 The package is organized as follows:
 - constants.py: Policy sizes and encoding constants
 - blocks.py: Reusable neural network building blocks
-- _neural_net_legacy.py: Original monolithic module (being migrated)
+- _neural_net_legacy.py: Archived monolithic implementation, still re-exported
+  for compatibility while migration drains remaining callers
 
-For backwards compatibility, all public symbols are re-exported.
-Migration status: blocks.py contains extracted building blocks.
+Public symbols are re-exported here so callers can stay on the supported
+package facade while the remaining legacy pieces are retired.
 """
 
 # Building blocks - migrated to blocks.py (Phase 1)
@@ -171,8 +174,8 @@ from app.ai.canonical_move_encoding import (
 from app.ai.unified_factory import UnifiedNeuralNetFactory
 
 # Classes and functions still in legacy module (to be migrated in later phases)
-# NOTE: Moved to archive/ December 2025 - scheduled for removal Q1 2026
-# Symlinked at app/ai/_neural_net_legacy.py for compatibility
+# NOTE: Archived December 2025 and reachable through app/ai/_neural_net_legacy.py
+# only as a compatibility path while callers stay on this package facade.
 # Suppress deprecation warning for backwards-compatible re-exports
 import warnings as _w
 with _w.catch_warnings():
