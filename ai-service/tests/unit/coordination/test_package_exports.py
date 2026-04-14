@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import app.coordination.cluster as cluster_pkg
+import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
 import app.coordination.selfplay as selfplay_pkg
 import app.coordination.status_reporting as status_reporting_pkg
@@ -38,6 +39,27 @@ def test_cluster_package_declares_public_exports() -> None:
     assert "health" in dir(cluster_pkg)
     assert "transport" in dir(cluster_pkg)
     assert "p2p" in dir(cluster_pkg)
+
+
+def test_interfaces_module_declares_protocol_surface() -> None:
+    expected = [
+        "IBackpressureMonitor",
+        "IBackpressureSignal",
+        "IResourceTargetManager",
+        "IResourceTargets",
+        "IScheduler",
+        "IJobInfo",
+        "IHealthChecker",
+        "IHealthResult",
+        "ISyncProvider",
+    ]
+
+    assert interfaces_pkg.__all__ == expected
+    assert len(interfaces_pkg.__all__) == len(set(interfaces_pkg.__all__))
+    for name in expected:
+        exported = getattr(interfaces_pkg, name)
+        assert exported.__module__ == "app.coordination.interfaces"
+        assert name in dir(interfaces_pkg)
 
 
 def test_selfplay_package_dir_lists_lazy_scheduler_exports() -> None:

@@ -122,9 +122,9 @@ Status: in progress
 
 Current objectives:
 
-- add an explicit package-surface ratchet for `app.training`, the largest remaining top-level package facade
-- make `app.training` package discovery consistent with the coordination and distributed package ratchets
-- keep public API changes narrow and verified with focused import/package tests before further contraction
+- keep shrinking and locking the remaining `app.coordination` public surface one submodule at a time
+- prefer narrow package-surface ratchets and explicit `dir()` discoverability before larger refactors
+- keep each batch small enough to verify with focused coordination tests and clean checkpoints
 
 ## Latest Progress
 
@@ -141,6 +141,9 @@ Current objectives:
 - `app.metrics` now has the first half of the same treatment too: runtime facade consumers were drained, and the next acceptance bar is a package-surface ratchet so `dir(app.metrics)` and its declared exports stay aligned under test.
 - `app.metrics` now has that package-surface ratchet too: focused tests cover key exports, rollback helpers, and `dir(app.metrics)` discoverability.
 - The next large package seam is `app.errors`: it appears to be an intentional public entrypoint rather than a facade to drain immediately, so the first move there is to lock its declared hierarchy and aliases under package-surface tests before considering any contraction.
+- `app.errors` now has that package-surface ratchet too: focused tests lock key exports and ensure `dir(app.errors)` stays aligned with its declared public surface.
+- The next narrow coordination seam is `app.coordination.interfaces`: it is already a small, dependency-light protocol module, so the right move there is to ratchet its declared protocol surface and make package discovery intentional instead of leaving it implicit.
+- `app.coordination.interfaces` now has that package-surface ratchet too: focused tests lock its protocol exports, and `__dir__()` now makes the intended interface surface explicit for discoverability and future regression checks.
 
 ## Execution Protocol
 

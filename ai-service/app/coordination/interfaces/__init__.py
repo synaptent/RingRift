@@ -35,8 +35,7 @@ Purpose: Break circular dependencies in coordination modules
 
 from __future__ import annotations
 
-from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 __all__ = [
     # Backpressure Protocol
@@ -54,6 +53,12 @@ __all__ = [
     # Sync Protocol
     "ISyncProvider",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended protocol surface for discoverability and tests."""
+
+    return sorted(set(globals()) | set(__all__))
 
 
 # =============================================================================
