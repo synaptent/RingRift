@@ -53,6 +53,8 @@ def test_dry_run_outputs_supported_configs() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "Preflight: [DRY] Would run PYTHONPATH=. " in result.stdout
+    assert "tests/unit/scripts/test_minimal_alphazero_loop.py" in result.stdout
     assert "Selected nodes deployed and restarted." in result.stdout
     assert result.stdout.count("[DRY] Would deploy scripts/minimal_alphazero_loop.py and restart") == 4
     for config in EXPECTED_CONFIGS:
@@ -73,6 +75,21 @@ def test_dry_run_only_filters_single_config() -> None:
     assert "=== square8_3p (" in result.stdout
     assert "=== hex8_2p (" not in result.stdout
     assert result.stdout.count("[DRY] Would deploy") == 1
+
+
+def test_dry_run_can_skip_preflight() -> None:
+    result = subprocess.run(
+        ["bash", str(SCRIPT_PATH), "--dry-run", "--skip-preflight"],
+        cwd=AI_SERVICE_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Preflight: skipped (--skip-preflight)" in result.stdout
+    assert "Would run PYTHONPATH=. " not in result.stdout
 
 
 def test_node_manifest_is_valid() -> None:
@@ -101,3 +118,10 @@ def test_config_names_match_canonical_model_names() -> None:
         board_type = BoardType(_arg_value(args, "--board-type"))
         num_players = int(_arg_value(args, "--num-players"))
         assert get_canonical_model_name(board_type, num_players) == f"canonical_{config}.pth"
+
+
+def test_script_includes_minimal_loop_preflight_guard() -> None:
+    script_text = _script_text()
+    assert 'PREFLIGHT_TEST="tests/unit/scripts/test_minimal_alphazero_loop.py"' in script_text
+    assert 'PYTHONPATH=. "$LOCAL_PYTHON" -m pytest -q "$PREFLIGHT_TEST"' in script_text
+    assert "--skip-preflight" in script_text

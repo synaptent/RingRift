@@ -153,6 +153,7 @@ Current objectives:
 - `app.coordination.hashgraph` now follows the same pattern too: its full consensus / DAG / promotion public surface is locked under focused tests, and `__dir__()` now makes that large but intentional package API explicit for discovery and drift checks.
 - `app.coordination.node_availability.providers` now follows the same pattern too: its provider-checker package surface is locked under focused tests, and `__dir__()` now makes those node-availability adapters explicit for discovery and drift checks.
 - The minimal training loop now has a direct regression guard too: focused tests lock its subprocess entrypoint to `app.training.train` and ratchet the critical loop files away from top-level `app.training`, `app.coordination`, and `app.distributed` facade imports so future cleanups cannot silently route the trainer through those package entrypoints.
+- The minimal-loop rollout path is now guarded too: `scripts/deploy_minimal_loops.sh` runs a local preflight against the minimal-loop test slice before restarting trainer nodes, with an explicit `--skip-preflight` escape hatch for emergencies. The deploy-script contract tests lock that behavior under dry-run.
 
 ## Execution Protocol
 

@@ -13,6 +13,11 @@ SSH_OPTS=(-i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o Conn
 SCRIPT="scripts/minimal_alphazero_loop.py"
 WATCHDOG="scripts/pipeline_watchdog.py"
 SUPERVISOR="scripts/minimal_loop_supervisor.sh"
+LOCAL_PYTHON="venv/bin/python"
+if [[ ! -x "$LOCAL_PYTHON" ]]; then
+  LOCAL_PYTHON="python3"
+fi
+PREFLIGHT_TEST="tests/unit/scripts/test_minimal_alphazero_loop.py"
 
 # Node assignments:
 #   ip|config|workdir|args...
@@ -31,6 +36,7 @@ NODES=(
 
 DRY_RUN=false
 ONLY_CONFIG=""
+SKIP_PREFLIGHT=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)
@@ -45,12 +51,26 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --skip-preflight)
+      SKIP_PREFLIGHT=true
+      shift
+      ;;
     *)
-      echo "Usage: $0 [--dry-run] [--only <config_key>]" >&2
+      echo "Usage: $0 [--dry-run] [--only <config_key>] [--skip-preflight]" >&2
       exit 1
       ;;
   esac
 done
+
+if $SKIP_PREFLIGHT; then
+  echo "Preflight: skipped (--skip-preflight)"
+elif $DRY_RUN; then
+  echo "Preflight: [DRY] Would run PYTHONPATH=. $LOCAL_PYTHON -m pytest -q $PREFLIGHT_TEST"
+else
+  echo "Preflight: running PYTHONPATH=. $LOCAL_PYTHON -m pytest -q $PREFLIGHT_TEST"
+  PYTHONPATH=. "$LOCAL_PYTHON" -m pytest -q "$PREFLIGHT_TEST"
+fi
+echo
 
 MATCHED=false
 
