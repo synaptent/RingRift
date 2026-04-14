@@ -113,3 +113,9 @@ __all__ = [
     "EpochStatistics",
     "TrainingEnhancementsFacade",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended training-enhancements surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

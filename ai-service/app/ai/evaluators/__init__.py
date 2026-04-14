@@ -69,3 +69,9 @@ __all__ = [
     "TacticalScore",
     "TacticalWeights",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended evaluator surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

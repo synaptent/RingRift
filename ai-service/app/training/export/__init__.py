@@ -115,3 +115,9 @@ __all__ = [
     "DISK_SPACE_SAFETY_MARGIN_MB",
     "NPZ_COMPRESSION_RATIO",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended training-export surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

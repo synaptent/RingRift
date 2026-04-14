@@ -25,6 +25,12 @@ __all__ = [
 ]
 
 
+def __dir__() -> list[str]:
+    """Expose the intended archived AI surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
 def __getattr__(name: str) -> type:
     """Lazy import archived modules only when accessed.
 
@@ -43,7 +49,13 @@ def __getattr__(name: str) -> type:
         from .cage_network import CAGEConfig
         return CAGE_AI if name == "CAGE_AI" else CAGEConfig
     elif name in ("EBMOOnlineAI", "EBMOOnlineConfig", "EBMOOnlineLearner"):
-        from .ebmo_online import EBMOOnlineAI, EBMOOnlineConfig, EBMOOnlineLearner
+        # Archived facade retained, but the canonical implementation now lives
+        # in app.ai.ebmo_online_learner.
+        from app.ai.ebmo_online_learner import (
+            EBMOOnlineAI,
+            EBMOOnlineConfig,
+            EBMOOnlineLearner,
+        )
         if name == "EBMOOnlineAI":
             return EBMOOnlineAI
         elif name == "EBMOOnlineConfig":

@@ -164,6 +164,7 @@ Current objectives:
 - The same pattern now covers two more service entrypoints too: `app.evaluation` and `app.execution` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under cheap verification.
 - Another tiny package wave is now covered too: `app.training.env_mixins`, `app.quality.validators`, `app.rules.generators`, `app.mcts`, `app.ai.nnue_registry`, and `app.quality.scorers` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under the same cheap ratchet pattern.
 - Another small top-level package wave is now covered too: `app.rules`, `app.providers`, `app.caching`, `app.cli`, and `app.testing` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under the same cheap ratchet pattern.
+- The next heavier AI-facing entrypoints now follow the same pattern too: `app.ai.archive`, `app.ai.evaluators`, `app.ai.harness`, `app.training.enhancements`, and `app.training.export` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under cheap verification.
 
 ## Execution Protocol
 

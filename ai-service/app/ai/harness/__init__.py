@@ -59,3 +59,9 @@ __all__ = [
     "get_compatible_harnesses",
     "get_all_harness_types",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended harness surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
