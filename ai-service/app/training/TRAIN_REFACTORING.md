@@ -139,4 +139,6 @@ Function extraction requires careful incremental migration.
 - 3,000+ lines in legacy file
 - Complex with multiple AI classes
 - Requires careful testing
+- Active callers should stay on the `app.ai.neural_net` facade while the
+  compatibility path drains
 - Scheduled for Q1 2026

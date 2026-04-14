@@ -60,6 +60,8 @@ DEPRECATION_TRACKER_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TRACK
 CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_19.md"
 LEGACY_RULES_DIFF_DOC = REPO_ROOT / "ai-service" / "docs" / "specs" / "LEGACY_RULES_DIFF.md"
 AI_NEURAL_NET_INIT = REPO_ROOT / "ai-service" / "app" / "ai" / "neural_net" / "__init__.py"
+STRANDED_FEATURES_DOC = REPO_ROOT / "ai-service" / "docs" / "STRANDED_FEATURES.md"
+TRAIN_REFACTORING_DOC = REPO_ROOT / "ai-service" / "app" / "training" / "TRAIN_REFACTORING.md"
 STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
 ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
@@ -429,6 +431,18 @@ def test_ai_service_migration_guide_uses_current_training_compatibility_path() -
     assert "| `orchestrated_training.py`" not in text
 
 
+def test_ai_service_migration_guide_uses_current_neural_net_facade_story() -> None:
+    text = AI_SERVICE_MIGRATION_GUIDE.read_text(encoding="utf-8")
+
+    assert "`app.ai.neural_net` facade + architecture submodules" in text
+    assert "from app.ai.neural_net import create_model_for_board" in text
+    assert "from app.models import BoardType" in text
+    assert "model = create_model_for_board(" in text
+    assert "RingRiftNet" not in text
+    assert "neural_net/network.py" not in text
+    assert "`app.ai._neural_net_legacy`" in text
+
+
 def test_training_docstrings_use_current_archived_orchestrator_story() -> None:
     unified_text = UNIFIED_TRAINING_ORCHESTRATOR.read_text(encoding="utf-8")
     p2p_text = P2P_INTEGRATION.read_text(encoding="utf-8")
@@ -630,3 +644,13 @@ def test_neural_net_deprecation_docs_use_stable_package_replacements() -> None:
     assert "`_game_engine_legacy.py` | Dec 2025      | `app/game_engine`" in tracker_text
     assert "app/ai/neural_net/*" not in timeline_text
     assert "app/ai/neural_net/*" not in tracker_text
+
+
+def test_stranded_features_and_train_refactoring_use_neural_net_facade_story() -> None:
+    stranded_text = STRANDED_FEATURES_DOC.read_text(encoding="utf-8")
+    train_refactoring_text = TRAIN_REFACTORING_DOC.read_text(encoding="utf-8")
+
+    assert "The `app.ai._neural_net_legacy` compatibility path now routes" in stranded_text
+    assert "Retire behind `app.ai.neural_net` facade" in stranded_text
+    assert "Migrated to `neural_net/` package" not in stranded_text
+    assert "Active callers should stay on the `app.ai.neural_net` facade" in train_refactoring_text

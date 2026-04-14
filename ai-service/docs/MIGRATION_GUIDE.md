@@ -250,12 +250,12 @@ with orchestrator:
 
 **Key Differences**:
 
-| Aspect            | v1/v1_mps               | v2 (Current)                    |
-| ----------------- | ----------------------- | ------------------------------- |
-| Input channels    | 40 (square) or varying  | Board-specific (56 for square8) |
-| Architecture file | `_neural_net_legacy.py` | `neural_net/network.py`         |
-| Encoding          | Monolithic              | Modular (`square_encoding.py`)  |
-| Policy decoding   | Inline in network       | Separate decoder classes        |
+| Aspect            | v1/v1_mps               | v2 (Current)                                         |
+| ----------------- | ----------------------- | ---------------------------------------------------- |
+| Input channels    | 40 (square) or varying  | Board-specific (56 for square8)                      |
+| Architecture file | `_neural_net_legacy.py` | `app.ai.neural_net` facade + architecture submodules |
+| Encoding          | Monolithic              | Modular (`square_encoding.py`)                       |
+| Policy decoding   | Inline in network       | Separate decoder classes                             |
 
 ### 2.2 Converting Old Checkpoints
 
@@ -303,11 +303,12 @@ for key in state_dict.keys():
             model_version = "v2"
         break
 
-# Create new model with correct architecture
-from app.ai.neural_net import RingRiftNet
+# Create a supported v2 model with the current facade
+from app.models import BoardType
+from app.ai.neural_net import create_model_for_board
 
-model = RingRiftNet(
-    board_type="square8",
+model = create_model_for_board(
+    BoardType.SQUARE8,
     num_players=2,
     in_channels=56,  # v2 channels
 )
@@ -639,7 +640,7 @@ The router automatically maps between event systems:
 | ------------------------------------------------------ | ------------- | -------------- |
 | `archive/deprecated_training/orchestrated_training.py` | December 2025 | Q2 2026        |
 | `integrated_enhancements.py`                           | December 2025 | Q2 2026        |
-| `_neural_net_legacy.py`                                | December 2025 | Q1 2026        |
+| `app.ai._neural_net_legacy`                            | December 2025 | Q1 2026        |
 | `stage_events.py`                                      | December 2025 | Q2 2026        |
 | `cross_process_events.py`                              | December 2025 | Q2 2026        |
 | Non-canonical databases                                | December 2025 | Ongoing        |

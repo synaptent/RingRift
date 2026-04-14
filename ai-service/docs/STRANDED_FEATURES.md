@@ -146,7 +146,7 @@ Last updated: 2025-12-30
 - **Next Step**: Introduce a canonical action-space adapter that maps
   legacy aliases to canonical move types at model I/O, then refactor
   encoders and policy heads to use only canonical action indices.
-- **Update (2025-12-21)**: `app/ai/_neural_net_legacy.py` now routes
+- **Update (2025-12-21)**: The `app.ai._neural_net_legacy` compatibility path now routes
   board-specific encoding through `app/ai/canonical_move_encoding.py`
   (legacy fallback preserved). Remaining gaps: legacy MAX_N policy head
   path still uses legacy move names, and hex policy space still compresses
@@ -250,11 +250,11 @@ Last updated: 2025-12-30
 
 ## 8. DEPRECATION CANDIDATES
 
-| Module                            | Status     | Reason                            | Timeline |
-| --------------------------------- | ---------- | --------------------------------- | -------- |
-| `app/ai/_neural_net_legacy.py`    | Deprecated | Migrated to `neural_net/` package | Q1 2026  |
-| `app/ai/ig_gmo.py`                | Review     | Research-grade, no validation     | Q1 2026  |
-| Legacy search paths in AI classes | Refactor   | Move to LegacySearchMixin         | Q1 2026  |
+| Module                            | Status     | Reason                                   | Timeline |
+| --------------------------------- | ---------- | ---------------------------------------- | -------- |
+| `app/ai/_neural_net_legacy.py`    | Deprecated | Retire behind `app.ai.neural_net` facade | Q1 2026  |
+| `app/ai/ig_gmo.py`                | Review     | Research-grade, no validation            | Q1 2026  |
+| Legacy search paths in AI classes | Refactor   | Move to LegacySearchMixin                | Q1 2026  |
 
 ---
 
