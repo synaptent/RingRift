@@ -6,12 +6,12 @@ This document provides a visual representation of event flows in the RingRift AI
 
 The event system uses three layers unified through `event_router.py`:
 
-| Component                  | File                                       | Purpose                                  |
-| -------------------------- | ------------------------------------------ | ---------------------------------------- |
-| **UnifiedEventRouter**     | `app/coordination/event_router.py`         | Unified API routing to all event buses   |
-| **DataEventType**          | `app/distributed/data_events.py`           | In-memory async event types (237 events) |
-| **StageEvent**             | `app/coordination/stage_events.py`         | Pipeline stage completion events         |
-| **CrossProcessEventQueue** | `app/coordination/cross_process_events.py` | SQLite-backed cross-process persistence  |
+| Component                  | File                                         | Purpose                                  |
+| -------------------------- | -------------------------------------------- | ---------------------------------------- |
+| **UnifiedEventRouter**     | `app/coordination/event_router.py`           | Unified API routing to all event buses   |
+| **DataEventType**          | `app/distributed/data_events/event_types.py` | In-memory async event types (237 events) |
+| **StageEvent**             | `app/coordination/stage_events.py`           | Pipeline stage completion events         |
+| **CrossProcessEventQueue** | `app/coordination/cross_process_events.py`   | SQLite-backed cross-process persistence  |
 
 Note: Diagrams emphasize the primary flow and omit optional stages (for example
 NPZ combination and data freshness gates). For a complete event list, see

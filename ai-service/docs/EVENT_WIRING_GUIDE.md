@@ -193,7 +193,7 @@ This order is enforced in `daemon_lifecycle.py:_reorder_for_critical_startup()`.
 
 ### Step 1: Define Event Type
 
-Add to `app/distributed/data_events.py`:
+Add to `app/distributed/data_events/event_types.py`:
 
 ```python
 class DataEventType(str, Enum):
@@ -203,7 +203,7 @@ class DataEventType(str, Enum):
 
 ### Step 2: Create Emit Function
 
-Add to `app/distributed/data_events.py`:
+Add to `app/distributed/data_events/emit.py`:
 
 ```python
 def emit_my_new_event(

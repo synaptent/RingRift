@@ -51,7 +51,7 @@ async def on_training_completed(event):
 await bus.publish(event)
 ```
 
-### 2. DataEventBus (`app/distributed/data_events.py`)
+### 2. DataEventBus (`app/distributed/data_events/`)
 
 Pipeline data events for training workflow:
 

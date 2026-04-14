@@ -73,6 +73,13 @@ APP_DEPRECATION_AUDIT = REPO_ROOT / "ai-service" / "app" / "DEPRECATION_AUDIT.md
 RULES_ENGINE_SURFACE_AUDIT_DOC = REPO_ROOT / "ai-service" / "docs" / "RULES_ENGINE_SURFACE_AUDIT.md"
 CODEBASE_QUALITY_REPORT_DOC = REPO_ROOT / "ai-service" / "docs" / "CODEBASE_QUALITY_REPORT.md"
 CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_19.md"
+COORDINATION_ARCHITECTURE_DOC = REPO_ROOT / "ai-service" / "docs" / "COORDINATION_ARCHITECTURE.md"
+EVENT_WIRING_GUIDE_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_WIRING_GUIDE.md"
+EVENT_WIRING_DIAGRAM_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_WIRING_DIAGRAM.md"
+EVENT_SYSTEM_REFERENCE_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_SYSTEM_REFERENCE.md"
+EVENT_CATALOG_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_CATALOG.md"
+EVENT_PAYLOAD_SCHEMAS_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_PAYLOAD_SCHEMAS.md"
+ADR_EVENT_DRIVEN_ARCHITECTURE_DOC = REPO_ROOT / "ai-service" / "docs" / "adr" / "ADR-001-event-driven-architecture.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -675,3 +682,30 @@ def test_titans_plan_uses_supported_neural_net_surface() -> None:
     assert "Changes to `app/ai/ringrift_net.py`" not in text
     assert "app/ai/ringrift_net.py" not in text
     assert "RingRiftNetWithMemory" not in text
+
+
+def test_event_system_docs_use_data_events_package_paths() -> None:
+    coordination_text = COORDINATION_ARCHITECTURE_DOC.read_text(encoding="utf-8")
+    wiring_text = EVENT_WIRING_GUIDE_DOC.read_text(encoding="utf-8")
+    diagram_text = EVENT_WIRING_DIAGRAM_DOC.read_text(encoding="utf-8")
+    reference_text = EVENT_SYSTEM_REFERENCE_DOC.read_text(encoding="utf-8")
+    catalog_text = EVENT_CATALOG_DOC.read_text(encoding="utf-8")
+    payload_text = EVENT_PAYLOAD_SCHEMAS_DOC.read_text(encoding="utf-8")
+    adr_text = ADR_EVENT_DRIVEN_ARCHITECTURE_DOC.read_text(encoding="utf-8")
+
+    assert "### 2. DataEventBus (`app/distributed/data_events/`)" in coordination_text
+    assert "Add to `app/distributed/data_events/event_types.py`:" in wiring_text
+    assert "Add to `app/distributed/data_events/emit.py`:" in wiring_text
+    assert "`app/distributed/data_events/event_types.py`" in diagram_text
+    assert "`app/distributed/data_events/event_types.py` - Event type definitions" in reference_text
+    assert "re-exported via `app.distributed.data_events`" in catalog_text
+    assert "Add to `DataEventType` enum in `app/distributed/data_events/event_types.py`" in catalog_text
+    assert "`app/distributed/data_events/event_types.py` - DataEventType enum" in payload_text
+    assert "`app/distributed/data_events/event_types.py`): 151 event types" in adr_text
+    assert "app/distributed/data_events.py" not in coordination_text
+    assert "app/distributed/data_events.py" not in wiring_text
+    assert "app/distributed/data_events.py" not in diagram_text
+    assert "app/distributed/data_events.py" not in reference_text
+    assert "app/distributed/data_events.py" not in catalog_text
+    assert "app/distributed/data_events.py" not in payload_text
+    assert "app/distributed/data_events.py" not in adr_text

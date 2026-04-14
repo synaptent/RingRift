@@ -770,4 +770,4 @@ The extraction utilities in `event_utils.py` and `event_handler_utils.py` handle
 - `EVENT_SYSTEM_REFERENCE.md` - Event system architecture
 - `app/coordination/event_utils.py` - Payload extraction utilities
 - `app/coordination/event_handler_utils.py` - Handler utilities
-- `app/distributed/data_events.py` - DataEventType enum
+- `app/distributed/data_events/event_types.py` - DataEventType enum

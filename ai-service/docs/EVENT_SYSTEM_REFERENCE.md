@@ -825,7 +825,7 @@ async def my_handler(event):
 
 ## See Also
 
-- `app/distributed/data_events.py` - Event type definitions
+- `app/distributed/data_events/event_types.py` - Event type definitions
 - `app/coordination/event_router.py` - Unified router implementation
 - `app/coordination/handler_base.py` - Canonical base class for handlers
 - `app/coordination/event_emitters.py` - Typed emitter functions

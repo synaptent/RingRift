@@ -23,7 +23,7 @@ Adopt an **event-driven architecture** using a unified event bus with the follow
 
 ### Event Bus Design
 
-1. **DataEventType enum** (`app/distributed/data_events.py`): 151 event types covering all pipeline stages (Dec 2025 snapshot)
+1. **DataEventType enum** (`app/distributed/data_events/event_types.py`): 151 event types covering all pipeline stages (Dec 2025 snapshot)
 2. **EventRouter** (`app/coordination/event_router.py`): Unified router bridging three underlying buses:
    - `DataEventBus`: In-memory async event bus
    - `StageEventBus`: Pipeline stage transitions
