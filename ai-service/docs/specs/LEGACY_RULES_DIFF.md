@@ -223,13 +223,13 @@ Legacy replay usage is not yet tracked. See:
 
 ## 8. Code Locations
 
-| Purpose              | File                                       | Key Functions                   |
-| -------------------- | ------------------------------------------ | ------------------------------- |
-| Replay fallback      | `app/rules/legacy/replay_compatibility.py` | `replay_with_legacy_fallback()` |
-| Move type conversion | `app/rules/legacy/move_type_aliases.py`    | `convert_legacy_move_type()`    |
-| State normalization  | `app/rules/legacy/state_normalization.py`  | `normalize_legacy_state()`      |
-| Phase inference      | `app/rules/legacy/state_normalization.py`  | `infer_phase_from_moves()`      |
-| Legacy engine        | `app/_game_engine_legacy.py`               | `GameEngine` class              |
+| Purpose              | File                                                                            | Key Functions                   |
+| -------------------- | ------------------------------------------------------------------------------- | ------------------------------- |
+| Replay fallback      | `app/rules/legacy/replay_compatibility.py`                                      | `replay_with_legacy_fallback()` |
+| Move type conversion | `app/rules/legacy/move_type_aliases.py`                                         | `convert_legacy_move_type()`    |
+| State normalization  | `app/rules/legacy/state_normalization.py`                                       | `normalize_legacy_state()`      |
+| Phase inference      | `app/rules/legacy/state_normalization.py`                                       | `infer_phase_from_moves()`      |
+| Legacy engine        | `archive/deprecated_ai/_game_engine_legacy.py` via `app/_game_engine_legacy.py` | `GameEngine` class              |
 
 ---
 

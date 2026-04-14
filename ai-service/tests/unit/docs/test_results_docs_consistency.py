@@ -58,6 +58,7 @@ DEPRECATED_MODULES_MIGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECAT
 MASTER_RUNBOOK_INDEX_DOC = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "MASTER_RUNBOOK_INDEX.md"
 DEPRECATION_TRACKER_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TRACKER.md"
 CONSOLIDATION_STATUS_2025_12_19_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_19.md"
+LEGACY_RULES_DIFF_DOC = REPO_ROOT / "ai-service" / "docs" / "specs" / "LEGACY_RULES_DIFF.md"
 STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
 ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
@@ -571,3 +572,10 @@ def test_consolidation_status_2025_12_19_uses_archived_game_engine_path() -> Non
     assert "Still backing 3 compatibility callers/facades" in text
     assert "stable `app.game_engine` facade" in text
     assert "NOT ready for compatibility retirement" in text
+
+
+def test_legacy_rules_diff_points_to_archived_game_engine_path() -> None:
+    text = LEGACY_RULES_DIFF_DOC.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_ai/_game_engine_legacy.py` via `app/_game_engine_legacy.py" in text
+    assert "| Legacy engine" in text
