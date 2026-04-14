@@ -43,6 +43,8 @@ COORDINATION_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "READM
 TRAINING_README = REPO_ROOT / "ai-service" / "app" / "training" / "README.md"
 COORDINATION_EXPORT_TIERS_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "EXPORT_TIERS.md"
 TRAINING_ORCHESTRATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "training" / "ORCHESTRATOR_GUIDE.md"
+COORDINATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "COORDINATOR_GUIDE.md"
+COORDINATION_TRAINING_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "training" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -339,3 +341,24 @@ def test_training_orchestrator_guide_matches_archived_orchestrator_reality() -> 
     assert "from app.training import TrainingOrchestrator" in text
     assert "from app.training.orchestrated_training import TrainingOrchestrator" not in text
     assert "`app/training/orchestrated_training.py` → archive" not in text
+
+
+def test_coordinator_guide_matches_current_orchestrator_and_singleton_guidance() -> None:
+    text = COORDINATOR_GUIDE.read_text(encoding="utf-8")
+
+    assert "deploy_minimal_loops.sh" in text
+    assert "archive/deprecated_training/orchestrated_training.py" in text
+    assert "@singleton" in text
+    assert "prefer `@singleton`" in text
+    assert "from app.training.orchestrated_training import TrainingOrchestrator" not in text
+
+
+def test_coordination_training_readme_matches_current_package_exports() -> None:
+    text = COORDINATION_TRAINING_README.read_text(encoding="utf-8")
+
+    assert "get_training_coordinator" in text
+    assert "get_unified_scheduler" in text
+    assert "request_training_slot" in text
+    assert "release_training_slot" in text
+    assert "TRAINING_COMPLETED" in text
+    assert "`TRAINING_COMPLETE` - Training finished successfully" not in text

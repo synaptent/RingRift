@@ -19,6 +19,10 @@ from app.coordination.training import (
     TrainingCoordinator,
     PriorityJobScheduler,
     UnifiedScheduler,
+    get_training_coordinator,
+    get_unified_scheduler,
+    request_training_slot,
+    release_training_slot,
 )
 ```
 
@@ -33,6 +37,10 @@ Ranks pending training work using curriculum weights and freshness signals.
 ### `UnifiedScheduler`
 
 Provides the higher-level scheduling facade used by coordination services.
+
+Use `get_training_coordinator()` and `get_unified_scheduler()` when you need the
+shared singleton-style coordination instances instead of constructing your own
+objects.
 
 **Priority factors**:
 
@@ -56,7 +64,7 @@ The training coordination layer subscribes to:
 The canonical training modules emit:
 
 - `TRAINING_STARTED` - Training job began
-- `TRAINING_COMPLETE` - Training finished successfully
+- `TRAINING_COMPLETED` - Training finished successfully
 - `TRAINING_FAILED` - Training job failed
 
 ## Configuration

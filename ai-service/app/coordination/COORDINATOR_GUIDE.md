@@ -3,6 +3,10 @@
 **Created**: December 2025
 **Purpose**: Clarify class roles and consolidation path
 
+This guide is about in-process class responsibilities. For supported trainer
+canaries, operators should use `ai-service/scripts/deploy_minimal_loops.sh`
+instead of treating these classes as the fleet rollout contract.
+
 ## Overview
 
 The codebase has 125+ Coordinator/Manager/Orchestrator classes. This guide categorizes them and provides consolidation recommendations.
@@ -68,13 +72,13 @@ These are the essential classes that should be maintained:
 
 These classes have been superseded:
 
-| Class                       | File                                  | Replacement                   |
-| --------------------------- | ------------------------------------- | ----------------------------- |
-| `TrainingOrchestrator`      | `training/orchestrated_training.py`   | `UnifiedTrainingOrchestrator` |
-| `IntegratedTrainingManager` | `training/integrated_enhancements.py` | `UnifiedTrainingOrchestrator` |
-| `P2PTrainingBridge`\*       | `integration/p2p_integration.py`      | Use for P2P only              |
-| `P2PSelfplayBridge`\*       | `integration/p2p_integration.py`      | Use for P2P only              |
-| `P2PEvaluationBridge`\*     | `integration/p2p_integration.py`      | Use for P2P only              |
+| Class                       | File                                                   | Replacement                   |
+| --------------------------- | ------------------------------------------------------ | ----------------------------- |
+| `TrainingOrchestrator`      | `archive/deprecated_training/orchestrated_training.py` | `UnifiedTrainingOrchestrator` |
+| `IntegratedTrainingManager` | `training/integrated_enhancements.py`                  | `UnifiedTrainingOrchestrator` |
+| `P2PTrainingBridge`\*       | `integration/p2p_integration.py`                       | Use for P2P only              |
+| `P2PSelfplayBridge`\*       | `integration/p2p_integration.py`                       | Use for P2P only              |
+| `P2PEvaluationBridge`\*     | `integration/p2p_integration.py`                       | Use for P2P only              |
 
 *Not deprecated, but renamed from `*Coordinator` to avoid confusion.
 
@@ -108,9 +112,12 @@ class MyCoordinator(CoordinatorBase, SQLitePersistenceMixin):
         super().__init__()
         self.init_db(db_path)
 
-# Singleton coordinator
-class GlobalManager(CoordinatorBase, SingletonMixin):
-    _instance = None
+# Preferred singleton pattern
+from app.coordination.singleton_mixin import singleton
+
+@singleton
+class GlobalManager(CoordinatorBase):
+    pass
 
 # Event-driven coordinator
 class MyMonitor(CoordinatorBase, EventDrivenMonitorMixin):
@@ -125,14 +132,18 @@ class RobustOrchestrator(CoordinatorBase, ResilientCoordinatorMixin):
 
 ## Available Mixins
 
-| Mixin                       | Purpose                     | Use When                 |
-| --------------------------- | --------------------------- | ------------------------ |
-| `SQLitePersistenceMixin`    | SQLite database persistence | Need persistent state    |
-| `StatePersistenceMixin`     | Extended state persistence  | Need checkpoint/restore  |
-| `SingletonMixin`            | Single instance pattern     | Global manager           |
-| `CallbackMixin`             | Callback registration       | Event-based coordination |
-| `EventDrivenMonitorMixin`   | Event-driven monitoring     | Continuous monitoring    |
-| `ResilientCoordinatorMixin` | Error handling/retry        | Network operations       |
+| Mixin                       | Purpose                      | Use When                                         |
+| --------------------------- | ---------------------------- | ------------------------------------------------ |
+| `SQLitePersistenceMixin`    | SQLite database persistence  | Need persistent state                            |
+| `StatePersistenceMixin`     | Extended state persistence   | Need checkpoint/restore                          |
+| `SingletonMixin`            | Legacy single-instance mixin | Existing compatibility only; prefer `@singleton` |
+| `CallbackMixin`             | Callback registration        | Event-based coordination                         |
+| `EventDrivenMonitorMixin`   | Event-driven monitoring      | Continuous monitoring                            |
+| `ResilientCoordinatorMixin` | Error handling/retry         | Network operations                               |
+
+Prefer the `@singleton` decorator for new single-instance classes. Keep
+`SingletonMixin` only when you are extending older coordination classes that
+already depend on its behavior.
 
 ## Consolidation Recommendations
 
