@@ -77,7 +77,9 @@ These new facades consolidate multiple older modules:
 
 ### Rules Move Generators (December 2025)
 
-Extracted move enumeration logic from `_game_engine_legacy.py` into SSoT generators:
+Extracted move enumeration logic from the archived
+`archive/deprecated_ai/_game_engine_legacy.py` implementation into SSoT
+generators:
 
 **Phase 1 (December 21, 2025):**
 
@@ -171,10 +173,10 @@ sync = UnifiedDataSyncService.get_instance()
 
 ### Assessment (December 2025)
 
-| Module                         | LOC   | Classes/Functions | Import Sites     |
-| ------------------------------ | ----- | ----------------- | ---------------- |
-| `app/ai/_neural_net_legacy.py` | 6,931 | 33                | 154 (via facade) |
-| `app/_game_engine_legacy.py`   | 4,435 | 4                 | 154 (via facade) |
+| Module                                         | LOC   | Classes/Functions | Import Sites                |
+| ---------------------------------------------- | ----- | ----------------- | --------------------------- |
+| `app/ai/_neural_net_legacy.py`                 | 6,931 | 33                | 154 (via facade)            |
+| `archive/deprecated_ai/_game_engine_legacy.py` | 4,435 | 4                 | 154 (via `app.game_engine`) |
 
 ### Migration Strategy
 
@@ -190,19 +192,20 @@ sync = UnifiedDataSyncService.get_instance()
 
 1. Already has GameEngine as single class
 2. Extract PhaseRequirement types → `app/game_engine/phase_requirements.py`
-3. Consider splitting GameEngine methods into mixins
+3. Keep `app.game_engine` as the stable public surface while internals continue to split
 
 **Phase 3: Update facades**
 
 1. Update `app/ai/neural_net/__init__.py` to import from new modules
-2. Update `app/game_engine/__init__.py` to import from new modules
+2. Update `app/game_engine/__init__.py` to keep the stable public surface while reducing direct legacy dependencies
 3. Keep re-exports for backwards compatibility
 
-**Phase 4: Remove legacy files**
+**Phase 4: Retire direct compatibility paths**
 
 1. Verify all imports resolve to new modules
 2. Run full test suite
-3. Delete `_neural_net_legacy.py` and `_game_engine_legacy.py`
+3. Delete `_neural_net_legacy.py`
+4. Retire direct `app._game_engine_legacy` imports after all callers use `app.game_engine`
 
 ### Blockers
 
@@ -294,14 +297,14 @@ elo.record_match(
 
 ## Migration Tracking (December 2025)
 
-| Module                       | Replacement              | Status  | Deadline | Notes               |
-| ---------------------------- | ------------------------ | ------- | -------- | ------------------- |
-| `error_recovery_coordinator` | `unified_health_manager` | REMOVED | Complete | File deleted        |
-| `recovery_manager`           | `unified_health_manager` | REMOVED | Complete | File deleted        |
-| `unified_elo_db`             | `elo_service`            | ACTIVE  | Q2 2026  | Has runtime warning |
-| `distributed.py` (trainer)   | `distributed_unified.py` | ACTIVE  | Q2 2026  | Has runtime warning |
-| `_neural_net_legacy.py`      | `nnue_policy.py`         | ACTIVE  | Q1 2026  | 154 import sites    |
-| `_game_engine_legacy.py`     | Generators extracted     | ACTIVE  | Q2 2026  | Facade pattern      |
+| Module                       | Replacement              | Status  | Deadline | Notes                                   |
+| ---------------------------- | ------------------------ | ------- | -------- | --------------------------------------- |
+| `error_recovery_coordinator` | `unified_health_manager` | REMOVED | Complete | File deleted                            |
+| `recovery_manager`           | `unified_health_manager` | REMOVED | Complete | File deleted                            |
+| `unified_elo_db`             | `elo_service`            | ACTIVE  | Q2 2026  | Has runtime warning                     |
+| `distributed.py` (trainer)   | `distributed_unified.py` | ACTIVE  | Q2 2026  | Has runtime warning                     |
+| `_neural_net_legacy.py`      | `nnue_policy.py`         | ACTIVE  | Q1 2026  | 154 import sites                        |
+| `_game_engine_legacy.py`     | `app.game_engine` facade | ACTIVE  | Q2 2026  | Archived target + compatibility symlink |
 
 ## Event Router Migration Status
 

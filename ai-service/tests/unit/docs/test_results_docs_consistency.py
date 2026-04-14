@@ -63,6 +63,8 @@ ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
 DEPRECATION_TIMELINE_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TIMELINE.md"
 CONSOLIDATION_STATUS_2025_12_28_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_28.md"
+DEPRECATED_AI_README = REPO_ROOT / "ai-service" / "archive" / "deprecated_ai" / "README.md"
+APP_DEPRECATION_AUDIT = REPO_ROOT / "ai-service" / "app" / "DEPRECATION_AUDIT.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -517,3 +519,26 @@ def test_sync_consolidation_status_tracks_current_shim_story() -> None:
     assert "#### 1. Sync Coordinator Shim Retirement" in text
     assert "Rename `app/coordination/sync_coordinator.py`" not in text
     assert "rename to `sync_scheduler.py`" not in text
+
+
+def test_deprecated_ai_readme_uses_current_game_engine_facade_story() -> None:
+    text = DEPRECATED_AI_README.read_text(encoding="utf-8")
+
+    assert "archived AI and engine modules kept for compatibility" in text
+    assert "**Replacement**: Use `app.game_engine` instead." in text
+    assert "from app._game_engine_legacy import GameEngine" in text
+    assert "from app.game_engine import GameEngine" in text
+    assert "`app/_game_engine_legacy.py` compatibility symlink" in text
+    assert "`app/game_engine/__init__.py`" in text
+    assert "app/rules/game_engine.py" not in text
+
+
+def test_app_deprecation_audit_uses_archived_game_engine_path() -> None:
+    text = APP_DEPRECATION_AUDIT.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_ai/_game_engine_legacy.py" in text
+    assert "154 (via `app.game_engine`)" in text
+    assert "Keep `app.game_engine` as the stable public surface" in text
+    assert "Retire direct `app._game_engine_legacy` imports after all callers use `app.game_engine`" in text
+    assert "`app.game_engine` facade" in text
+    assert "Delete `_neural_net_legacy.py` and `_game_engine_legacy.py`" not in text

@@ -1,6 +1,7 @@
 # Deprecated AI Modules
 
-This directory contains AI modules that have been deprecated in favor of GNN-based alternatives.
+This directory contains archived AI and engine modules kept for compatibility
+and historical reference.
 
 ## Archived Modules (December 2025)
 
@@ -14,28 +15,36 @@ This directory contains AI modules that have been deprecated in favor of GNN-bas
 The original monolithic game engine implementation containing all game rules, move generation, state management, and scoring logic in a single file.
 
 **Why deprecated:**
-Superseded by the modular `app/rules/` module which provides:
+The monolithic implementation has been partially decomposed into smaller rules
+and generator modules, but the supported public API for active code is now the
+stable `app.game_engine` package facade:
 
 - Single source of truth (SSoT) move generators
 - Better separation of concerns
 - Improved testability and maintainability
 - Cleaner architecture with dedicated modules for each game aspect
 
-**Replacement**: Use `app/rules/game_engine.py` instead.
+**Replacement**: Use `app.game_engine` instead.
 
 ```python
 # Old (deprecated):
 from app._game_engine_legacy import GameEngine
 
-# New (recommended):
-from app.rules.game_engine import GameEngine
+# New (stable public API):
+from app.game_engine import GameEngine
 ```
 
 **Migration Notes**:
 
-- The legacy file was used by `app/rules/legacy/replay_compatibility.py` for backward compatibility with old replay formats
-- The `app/game_engine/__init__.py` shim provided a migration path with deprecation warnings
-- After archival, remaining imports will need to be updated or will fail
+- The archived implementation lives here and is still reachable through the
+  `app/_game_engine_legacy.py` compatibility symlink.
+- The stable import surface is `app/game_engine/__init__.py`, which lazily
+  re-exports `GameEngine` and phase requirement types.
+- Rules move generators under `app/rules/generators/*` were extracted from the
+  monolith, but active callers should still import `GameEngine` from
+  `app.game_engine` instead of reaching into legacy or speculative rules paths.
+- Direct legacy imports emit deprecation warnings and should be migrated to the
+  stable package facade.
 
 ---
 
