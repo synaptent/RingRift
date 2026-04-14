@@ -432,7 +432,7 @@ class ModelPromoter:
         Uses the centralized record_promotion_execution helper from app.metrics.
         """
         try:
-            from app.metrics import record_promotion_execution
+            from app.metrics_base import record_promotion_execution
             record_promotion_execution(
                 promotion_type="production",  # ModelPromoter always does production promotions
                 success=success,

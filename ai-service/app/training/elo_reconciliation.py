@@ -461,7 +461,7 @@ class EloReconciler:
     ) -> None:
         """Emit Prometheus metrics for drift detection."""
         try:
-            from app.metrics import record_elo_drift
+            from app.metrics_base import record_elo_drift
             record_elo_drift(
                 board_type=board_type or "all",
                 num_players=num_players or 0,
@@ -611,7 +611,7 @@ else:
     def _emit_sync_metrics(self, result: SyncResult) -> None:
         """Emit Prometheus metrics for a sync result."""
         try:
-            from app.metrics import record_elo_sync
+            from app.metrics_base import record_elo_sync
             record_elo_sync(
                 remote_host=result.remote_host,
                 success=result.error is None,

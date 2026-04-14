@@ -475,7 +475,7 @@ class TournamentOrchestrator:
     ) -> None:
         """Record tournament metrics."""
         try:
-            from app.metrics import record_evaluation
+            from app.metrics.orchestrator import record_evaluation
             record_evaluation(
                 board_type=self.board_type,
                 num_players=self.num_players,
@@ -490,7 +490,7 @@ class TournamentOrchestrator:
     def _record_evaluation_metrics(self, result: EvaluationResult) -> None:
         """Record evaluation metrics."""
         try:
-            from app.metrics import record_evaluation
+            from app.metrics.orchestrator import record_evaluation
             record_evaluation(
                 board_type=self.board_type,
                 num_players=self.num_players,

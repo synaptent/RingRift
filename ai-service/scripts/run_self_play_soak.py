@@ -212,7 +212,7 @@ from app.db import (
     get_or_create_db,
     record_completed_game_with_parity_check,
 )
-from app.metrics import (  # type: ignore
+from app.metrics_base import (  # type: ignore
     PYTHON_INVARIANT_VIOLATIONS,
 )
 from app.rules import global_actions as ga  # type: ignore

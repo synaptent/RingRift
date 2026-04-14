@@ -658,7 +658,7 @@ class PromotionController:
     def _emit_decision_metrics(self, decision: PromotionDecision) -> None:
         """Emit Prometheus metrics for a promotion decision."""
         try:
-            from app.metrics import record_promotion_decision
+            from app.metrics_base import record_promotion_decision
             record_promotion_decision(
                 promotion_type=decision.promotion_type.value,
                 approved=decision.should_promote,
@@ -1203,7 +1203,7 @@ class PromotionController:
     ) -> None:
         """Emit Prometheus metrics for a promotion execution."""
         try:
-            from app.metrics import record_promotion_execution
+            from app.metrics_base import record_promotion_execution
             record_promotion_execution(
                 promotion_type=decision.promotion_type.value,
                 success=success,
@@ -2477,7 +2477,7 @@ class RollbackMonitor:
     ) -> None:
         """Emit metrics for regression check."""
         try:
-            from app.metrics import record_rollback_check
+            from app.metrics_base import record_rollback_check
             status = self.get_regression_status(model_id)
             record_rollback_check(
                 model_id=model_id,
@@ -2568,7 +2568,7 @@ class RollbackMonitor:
     ) -> None:
         """Emit metrics for rollback execution."""
         try:
-            from app.metrics import record_auto_rollback
+            from app.metrics_base import record_auto_rollback
             record_auto_rollback(
                 from_model=event.current_model_id,
                 to_model=event.rollback_model_id,
