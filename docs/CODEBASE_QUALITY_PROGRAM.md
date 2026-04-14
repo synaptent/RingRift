@@ -176,6 +176,7 @@ Current objectives:
 - The validation docs are now being held to the same bar too: `app.validation/README.md` now documents the actual root surface (`validate`, `validate_all`, `each_item`, `is_instance`, `is_non_negative`) instead of stale helpers like `each_value`, `each_key`, `pydantic_validator`, and a nonexistent `strict=True` mode.
 - The deprecated coordination docs are now being aligned with the real archive state too: `app.coordination.deprecated/README.md` no longer describes nonexistent package layouts or archive paths, and the docs ratchet now locks its current role as an archived-name sentinel plus the one remaining legacy sync module.
 - The package README audit is continuing through older service docs too: `app.distributed/README.md` now uses the real host circuit-breaker reset API (`get_host_breaker()`, `reset(target)`, `reset_all()`) instead of nonexistent helpers, and `app.quality/README.md` now points readers at the supported optimized training pipeline entrypoints instead of a dead `app.training.TrainingPipeline` facade.
+- The game-engine docs now match the actual package contract too: `app.game_engine/README.md` no longer mislabels the package as deprecated or shows the wrong `PhaseRequirement` fields, and the docs ratchet now locks the supported `app.game_engine` import surface plus the current phase-requirement example.
 
 ## Execution Protocol
 

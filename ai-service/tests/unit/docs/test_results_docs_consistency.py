@@ -33,6 +33,7 @@ VALIDATION_README = REPO_ROOT / "ai-service" / "app" / "validation" / "README.md
 COORDINATION_DEPRECATED_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "deprecated" / "README.md"
 DISTRIBUTED_README = REPO_ROOT / "ai-service" / "app" / "distributed" / "README.md"
 QUALITY_README = REPO_ROOT / "ai-service" / "app" / "quality" / "README.md"
+GAME_ENGINE_README = REPO_ROOT / "ai-service" / "app" / "game_engine" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -226,3 +227,15 @@ def test_quality_readme_uses_supported_training_entrypoints() -> None:
     assert "app.training.train_loop.run_training_loop" in text
     assert "from app.training import TrainingPipeline" not in text
     assert "data_filter=quality_filter" not in text
+
+
+def test_game_engine_readme_matches_current_package_contract() -> None:
+    text = GAME_ENGINE_README.read_text(encoding="utf-8")
+
+    assert "from app.game_engine import GameEngine" in text
+    assert "from app.game_engine import PhaseRequirement, PhaseRequirementType" in text
+    assert "PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED" in text
+    assert "eligible_positions=[]" in text
+    assert "app._game_engine_legacy" in text
+    assert "from app.board_manager import BoardManager" not in text
+    assert "New code should use `app.board_manager.BoardManager` directly." not in text

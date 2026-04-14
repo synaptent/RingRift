@@ -1,18 +1,18 @@
 # Game Engine Module
 
-Legacy game engine wrapper for RingRift AI service.
+Canonical Python game-engine package for RingRift replay and rules semantics.
 
 ## Overview
 
-This module provides the Python game engine implementation that mirrors the TypeScript source of truth. It's currently being migrated to use `app.board_manager` directly.
+This package is the stable public import surface for the Python game engine mirror used by replay, parity, and canonical rules enforcement.
 
-**Note**: This module is deprecated. New code should use `app.board_manager.BoardManager` directly.
-
-**Target Removal Date**: Q2 2026
+- `GameEngine` remains the supported import path: `from app.game_engine import GameEngine`
+- `PhaseRequirement` and `PhaseRequirementType` live in `phase_requirements.py` and describe the bookkeeping moves hosts must emit
+- Direct imports from `app._game_engine_legacy` are deprecated compatibility only
 
 ## Key Components
 
-### GameEngine (Legacy)
+### GameEngine
 
 ```python
 from app.game_engine import GameEngine
@@ -36,33 +36,26 @@ is_over, winner = engine.is_game_over(state)
 ### PhaseRequirement
 
 ```python
-from app.game_engine import PhaseRequirement
+from app.game_engine import PhaseRequirement, PhaseRequirementType
 
-# Define requirements for game phases
+# Describe the bookkeeping move a host must emit
 req = PhaseRequirement(
-    min_pieces=3,
-    max_pieces=10,
-    required_territory=0.5,
+    type=PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+    player=2,
+    eligible_positions=[],
 )
 ```
 
-## Migration Path
+Hosts should treat `PhaseRequirement` as a structural signal. When the engine surfaces one of these requirements, the host is responsible for constructing the corresponding canonical move and applying it.
 
-Replace `GameEngine` usage with `BoardManager`:
+## Compatibility Notes
 
-```python
-# OLD (deprecated)
-from app.game_engine import GameEngine
-engine = GameEngine(board_type="hex8", num_players=2)
-state = engine.create_initial_state()
-
-# NEW (recommended)
-from app.board_manager import BoardManager
-board = BoardManager(board_type="hex8", num_players=2)
-state = board.create_initial_state()
-```
+- Import `GameEngine` from `app.game_engine`, not `app._game_engine_legacy`
+- Use `app.board_manager` only for lower-level board helpers; it is not the supported replacement public facade for the game engine package
+- `PhaseRequirementType` is the canonical enum for no-action and forced-elimination bookkeeping requirements
 
 ## See Also
 
-- `app.board_manager` - Current canonical game logic
+- `app.game_engine.phase_requirements` - canonical phase-requirement types
+- `app.board_manager` - lower-level board helpers used by rules and diagnostics
 - `src/shared/engine/` - TypeScript source of truth
