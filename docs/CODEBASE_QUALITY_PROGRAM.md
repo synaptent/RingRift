@@ -122,15 +122,16 @@ Status: in progress
 
 Current objectives:
 
-- drain the remaining low-risk `app.coordination` top-level facade consumers
-- move single-purpose helpers into explicit submodules before shrinking the facade
-- keep the remaining `startup_infrastructure.py` import fan-out isolated for a dedicated pass
+- shrink the `app.coordination` package facade itself now that runtime consumers no longer depend on it
+- move historically package-local helpers onto explicit submodules or internal modules
+- keep public API changes narrow and verified with import/package tests
 
 ## Latest Progress
 
 - Public docs and results snapshots were aligned to the April 13 state and guarded by consistency tests.
-- Runtime coordination imports were reduced to three intentional top-level facade consumers.
-- The next cleanup slice moves `run_random_selfplay.py` and the CLI coordination-status command onto explicit submodules, leaving only `scripts/p2p/startup_infrastructure.py` as the remaining runtime facade consumer.
+- Runtime coordination imports were reduced from three intentional top-level facade consumers to zero real runtime facade consumers outside the package itself.
+- `run_random_selfplay.py`, the CLI coordination-status command, and `scripts/p2p/startup_infrastructure.py` now import explicit owning modules instead of the top-level `app.coordination` package.
+- The next acceptance bar is a materially smaller `app.coordination.__init__` surface with package tests and import-hygiene tests staying green.
 
 ## Execution Protocol
 

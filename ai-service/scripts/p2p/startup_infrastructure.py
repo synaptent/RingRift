@@ -1199,36 +1199,38 @@ except ImportError:
 
 # New coordination features: OrchestratorRole, backpressure, sync_lock, bandwidth
 try:
-    from app.coordination import (
-        NodeResources,
-        # Orchestrator role management (SQLite-backed with heartbeat)
+    from app.coordination.orchestrator_registry import (
         OrchestratorRole,
-        # Queue backpressure
-        QueueType,
-        # Resource optimizer for cluster-wide PID-controlled optimization
-        ResourceOptimizer,
-        TransferPriority,
         acquire_orchestrator_role,
-        get_cluster_utilization,
-        get_host_targets,
-        get_optimal_concurrency,
-        get_resource_optimizer,
-        # Resource targets for unified utilization management
-        get_resource_targets,
-        get_target_job_count,
-        get_throttle_factor,
-        record_utilization,
-        release_bandwidth,
         release_orchestrator_role,
-        # Bandwidth management
-        request_bandwidth,
-        should_scale_down,
-        should_scale_up,
+    )
+    from app.coordination.queue_monitor import (
+        QueueType,
+        get_throttle_factor,
         should_stop_production,
         should_throttle_production,
-        # Sync mutex for data transfer coordination
-        sync_lock,
     )
+    from app.coordination.resource_optimizer import (
+        NodeResources,
+        ResourceOptimizer,
+        get_cluster_utilization,
+        get_optimal_concurrency,
+        get_resource_optimizer,
+    )
+    from app.coordination.resource_targets import (
+        get_host_targets,
+        get_resource_targets,
+        get_target_job_count,
+        record_utilization,
+        should_scale_down,
+        should_scale_up,
+    )
+    from app.coordination.sync_bandwidth import (
+        release_bandwidth,
+        request_bandwidth,
+    )
+    from app.coordination.sync_mutex import sync_lock
+    from app.coordination.types import TransferPriority
 
     # Import rate negotiation functions for cooperative utilization (60-80% target)
     from app.coordination.resource_optimizer import (

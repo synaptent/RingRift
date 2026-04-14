@@ -24,6 +24,7 @@ RATCHET_FILES = (
     "ai-service/scripts/cli.py",
     "ai-service/scripts/p2p/managers/selfplay/job_targeting.py",
     "ai-service/scripts/p2p/mixins/status_monitoring_mixin.py",
+    "ai-service/scripts/p2p/startup_infrastructure.py",
     "ai-service/scripts/run_model_elo_tournament.py",
     "ai-service/scripts/run_self_play_soak.py",
     "ai-service/scripts/unified_loop/data_collection.py",
@@ -45,9 +46,7 @@ def test_selected_runtime_modules_avoid_top_level_coordination_facade() -> None:
 
 
 def test_runtime_facade_import_sites_are_explicitly_inventory_controlled() -> None:
-    allowed = {
-        "ai-service/scripts/p2p/startup_infrastructure.py",
-    }
+    allowed: set[str] = set()
 
     actual: set[str] = set()
     for root in (REPO_ROOT / "ai-service" / "app", REPO_ROOT / "ai-service" / "scripts"):
