@@ -48,6 +48,10 @@ COORDINATION_TRAINING_README = REPO_ROOT / "ai-service" / "app" / "coordination"
 COORDINATION_DEPRECATION_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "DEPRECATION_GUIDE.md"
 DEPRECATED_TRAINING_README = REPO_ROOT / "ai-service" / "archive" / "deprecated_training" / "README.md"
 AI_SERVICE_MIGRATION_GUIDE = REPO_ROOT / "ai-service" / "docs" / "MIGRATION_GUIDE.md"
+UNIFIED_TRAINING_ORCHESTRATOR = REPO_ROOT / "ai-service" / "app" / "training" / "unified_orchestrator.py"
+P2P_INTEGRATION = REPO_ROOT / "ai-service" / "app" / "integration" / "p2p_integration.py"
+MODEL_LIFECYCLE = REPO_ROOT / "ai-service" / "app" / "integration" / "model_lifecycle.py"
+ARCHIVED_TRAINING_ORCHESTRATOR = REPO_ROOT / "ai-service" / "archive" / "deprecated_training" / "orchestrated_training.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -400,3 +404,25 @@ def test_ai_service_migration_guide_uses_current_training_compatibility_path() -
     assert "The direct `app.training.orchestrated_training` module path has been removed" in text
     assert "Use that root-package compatibility import only for short-lived migrations." in text
     assert "from app.training.orchestrated_training import (" not in text
+
+
+def test_training_docstrings_use_current_archived_orchestrator_story() -> None:
+    unified_text = UNIFIED_TRAINING_ORCHESTRATOR.read_text(encoding="utf-8")
+    p2p_text = P2P_INTEGRATION.read_text(encoding="utf-8")
+    lifecycle_text = MODEL_LIFECYCLE.read_text(encoding="utf-8")
+    archived_text = ARCHIVED_TRAINING_ORCHESTRATOR.read_text(encoding="utf-8")
+
+    assert "archive/deprecated_training/orchestrated_training.py" in unified_text
+    assert "app.training.train_loop.run_training_loop" in unified_text
+    assert "TrainingOrchestrator (orchestrated_training.py)" not in unified_text
+    assert "For higher-level pipeline orchestration, use TrainingOrchestrator." not in unified_text
+
+    assert "archived compatibility re-export from app.training" in p2p_text
+    assert "TrainingOrchestrator (orchestrated_training.py)" not in p2p_text
+
+    assert "archived compatibility re-export from" in lifecycle_text
+    assert "should only be used while migrating older code" in lifecycle_text
+    assert "For training operations, use UnifiedTrainingOrchestrator or TrainingOrchestrator." not in lifecycle_text
+
+    assert "from app.training import TrainingOrchestrator" in archived_text
+    assert "from app.training.orchestrated_training import TrainingOrchestrator" not in archived_text

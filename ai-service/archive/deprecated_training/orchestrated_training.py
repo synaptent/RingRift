@@ -8,8 +8,8 @@
     See ``app/training/ORCHESTRATOR_GUIDE.md`` for migration instructions.
 
 Migration:
-    # Old
-    from app.training.orchestrated_training import TrainingOrchestrator
+    # Compatibility path while migrating
+    from app.training import TrainingOrchestrator
     orchestrator = TrainingOrchestrator(config)
     await orchestrator.initialize()
 

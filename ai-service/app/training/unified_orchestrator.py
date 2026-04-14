@@ -13,8 +13,9 @@ This provides a single entry point for advanced training with all features
 properly integrated and coordinated.
 
 Related Modules:
-    - orchestrated_training.py: High-level manager coordination (rollback,
-      promotion, curriculum). Use when you need service orchestration.
+    - archive/deprecated_training/orchestrated_training.py: Archived manager
+      lifecycle compatibility surface, re-exported from ``app.training`` for
+      migrations only.
     - This module (unified_orchestrator.py): Low-level training execution
       (GPU training, data loading, distributed). Use for actual training runs.
 
@@ -819,13 +820,16 @@ class UnifiedTrainingOrchestrator:
     .. note:: Orchestrator Hierarchy (2025-12)
         - **UnifiedTrainingOrchestrator** (this): Step-level training operations
           (forward/backward pass, hot buffer, checkpoints, enhancements)
-        - **TrainingOrchestrator** (orchestrated_training.py): Manager lifecycle
-          coordination (checkpoint manager, rollback manager, data coordinator)
+        - **TrainingOrchestrator** (archived compatibility re-export from
+          ``app.training``): Manager lifecycle coordination for legacy callers
         - **ModelSyncCoordinator** (model_lifecycle.py): Model registry sync
         - **P2P Coordinators** (p2p_integration.py): P2P cluster REST API wrappers
 
     Use this class when you need to run training steps with advanced features.
-    For higher-level pipeline orchestration, use TrainingOrchestrator.
+    For higher-level pipeline orchestration, use
+    ``app.training.train_loop.run_training_loop`` or the archived
+    ``TrainingOrchestrator`` compatibility re-export from ``app.training`` only
+    while migrating older code.
 
     Provides a single entry point for training with:
     - Distributed training support

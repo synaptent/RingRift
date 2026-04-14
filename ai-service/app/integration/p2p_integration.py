@@ -382,7 +382,8 @@ class P2PAPIClient:
 #
 # Orchestrator Hierarchy (2025-12):
 #   - UnifiedTrainingOrchestrator (unified_orchestrator.py): Step-level training
-#   - TrainingOrchestrator (orchestrated_training.py): Manager lifecycle
+#   - TrainingOrchestrator (archived compatibility re-export from app.training):
+#     Manager lifecycle for legacy callers only
 #   - ModelSyncCoordinator (model_lifecycle.py): Model registry sync
 #   - P2P Coordinators (this file): P2P cluster REST API wrappers
 #
