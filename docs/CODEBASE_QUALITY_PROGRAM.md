@@ -144,6 +144,7 @@ Current objectives:
 - `app.errors` now has that package-surface ratchet too: focused tests lock key exports and ensure `dir(app.errors)` stays aligned with its declared public surface.
 - The next narrow coordination seam is `app.coordination.interfaces`: it is already a small, dependency-light protocol module, so the right move there is to ratchet its declared protocol surface and make package discovery intentional instead of leaving it implicit.
 - `app.coordination.interfaces` now has that package-surface ratchet too: focused tests lock its protocol exports, and `__dir__()` now makes the intended interface surface explicit for discoverability and future regression checks.
+- `app.coordination.queue_strategies` now follows the same pattern too: its tiny mixin package surface is locked under focused tests, and `__dir__()` now exposes that public package surface intentionally instead of relying on implicit module behavior.
 
 ## Execution Protocol
 

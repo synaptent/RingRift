@@ -5,6 +5,7 @@ from __future__ import annotations
 import app.coordination.cluster as cluster_pkg
 import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
+import app.coordination.queue_strategies as queue_strategies_pkg
 import app.coordination.selfplay as selfplay_pkg
 import app.coordination.status_reporting as status_reporting_pkg
 import app.coordination.training as training_pkg
@@ -60,6 +61,21 @@ def test_interfaces_module_declares_protocol_surface() -> None:
         exported = getattr(interfaces_pkg, name)
         assert exported.__module__ == "app.coordination.interfaces"
         assert name in dir(interfaces_pkg)
+
+
+def test_queue_strategies_package_declares_public_exports() -> None:
+    expected = [
+        "QueuePopulationHealthMixin",
+        "QueuePopulationStateMixin",
+        "QueuePopulationWorkMixin",
+    ]
+
+    assert queue_strategies_pkg.__all__ == expected
+    assert len(queue_strategies_pkg.__all__) == len(set(queue_strategies_pkg.__all__))
+    for name in expected:
+        exported = getattr(queue_strategies_pkg, name)
+        assert exported.__module__.startswith("app.coordination.queue_strategies.")
+        assert name in dir(queue_strategies_pkg)
 
 
 def test_selfplay_package_dir_lists_lazy_scheduler_exports() -> None:
