@@ -160,6 +160,7 @@ Current objectives:
 - The remaining overview docs now align with that same operator contract too: `docs/CURRENT_STATUS.md`, `docs/ARCHITECTURE_OVERVIEW.md`, `docs/REPOSITORY_MAP.md`, and `docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md` now all route readers toward `deploy_minimal_loops.sh`, `progress.json`, and `metrics.jsonl`, and the docs consistency tests ratchet those references so the supported operator story does not drift again.
 - The next low-risk package ratchets are landing outside coordination too: `app.interfaces`, `app.analysis`, and `app.db` now expose explicit `__dir__()` surfaces, and focused tests lock their declared package exports so those entrypoints stay intentional instead of relying on implicit module discovery.
 - The same package-surface cleanup now covers three more small top-level packages too: `app.observability`, `app.storage`, and `app.notation` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under cheap verification.
+- Another narrow package wave is now covered too: `app.events`, `app.sync`, and `app.validation` now expose explicit `__dir__()` surfaces, and focused package-export tests lock those public entrypoints under the same cheap ratchet pattern.
 
 ## Execution Protocol
 

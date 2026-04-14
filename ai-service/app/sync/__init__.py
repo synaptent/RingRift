@@ -35,3 +35,9 @@ __all__ = [
     "get_sync_urls",
     "load_hosts_config",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended sync surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

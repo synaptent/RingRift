@@ -41,3 +41,9 @@ __all__ = [
     "DataEventType",
     "StageEvent",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended events surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

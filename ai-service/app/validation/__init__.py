@@ -94,3 +94,9 @@ __all__ = [
     "validate",
     "validate_all",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended validation surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
