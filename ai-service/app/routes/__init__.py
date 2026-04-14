@@ -49,6 +49,12 @@ __all__ = [
 ]
 
 
+def __dir__() -> list[str]:
+    """Expose the intended routes surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
+
+
 def include_all_routes(app: FastAPI) -> None:
     """Include all route modules in the FastAPI app.
 

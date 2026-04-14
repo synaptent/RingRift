@@ -145,3 +145,9 @@ __all__ = [
     "create_default_multitask_config",
     "create_transformer_model",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended model surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

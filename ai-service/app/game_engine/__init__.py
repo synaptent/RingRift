@@ -75,3 +75,9 @@ __all__ = [
     "PhaseRequirement",
     "PhaseRequirementType",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended game-engine surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))

@@ -125,3 +125,9 @@ __all__ = [
     "print_cluster_status",
     "should_alert",
 ]
+
+
+def __dir__() -> list[str]:
+    """Expose the intended monitoring surface for discoverability."""
+
+    return sorted(set(globals()) | set(__all__))
