@@ -179,6 +179,7 @@ Current objectives:
 - The game-engine docs now match the actual package contract too: `app.game_engine/README.md` no longer mislabels the package as deprecated or shows the wrong `PhaseRequirement` fields, and the docs ratchet now locks the supported `app.game_engine` import surface plus the current phase-requirement example.
 - The coordination package guides are being brought up to the same bar too: `app.coordination.cluster/README.md` now reflects the lazy `health` / `transport` / `p2p` package layout and current health helpers, while `app.coordination.providers/README.md` now uses the enum-based root provider API and `ProviderRegistry` instead of dead string helpers and nonexistent provider methods.
 - The older provider-manager docs are being aligned too: `app.providers/README.md` now inventories `VastManager`, uses the current manager interface (`list_instances`, `get_instance`, `check_health`, `run_ssh_command`), and stops advertising removed SSH-config helpers.
+- The larger coordination and training guides now match the current facade/operator boundary too: `app.coordination/README.md` now describes the package root as a lazy compatibility facade, points trainer rollout to `deploy_minimal_loops.sh`, and uses the current focused coordination test slices instead of dead `mutants/tests` paths, while `app.training/README.md` now distinguishes the local `run_training_loop.py` utility from the supported minimal-loop rollout path and points operators at `minimal_alphazero_loop.py`, `progress.json`, and `metrics.jsonl`.
 
 ## Execution Protocol
 

@@ -16,6 +16,8 @@ DOCS_ROOT = REPO_ROOT / "docs"
 TARGET_CONFIGS = ("hex8_2p", "square8_2p", "square8_3p")
 OPERATOR_ENTRYPOINT_DOCS = (
     REPO_ROOT / "ai-service" / "README.md",
+    REPO_ROOT / "ai-service" / "app" / "coordination" / "README.md",
+    REPO_ROOT / "ai-service" / "app" / "training" / "README.md",
     REPO_ROOT / "ai-service" / "scripts" / "README.md",
     DOCS_ROOT / "ARCHITECTURE_OVERVIEW.md",
     DOCS_ROOT / "DEVELOPER_GUIDE.md",
@@ -37,6 +39,8 @@ GAME_ENGINE_README = REPO_ROOT / "ai-service" / "app" / "game_engine" / "README.
 COORDINATION_CLUSTER_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "cluster" / "README.md"
 COORDINATION_PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "providers" / "README.md"
 PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "providers" / "README.md"
+COORDINATION_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "README.md"
+TRAINING_README = REPO_ROOT / "ai-service" / "app" / "training" / "README.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -287,3 +291,23 @@ def test_providers_readme_matches_current_manager_surface() -> None:
     assert "run_ssh_command(instance, command)" in text
     assert "get_instance_status(instance_id)" not in text
     assert "get_ssh_config(instance_id)" not in text
+
+
+def test_coordination_readme_uses_current_facade_and_test_guidance() -> None:
+    text = COORDINATION_README.read_text(encoding="utf-8")
+
+    assert "lazy compatibility facade" in text
+    assert "deploy_minimal_loops.sh" in text
+    assert "tests/unit/coordination/test_package_exports.py" in text
+    assert "tests/unit/coordination/test_import_hygiene.py" in text
+    assert "mutants/tests/" not in text
+
+
+def test_training_readme_distinguishes_local_and_supported_operator_paths() -> None:
+    text = TRAINING_README.read_text(encoding="utf-8")
+
+    assert "Local orchestration utility" in text
+    assert "deploy_minimal_loops.sh" in text
+    assert "minimal_alphazero_loop.py" in text
+    assert "progress.json" in text
+    assert "metrics.jsonl" in text

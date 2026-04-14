@@ -2,6 +2,12 @@
 
 The `app/training/` module contains RingRift's complete neural network training pipeline, from selfplay data generation to model deployment. This README provides an overview of the pipeline architecture, key entry points, and common workflows.
 
+For supported trainer canaries, the operator path is
+`ai-service/scripts/deploy_minimal_loops.sh`, not a direct package import. That
+deploy flow preflights `ai-service/scripts/minimal_alphazero_loop.py`, and
+trainers publish live stage state to `<work-dir>/progress.json` plus durable
+iteration history to `<work-dir>/metrics.jsonl`.
+
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
@@ -108,16 +114,29 @@ python scripts/selfplay.py \
   --batch-size 64 --use-gpu
 ```
 
-### 3. Automated Training Loop
+### 3. Local Automated Training Loop
 
 ```bash
-# One-command pipeline: selfplay → export → train → evaluate
+# Local orchestration utility: selfplay → export → train → evaluate
 python scripts/run_training_loop.py \
   --board-type hex8 --num-players 2 \
   --selfplay-games 1000 \
   --training-epochs 50 \
   --auto-promote
 ```
+
+### 4. Supported Trainer Canary Rollout
+
+```bash
+# Dry-run the supported fleet rollout first
+./scripts/deploy_minimal_loops.sh --dry-run
+
+# Then deploy the minimal loop to trainer nodes
+./scripts/deploy_minimal_loops.sh
+```
+
+Operators should inspect `<work-dir>/progress.json` for live stage boundaries
+and `<work-dir>/metrics.jsonl` for the durable iteration log after rollout.
 
 ## Training Pipeline Flow
 
@@ -769,13 +788,17 @@ python -m app.training.train \
 ### Workflow 3: Continuous Improvement
 
 ```bash
-# Automated loop
+# Local automated loop
 python scripts/run_training_loop.py \
   --board-type hex8 --num-players 2 \
   --selfplay-games 1000 \
   --training-epochs 50 \
   --auto-promote
 ```
+
+For supported trainer canaries, deploy `minimal_alphazero_loop.py` via
+`deploy_minimal_loops.sh` instead of treating `run_training_loop.py` as the
+fleet operator entrypoint.
 
 ### Workflow 4: Model Promotion
 

@@ -2,12 +2,15 @@
 
 Cluster-wide coordination infrastructure for the RingRift AI training pipeline.
 
-**256 modules** (~180K LOC) providing event-driven orchestration, resource management, and fault tolerance.
-Counts are snapshots; run `find app/coordination -name "*.py" | wc -l` to refresh.
+`app.coordination` is a lazy compatibility facade over the coordination
+submodules used by the training stack. Use the package root for the intentionally
+re-exported entrypoints it advertises, and import focused submodules when you
+need narrow implementation details.
 
-**Last Updated**: December 30, 2025
-
-> **Architecture Status**: Production-ready. Major consolidation completed Dec 2025 - see `archive/deprecated_coordination/` for historical modules. Current architecture uses 124 daemon types (78 active, 11 deprecated) managed by `DaemonManager`.
+For supported trainer canaries, do not bootstrap coordination manually from this
+package. Use `ai-service/scripts/deploy_minimal_loops.sh`, which preflights
+`ai-service/scripts/minimal_alphazero_loop.py` and writes live stage state to
+`progress.json` plus durable iteration history to `metrics.jsonl`.
 
 ## Quick Start
 
@@ -29,6 +32,11 @@ print(f"Health: {health['status']} ({health['overall_health']:.0%})")
 # Graceful shutdown
 await shutdown_all_coordinators()
 ```
+
+Use `initialize_all_coordinators()` only for processes that explicitly need the
+full coordination stack. The supported trainer rollout path remains
+`deploy_minimal_loops.sh`, not ad-hoc coordination bootstrapping from package
+documentation snippets.
 
 ## Architecture Overview
 
@@ -505,9 +513,9 @@ These are **not** error conditions but normal async lifecycle states.
 ## Testing
 
 ```bash
-# Run coordination tests
-PYTHONPATH=. python -m pytest mutants/tests/test_coordination_integration.py -v
-PYTHONPATH=. python -m pytest mutants/tests/test_dead_letter_queue.py -v
+# Package surface and import-hygiene ratchets
+PYTHONPATH=. python -m pytest tests/unit/coordination/test_package_exports.py -q
+PYTHONPATH=. python -m pytest tests/unit/coordination/test_import_hygiene.py -q
 ```
 
 ## See Also
