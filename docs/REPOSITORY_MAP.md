@@ -57,9 +57,10 @@ This is the path that keeps training and inference aligned with the canonical TS
 
 - [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
 - [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
+- [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
 - [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
 
-If your goal is to reproduce the current research results, this is the path to follow.
+If your goal is to reproduce the current research results, this is the path to follow. For supported live canaries, use `deploy_minimal_loops.sh`; it preflights the minimal-loop test slice locally before restarting trainer nodes. During a run, treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log.
 
 ## Useful But Secondary
 
@@ -113,11 +114,14 @@ Use [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.m
 
 Read the supported path first, then move into:
 
+- [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
 - [`docs/operations`](/Users/armand/Development/RingRift/docs/operations)
 - [`docs/runbooks`](/Users/armand/Development/RingRift/docs/runbooks)
 - [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
 - [`ai-service/scripts/training_dashboard.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_dashboard.py)
 - [`ai-service/scripts/fleet_health_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/fleet_health_check.py)
+
+For active trainer work directories, prefer `progress.json` for live stage status and `metrics.jsonl` for the durable per-iteration record before digging into broader daemon or cluster logs.
 
 ## Bottom Line
 

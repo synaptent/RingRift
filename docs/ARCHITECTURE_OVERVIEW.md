@@ -53,6 +53,8 @@ That script owns the end-to-end self-improvement cycle on a single worker:
 
 The minimal loop is the training engine used for the current reported results. It is also the path wrapped by [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh).
 
+For supported live canaries, the operator entrypoint is [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh). That rollout path preflights `tests/unit/scripts/test_minimal_alphazero_loop.py` locally before it restarts trainer nodes unless an operator explicitly bypasses the guard. During a run, treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log.
+
 ### 4. The broader coordinator is support infrastructure
 
 The repository also contains a large amount of orchestration, cluster, daemon, and P2P machinery, especially under [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts) and [`ai-service/app/coordination`](/Users/armand/Development/RingRift/ai-service/app/coordination).
@@ -84,9 +86,11 @@ If you are approaching RingRift as an engineer or researcher, the most useful pa
 3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
 4. [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine)
 5. [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
-6. [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
-7. [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
-8. [`docs/RESEARCH_SNAPSHOT.md`](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
+6. [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
+7. [`docs/architecture/MINIMAL_LOOP_CONTRACT.md`](/Users/armand/Development/RingRift/docs/architecture/MINIMAL_LOOP_CONTRACT.md)
+8. [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
+9. [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
+10. [`docs/RESEARCH_SNAPSHOT.md`](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
 
 ## Current Training Shape
 

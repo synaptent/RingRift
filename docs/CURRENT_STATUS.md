@@ -10,6 +10,15 @@ For the current supported public claims and April 13 research state, use:
 - [RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
 - [docs/data/training_status.json](/Users/armand/Development/RingRift/docs/data/training_status.json)
 
+For the current supported operator and trainer path, use:
+
+- [DEVELOPER_GUIDE.md](/Users/armand/Development/RingRift/docs/DEVELOPER_GUIDE.md)
+- [MINIMAL_LOOP_CONTRACT.md](/Users/armand/Development/RingRift/docs/architecture/MINIMAL_LOOP_CONTRACT.md)
+- [deploy_minimal_loops.sh](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
+- [SCRIPT_INVENTORY.md](/Users/armand/Development/RingRift/docs/SCRIPT_INVENTORY.md)
+
+For current trainer work directories, treat `progress.json` as the live stage-status file and `metrics.jsonl` as the durable iteration log.
+
 This is an owner-facing snapshot for Armand. It is not a marketing document.
 
 ## April 10 Snapshot Sources

@@ -11,6 +11,13 @@ The project should not keep reinventing cluster infrastructure around the minima
 
 Use the minimal loop for reproducible proof runs and live canaries.
 
+In practice that means:
+
+- use [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh) for local reproducibility
+- use [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh) for supported canary rollouts
+- treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log
+- keep the deploy preflight in place so trainer rollouts prove the minimal-loop path locally before they restart nodes
+
 Use the larger coordinator/P2P system as the source of reusable infrastructure, not as an automatic replacement for the proof harness.
 
 Do not switch active proof runs back to the full coordinator until the coordinator path is verified against the same rules and experiment contracts that made the minimal-loop results credible.

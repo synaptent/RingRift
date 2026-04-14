@@ -14,6 +14,16 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 DOCS_ROOT = REPO_ROOT / "docs"
 
 TARGET_CONFIGS = ("hex8_2p", "square8_2p", "square8_3p")
+OPERATOR_ENTRYPOINT_DOCS = (
+    REPO_ROOT / "ai-service" / "README.md",
+    REPO_ROOT / "ai-service" / "scripts" / "README.md",
+    DOCS_ROOT / "ARCHITECTURE_OVERVIEW.md",
+    DOCS_ROOT / "DEVELOPER_GUIDE.md",
+    DOCS_ROOT / "REPOSITORY_MAP.md",
+    DOCS_ROOT / "SCRIPT_INVENTORY.md",
+    DOCS_ROOT / "architecture" / "MINIMAL_LOOP_CONTRACT.md",
+    DOCS_ROOT / "architecture" / "TRAINING_INFRASTRUCTURE_STRATEGY.md",
+)
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -71,6 +81,20 @@ def test_current_status_doc_is_explicitly_historical() -> None:
     assert "RESULTS.md" in text
     assert "RESEARCH_SNAPSHOT.md" in text
     assert "training_status.json" in text
+    assert "DEVELOPER_GUIDE.md" in text
+    assert "MINIMAL_LOOP_CONTRACT.md" in text
+    assert "deploy_minimal_loops.sh" in text
+    assert "progress.json" in text
+    assert "metrics.jsonl" in text
+
+
+def test_supported_operator_docs_share_minimal_loop_entrypoints() -> None:
+    for path in OPERATOR_ENTRYPOINT_DOCS:
+        text = path.read_text(encoding="utf-8")
+
+        assert "deploy_minimal_loops.sh" in text, f"{path} should mention the supported canary rollout entrypoint"
+        assert "progress.json" in text, f"{path} should mention the live trainer status file"
+        assert "metrics.jsonl" in text, f"{path} should mention the durable trainer history log"
 
 
 def test_todo_routes_readers_to_current_sources() -> None:
