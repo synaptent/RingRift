@@ -11,6 +11,7 @@ import app.coordination.interfaces as interfaces_pkg
 import app.coordination.lifecycle as lifecycle_pkg
 import app.coordination.mixins as mixins_pkg
 import app.coordination.node_availability as node_availability_pkg
+import app.coordination.node_availability.providers as node_availability_providers_pkg
 import app.coordination.providers as providers_pkg
 import app.coordination.queue_strategies as queue_strategies_pkg
 import app.coordination.selfplay as selfplay_pkg
@@ -252,6 +253,22 @@ def test_node_availability_package_declares_public_exports() -> None:
         exported = getattr(node_availability_pkg, name)
         assert getattr(exported, "__module__", type(exported).__module__) == module_name
         assert name in dir(node_availability_pkg)
+
+
+def test_node_availability_providers_package_declares_public_exports() -> None:
+    expected = {
+        "VastChecker": "app.coordination.node_availability.providers.vast_checker",
+        "LambdaChecker": "app.coordination.node_availability.providers.lambda_checker",
+        "RunPodChecker": "app.coordination.node_availability.providers.runpod_checker",
+        "TailscaleChecker": "app.coordination.node_availability.providers.tailscale_checker",
+    }
+
+    assert node_availability_providers_pkg.__all__ == list(expected)
+    assert len(node_availability_providers_pkg.__all__) == len(set(node_availability_providers_pkg.__all__))
+    for name, module_name in expected.items():
+        exported = getattr(node_availability_providers_pkg, name)
+        assert exported.__module__ == module_name
+        assert name in dir(node_availability_providers_pkg)
 
 
 def test_providers_package_declares_public_exports() -> None:

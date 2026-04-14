@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -11,6 +12,20 @@ from types import SimpleNamespace
 import numpy as np
 
 from scripts import minimal_alphazero_loop as loop
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+CRITICAL_LOOP_FILES = (
+    "ai-service/scripts/minimal_alphazero_loop.py",
+    "ai-service/scripts/jsonl_to_npz.py",
+    "ai-service/scripts/lib/loop_self_healing.py",
+    "ai-service/scripts/lib/minimal_loop_strategy.py",
+    "ai-service/scripts/lib/model_quality_gate.py",
+    "ai-service/scripts/lib/training_probes.py",
+    "ai-service/app/training/train.py",
+    "ai-service/app/training/env.py",
+    "ai-service/app/ai/gumbel_mcts_ai.py",
+)
 
 
 def _write_iteration_npz(path: Path, marker: float) -> None:
@@ -319,7 +334,28 @@ def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):
     assert "error" not in result
     cmd = captured["cmd"]
     assert isinstance(cmd, list)
+    assert cmd[1:3] == ["-m", "app.training.train"]
     assert cmd[cmd.index("--lr-scheduler") + 1] == "none"
+
+
+def test_critical_minimal_loop_modules_avoid_top_level_facade_imports() -> None:
+    for relative_path in CRITICAL_LOOP_FILES:
+        tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module in {
+                "app.training",
+                "app.coordination",
+                "app.distributed",
+            }:
+                raise AssertionError(relative_path)
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in {
+                        "app.training",
+                        "app.coordination",
+                        "app.distributed",
+                    }:
+                        raise AssertionError(relative_path)
 
 
 def test_staged_evaluate_rotates_candidate_seat_evenly(monkeypatch):

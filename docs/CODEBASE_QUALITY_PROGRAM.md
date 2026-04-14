@@ -124,6 +124,7 @@ Current objectives:
 
 - keep shrinking and locking the remaining `app.coordination` public surface one submodule at a time
 - prefer narrow package-surface ratchets and explicit `dir()` discoverability before larger refactors
+- protect the minimal training loop path with direct smoke/import-hygiene guards before assuming package-surface refactors are safe for trainer deployment
 - keep each batch small enough to verify with focused coordination tests and clean checkpoints
 
 ## Latest Progress
@@ -150,6 +151,8 @@ Current objectives:
 - `app.coordination.feedback`, `app.coordination.mixins`, and `app.coordination.node_availability` now follow the same pattern too: their package surfaces are locked under focused tests, and each package now exposes its intended public API explicitly via `__dir__()` for discovery and drift checks.
 - `app.coordination.providers` now follows the same pattern too: its provider base types, registry exports, and package-level factory functions are locked under focused tests, and `__dir__()` now exposes that public provider API intentionally.
 - `app.coordination.hashgraph` now follows the same pattern too: its full consensus / DAG / promotion public surface is locked under focused tests, and `__dir__()` now makes that large but intentional package API explicit for discovery and drift checks.
+- `app.coordination.node_availability.providers` now follows the same pattern too: its provider-checker package surface is locked under focused tests, and `__dir__()` now makes those node-availability adapters explicit for discovery and drift checks.
+- The minimal training loop now has a direct regression guard too: focused tests lock its subprocess entrypoint to `app.training.train` and ratchet the critical loop files away from top-level `app.training`, `app.coordination`, and `app.distributed` facade imports so future cleanups cannot silently route the trainer through those package entrypoints.
 
 ## Execution Protocol
 
