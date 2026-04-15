@@ -5,27 +5,68 @@ from __future__ import annotations
 import importlib
 import warnings
 
+EXPECTED_PUBLIC_TRAINING_EXPORTS = [
+    "UnifiedTrainingOrchestrator",
+    "OrchestratorConfig",
+    "TrainingOrchestrator",
+    "TrainingOrchestratorConfig",
+    "TrainingOrchestratorState",
+    "get_training_orchestrator",
+    "UnifiedModelStore",
+    "ModelInfo",
+    "ModelStoreStage",
+    "ModelStoreType",
+    "get_model_store",
+    "get_production_model",
+    "register_model",
+    "promote_model",
+    "PromotionController",
+    "PromotionCriteria",
+    "PromotionDecision",
+    "PromotionType",
+    "get_promotion_controller",
+    "RegressionConfig",
+    "RegressionDetector",
+    "RegressionSeverity",
+    "get_regression_detector",
+    "SelfplayConfig",
+    "EngineMode",
+    "OutputFormat",
+    "create_argument_parser",
+    "get_default_config",
+    "get_production_config",
+    "parse_selfplay_args",
+    "RingRiftDataset",
+    "WeightedRingRiftDataset",
+    "StreamingDataLoader",
+    "WeightedStreamingDataLoader",
+    "HotDataBuffer",
+    "create_hot_buffer",
+    "DistributedConfig",
+    "setup_distributed",
+    "cleanup_distributed",
+    "is_main_process",
+    "EBMOOnlineAI",
+    "EBMOOnlineConfig",
+    "EBMOOnlineLearner",
+    "OnlineLearningConfig",
+    "create_online_learner",
+    "TemperatureScheduler",
+    "TemperatureConfig",
+    "create_temperature_scheduler",
+    "wilson_score_interval",
+]
 
-def test_package_dir_lists_key_public_exports() -> None:
+
+def test_package_dir_lists_declared_public_training_surface() -> None:
     module = importlib.import_module("app.training")
 
-    expected = {
-        "DataAugmentor",
-        "PromotionController",
-        "TemperatureScheduler",
-        "SelfplayConfig",
-        "RingRiftDataset",
-        "StreamingDataLoader",
-        "UnifiedTrainingOrchestrator",
-        "get_model_architecture",
-        "get_model_store",
-        "HAS_TRAIN_CONFIG",
-        "HAS_TRAIN_VALIDATION",
-        "HAS_HIGH_TIER_CONFIG",
-    }
+    assert module.__all__ == EXPECTED_PUBLIC_TRAINING_EXPORTS
+    assert len(module.__all__) == 49
+    assert len(module.__all__) < 50
+    assert len(module.__all__) == len(set(module.__all__))
 
-    assert expected.issubset(set(module.__all__))
-    for name in expected:
+    for name in EXPECTED_PUBLIC_TRAINING_EXPORTS:
         assert hasattr(module, name)
         assert name in dir(module)
 
@@ -33,7 +74,6 @@ def test_package_dir_lists_key_public_exports() -> None:
 def test_package_dir_covers_declared_public_surface() -> None:
     module = importlib.import_module("app.training")
 
-    assert len(module.__all__) == len(set(module.__all__))
     assert set(module.__all__).issubset(set(dir(module)))
 
 
@@ -51,6 +91,12 @@ def test_stale_training_facade_exports_are_removed() -> None:
     module = importlib.import_module("app.training")
 
     stale_exports = {
+        "DataAugmentor",
+        "DistributedMetrics",
+        "HAS_HIGH_TIER_CONFIG",
+        "HAS_TRAIN_CONFIG",
+        "HAS_TRAIN_VALIDATION",
+        "get_model_architecture",
         "HAS_CONFIG_RESOLVER",
         "AugmentorConfig",
         "ResolvedTrainingParams",

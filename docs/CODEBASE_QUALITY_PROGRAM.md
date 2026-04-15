@@ -10,10 +10,10 @@ These are the current working scores for the overall repository:
 
 | Dimension         | Current | Target |
 | ----------------- | ------: | -----: |
-| Code quality      |   `7.5` |  `9.0` |
-| Presentability    |   `7.0` |  `9.0` |
-| Understandability |   `5.5` |  `8.5` |
-| Maintainability   |   `6.0` |  `8.5` |
+| Code quality      |   `8.0` |  `9.0` |
+| Presentability    |   `8.8` |  `9.0` |
+| Understandability |   `7.7` |  `8.5` |
+| Maintainability   |   `7.3` |  `8.5` |
 
 The goal is not to cosmetically relabel the repo. The goal is to make the supported path, the public APIs, and the active operational surface easier to trust and easier to change safely.
 
@@ -216,6 +216,7 @@ Current objectives:
 - The same compatibility wording now covers the other stage-only aliases too: `app/coordination/stage_events.py`, `app/coordination/event_emitters.py`, `app/coordination/pipeline_actions.py`, `app/distributed/sync_orchestrator.py`, `app/coordination/data_pipeline_orchestrator.py`, and `app/coordination/task_coordinator.py` now mark `SYNC_COMPLETE`, `PARITY_VALIDATION_COMPLETE`, and `EVALUATION_COMPLETE` as legacy stage aliases while routing public/router guidance to `DATA_SYNC_COMPLETED`, `PARITY_VALIDATION_COMPLETED`, and `EVALUATION_COMPLETED`.
 - The remaining training-stage compatibility comments are now explicit too: `app/coordination/async_training_bridge.py` and `app/coordination/training_protocol.py` now call `TRAINING_COMPLETE` out as a legacy stage alias while routing public/router guidance to `TRAINING_COMPLETED`, and the docs ratchet now locks that wording as well.
 - The next `app.training.__init__` facade drain is now landing as real surface contraction too: dead exports from the removed config-resolver path (`HAS_CONFIG_RESOLVER`, `ResolvedTrainingParams`, `resolve_training_params`, `validate_model_id_for_board`) and the broken `AugmentorConfig`/model-factory leftovers are gone from the public package surface, while focused tests now assert that every declared `app.training` export actually resolves.
+- The next deeper `app.training.__init__` contraction is now in place too: the root training facade is down from `215` declared exports to `49` intentionally public symbols, while specialized helpers now require direct submodule imports instead of accumulating indefinitely at `app.training`.
 - The public project entrypoint is now being tightened too: the root `README.md` now leads with the game-plus-training story, the checked-in headline results (`hex8_2p` at `1979.8`, `square8_2p` at `1601.8`), a quick visual sketch of the board state vocabulary, a direct `npm run dev` play path, and a real minimal-loop training command linked back to `RESULTS.md` and `REPRODUCIBILITY.md`.
 - The AI-service Python-file audit is now grounded in the actual workspace shape too: the scary raw count was mostly local `.venv` payload (`14015` of `17381` `*.py` files), not checked-in source, so this pass pruned only the truly dead tracked archive helpers/tests (`7` files, taking the repo-relevant count from `3366` to `3359`) and cleared generated cache clutter (`652` `__pycache__` dirs and `4826` `*.pyc` files) without touching live archive-backed compatibility modules.
 - The docs front door is now being narrowed too: `docs/INDEX.md` is now a curated living-doc index instead of a warehouse manifest, obvious top-level drafts/plans (`ARCHITECTURAL_IMPROVEMENT_PLAN.md`, `P2P_DECOMPOSITION_PLAN.md`, `PLAN_AI_WORK.md`, `BLOG_POST_OUTLINE.md`, `CASE_STUDY_DRAFT.md`) now live under `docs/archive/`, and the top-level docs directory is back down to `19` active markdown files.

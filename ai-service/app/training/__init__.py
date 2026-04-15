@@ -7,6 +7,11 @@ This package provides training infrastructure including:
 - Tier promotion for difficulty ladder
 - Consolidated training components (December 2025)
 
+The root package is intentionally narrow. Prefer direct submodule imports for
+specialized features (`app.training.elo_service`, `app.training.data_validation`,
+`app.training.parallel_selfplay`, etc.) rather than treating ``app.training`` as
+a grab-bag facade for the entire training tree.
+
 Architecture Overview (December 2025)
 =====================================
 
@@ -73,7 +78,6 @@ Quick Start
         setup_distributed,
         cleanup_distributed,
         is_main_process,
-        DistributedMetrics,
     )
 
     setup_distributed()
@@ -87,7 +91,7 @@ Quick Start
     decision = controller.should_promote(model_id, metrics)
 """
 
-__all__ = [
+_DECLARED_EXPORTS = [
     # Feature flags
     "HAS_AUGMENTATION",
     "HAS_CHECKPOINTING",
@@ -913,6 +917,65 @@ try:
     HAS_TRAIN_VALIDATION = True
 except ImportError:
     HAS_TRAIN_VALIDATION = False
+
+
+# Public root-package surface (April 2026)
+# Keep this list intentionally small. Specialized functionality should be
+# imported from owning submodules instead of the top-level training facade.
+__all__ = [
+    "UnifiedTrainingOrchestrator",
+    "OrchestratorConfig",
+    "TrainingOrchestrator",
+    "TrainingOrchestratorConfig",
+    "TrainingOrchestratorState",
+    "get_training_orchestrator",
+    "UnifiedModelStore",
+    "ModelInfo",
+    "ModelStoreStage",
+    "ModelStoreType",
+    "get_model_store",
+    "get_production_model",
+    "register_model",
+    "promote_model",
+    "PromotionController",
+    "PromotionCriteria",
+    "PromotionDecision",
+    "PromotionType",
+    "get_promotion_controller",
+    "RegressionConfig",
+    "RegressionDetector",
+    "RegressionSeverity",
+    "get_regression_detector",
+    "SelfplayConfig",
+    "EngineMode",
+    "OutputFormat",
+    "create_argument_parser",
+    "get_default_config",
+    "get_production_config",
+    "parse_selfplay_args",
+    "RingRiftDataset",
+    "WeightedRingRiftDataset",
+    "StreamingDataLoader",
+    "WeightedStreamingDataLoader",
+    "HotDataBuffer",
+    "create_hot_buffer",
+    "DistributedConfig",
+    "setup_distributed",
+    "cleanup_distributed",
+    "is_main_process",
+    "EBMOOnlineAI",
+    "EBMOOnlineConfig",
+    "EBMOOnlineLearner",
+    "OnlineLearningConfig",
+    "create_online_learner",
+    "TemperatureScheduler",
+    "TemperatureConfig",
+    "create_temperature_scheduler",
+    "wilson_score_interval",
+]
+
+for _name in set(_DECLARED_EXPORTS) - set(__all__):
+    globals().pop(_name, None)
 
 
 def __dir__() -> list[str]:
