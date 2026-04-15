@@ -72,7 +72,8 @@ from .queue import (
 
 # Deprecated: cluster_coordinator imports are now lazy to avoid warnings on every import
 # Use app.coordination.task_coordinator and app.coordination.orchestrator_registry instead
-# These symbols are still available for backward compatibility via __getattr__
+# Removal target: Q3 2026 once all remaining callers are migrated off app.distributed.
+# These symbols are still available for backward compatibility via __getattr__.
 _CLUSTER_COORDINATOR_SYMBOLS = {
     "ClusterCoordinator",
     "TaskRole",
@@ -80,6 +81,7 @@ _CLUSTER_COORDINATOR_SYMBOLS = {
     "TaskInfo",
     "check_and_abort_if_role_held",
 }
+_CLUSTER_COORDINATOR_REMOVAL_TARGET = "Q3 2026"
 from .circuit_breaker import (
     CircuitBreaker,
     CircuitOpenError,
@@ -404,6 +406,7 @@ def __getattr__(name: str) -> type:
             "  - TaskRole -> app.coordination.orchestrator_registry.OrchestratorRole\n"
             "  - TaskInfo -> app.coordination.orchestrator_registry.OrchestratorInfo\n"
             "  - check_and_abort_if_role_held -> OrchestratorRegistry.acquire_role()\n"
+            f"Removal target: {_CLUSTER_COORDINATOR_REMOVAL_TARGET}.\n"
             "See ai-service/docs/CONSOLIDATION_STATUS_2025_12_19.md for migration guide.",
             DeprecationWarning,
             stacklevel=2,

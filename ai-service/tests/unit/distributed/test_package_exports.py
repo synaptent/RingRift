@@ -53,3 +53,5 @@ def test_lazy_deprecated_symbol_access_emits_warning() -> None:
 
     warning_text = [str(item.message) for item in caught]
     assert any("deprecated" in text.lower() for text in warning_text)
+    assert any("Q3 2026" in text for text in warning_text)
+    assert any("task_coordinator.TaskCoordinator" in text for text in warning_text)

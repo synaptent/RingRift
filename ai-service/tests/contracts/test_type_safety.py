@@ -11,7 +11,8 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = AI_SERVICE_ROOT / "app"
 RULES_ROOT = APP_ROOT / "rules"
 TYPE_IGNORE_PATTERN = re.compile(r"# type: ignore(?:\[[^]]+\])?")
-TYPE_IGNORE_UPPER_BOUND = 205  # Current baseline 200 + 5 margin for deliberate future additions.
+TYPE_IGNORE_BASELINE = 199
+TYPE_IGNORE_UPPER_BOUND = TYPE_IGNORE_BASELINE + 5
 
 
 def _iter_python_files(root: Path) -> list[Path]:
