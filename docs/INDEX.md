@@ -15,6 +15,7 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 | [../QUICKSTART.md](../QUICKSTART.md)         | Local setup for the supported path                               |
 | [RESULTS.md](RESULTS.md)                     | Checked-in evidence, caveats, and charts                         |
 | [REPRODUCIBILITY.md](REPRODUCIBILITY.md)     | Exact training commands, hardware, and artifact locations        |
+| [LESSONS_LEARNED.md](LESSONS_LEARNED.md)     | Engineering retrospective on what failed, what worked, and why   |
 | [PROJECT_BRIEF.md](PROJECT_BRIEF.md)         | Short technical orientation for new readers                      |
 | [RESEARCH_SNAPSHOT.md](RESEARCH_SNAPSHOT.md) | Short shareable research summary                                 |
 
