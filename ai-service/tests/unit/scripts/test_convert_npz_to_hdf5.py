@@ -255,7 +255,6 @@ class TestConvertNpzToHdf5:
             )
 
 
-@pytest.mark.skipif(not HAS_H5PY, reason="h5py not installed")
 class TestConvertDirectory:
     """Test cases for batch directory conversion."""
 
