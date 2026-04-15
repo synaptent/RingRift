@@ -203,7 +203,11 @@ def add_db_args(parser):
 - `app/training/model_factory.py` (347 lines) - Training
 - `app/ai/unified_loader.py` (~150 lines) - Detection
 
-**Solution:** Single `app/ai/model_loading.py` with:
+**Current consolidation target:** keep a shared model-loading surface built
+around `app/ai/neural_net/model_factory.py` plus `app/ai/unified_loader.py`
+rather than introducing a new single-file loader module.
+
+**Shared responsibilities:**
 
 - Board-specific model instantiation
 - Memory tier handling (high/low/v3/v4)

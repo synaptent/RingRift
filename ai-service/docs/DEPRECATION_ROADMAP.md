@@ -45,13 +45,13 @@ This document tracks all deprecated modules, functions, and exports scheduled fo
 
 ### Sync Modules
 
-| Module                                          | Replacement                      | Status     |
-| ----------------------------------------------- | -------------------------------- | ---------- |
-| `app/distributed/unified_data_sync.py`          | `SyncFacade` or `AutoSyncDaemon` | DEPRECATED |
-| `app/coordination/replication_monitor.py`       | `unified_replication_daemon.py`  | ARCHIVED   |
-| `app/coordination/replication_repair_daemon.py` | `unified_replication_daemon.py`  | ARCHIVED   |
-| `app/coordination/model_distribution_daemon.py` | `unified_distribution_daemon.py` | ARCHIVED   |
-| `app/coordination/npz_distribution_daemon.py`   | `unified_distribution_daemon.py` | ARCHIVED   |
+| Module                                          | Replacement                                                                                | Status     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------- |
+| `app/distributed/unified_data_sync.py`          | `SyncFacade` or `AutoSyncDaemon`                                                           | DEPRECATED |
+| `app/coordination/replication_monitor.py`       | `unified_replication_daemon.py`                                                            | ARCHIVED   |
+| `app/coordination/replication_repair_daemon.py` | `unified_replication_daemon.py`                                                            | ARCHIVED   |
+| `app/coordination/model_distribution_daemon.py` | `app/coordination/unified_distribution_daemon.py` (`create_unified_distribution_daemon()`) | ARCHIVED   |
+| `app/coordination/npz_distribution_daemon.py`   | `app/coordination/unified_distribution_daemon.py` (`create_unified_distribution_daemon()`) | ARCHIVED   |
 
 ### Training Modules
 
@@ -186,17 +186,17 @@ python -W default::DeprecationWarning your_script.py
 
 The following modules have been moved to `archive/deprecated_coordination/`:
 
-| Original Location              | Archive Location                           | Date Archived |
-| ------------------------------ | ------------------------------------------ | ------------- |
-| `queue_populator_daemon.py`    | `_deprecated_queue_populator_daemon.py`    | Dec 27, 2025  |
-| `replication_monitor.py`       | `_deprecated_replication_monitor.py`       | Dec 27, 2025  |
-| `replication_repair_daemon.py` | `_deprecated_replication_repair_daemon.py` | Dec 27, 2025  |
-| `model_distribution_daemon.py` | `_deprecated_model_distribution_daemon.py` | Dec 27, 2025  |
-| `npz_distribution_daemon.py`   | `_deprecated_npz_distribution_daemon.py`   | Dec 27, 2025  |
-| `vast_idle_daemon.py`          | `_deprecated_vast_idle_daemon.py`          | Dec 26, 2025  |
-| `lambda_idle_daemon.py`        | `_deprecated_lambda_idle_daemon.py`        | Dec 26, 2025  |
-| `auto_evaluation_daemon.py`    | `_deprecated_auto_evaluation_daemon.py`    | Dec 27, 2025  |
-| `resources/` (directory)       | `_deprecated_resources/`                   | Dec 27, 2025  |
+| Original Location                               | Archive Location                                            | Date Archived |
+| ----------------------------------------------- | ----------------------------------------------------------- | ------------- |
+| `queue_populator_daemon.py`                     | `_deprecated_queue_populator_daemon.py`                     | Dec 27, 2025  |
+| `replication_monitor.py`                        | `_deprecated_replication_monitor.py`                        | Dec 27, 2025  |
+| `replication_repair_daemon.py`                  | `_deprecated_replication_repair_daemon.py`                  | Dec 27, 2025  |
+| `app/coordination/model_distribution_daemon.py` | `app/coordination/_deprecated_model_distribution_daemon.py` | Dec 27, 2025  |
+| `app/coordination/npz_distribution_daemon.py`   | `app/coordination/_deprecated_npz_distribution_daemon.py`   | Dec 27, 2025  |
+| `vast_idle_daemon.py`                           | `_deprecated_vast_idle_daemon.py`                           | Dec 26, 2025  |
+| `lambda_idle_daemon.py`                         | `_deprecated_lambda_idle_daemon.py`                         | Dec 26, 2025  |
+| `auto_evaluation_daemon.py`                     | `_deprecated_auto_evaluation_daemon.py`                     | Dec 27, 2025  |
+| `resources/` (directory)                        | `_deprecated_resources/`                                    | Dec 27, 2025  |
 
 ---
 

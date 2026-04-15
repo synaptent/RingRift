@@ -81,6 +81,7 @@ EVENT_CATALOG_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_CATALOG.md"
 EVENT_PAYLOAD_SCHEMAS_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_PAYLOAD_SCHEMAS.md"
 ADR_EVENT_DRIVEN_ARCHITECTURE_DOC = REPO_ROOT / "ai-service" / "docs" / "adr" / "ADR-001-event-driven-architecture.md"
 INTEGRATION_CHECKLIST_DOC = REPO_ROOT / "ai-service" / "docs" / "INTEGRATION_CHECKLIST.md"
+CLUSTER_INTEGRATION_GUIDE_DOC = REPO_ROOT / "ai-service" / "docs" / "CLUSTER_INTEGRATION_GUIDE.md"
 EVENT_HANDLER_PATTERNS_DOC = REPO_ROOT / "ai-service" / "docs" / "coordination" / "EVENT_HANDLER_PATTERNS.md"
 EVENT_SUBSCRIPTION_MATRIX_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_SUBSCRIPTION_MATRIX.md"
 EVENT_WIRING_DIAGRAM_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_WIRING_DIAGRAM.md"
@@ -845,6 +846,23 @@ def test_distribution_planning_and_migration_docs_use_unified_distribution_story
     assert "await daemon.distribute(DataType.NPZ" not in migration_text
 
 
+def test_distribution_reference_docs_use_unified_distribution_paths() -> None:
+    cluster_text = CLUSTER_INTEGRATION_GUIDE_DOC.read_text(encoding="utf-8")
+    roadmap_text = DEPRECATION_ROADMAP_DOC.read_text(encoding="utf-8")
+
+    assert "app/coordination/unified_distribution_daemon.py" in cluster_text
+    assert "create_unified_distribution_daemon()" in cluster_text
+    assert "app/coordination/model_distribution_daemon.py" in cluster_text
+    assert "app/coordination/npz_distribution_daemon.py" in cluster_text
+
+    assert "app/coordination/unified_distribution_daemon.py" in roadmap_text
+    assert "create_unified_distribution_daemon()" in roadmap_text
+    assert "app/coordination/_deprecated_model_distribution_daemon.py" in roadmap_text
+    assert "app/coordination/_deprecated_npz_distribution_daemon.py" in roadmap_text
+    assert "| `model_distribution_daemon.py` | `_deprecated_model_distribution_daemon.py`" not in roadmap_text
+    assert "| `npz_distribution_daemon.py`   | `_deprecated_npz_distribution_daemon.py`" not in roadmap_text
+
+
 def test_data_events_tracker_and_assessment_use_package_layout() -> None:
     tracker_text = DEPRECATION_TRACKER_DOC.read_text(encoding="utf-8")
     assessment_text = INTEGRATION_ASSESSMENT_DEC2025_DOC.read_text(encoding="utf-8")
@@ -854,6 +872,8 @@ def test_data_events_tracker_and_assessment_use_package_layout() -> None:
     assert "Direct enum imports / package helpers" in tracker_text
     assert "`app/distributed/data_events/`" in assessment_text
     assert "`event_types.py`, `event_bus.py`, `emit.py`; 4,309 lines total" in assessment_text
+    assert "`app/ai/neural_net/model_factory.py` plus `app/ai/unified_loader.py`" in assessment_text
+    assert "`app/ai/model_loading.py`" not in assessment_text
     assert "`app/distributed/data_events.py`" not in tracker_text
     assert "`app/distributed/data_events.py`" not in assessment_text
 
