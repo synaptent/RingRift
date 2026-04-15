@@ -83,6 +83,7 @@ EVENT_SYSTEM_REFERENCE_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_SYSTEM_R
 EVENT_CATALOG_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_CATALOG.md"
 EVENT_PAYLOAD_SCHEMAS_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_PAYLOAD_SCHEMAS.md"
 ADR_EVENT_DRIVEN_ARCHITECTURE_DOC = REPO_ROOT / "ai-service" / "docs" / "adr" / "ADR-001-event-driven-architecture.md"
+COORDINATION_API_REFERENCE_DOC = REPO_ROOT / "ai-service" / "docs" / "COORDINATION_API_REFERENCE.md"
 INTEGRATION_CHECKLIST_DOC = REPO_ROOT / "ai-service" / "docs" / "INTEGRATION_CHECKLIST.md"
 CLUSTER_INTEGRATION_GUIDE_DOC = REPO_ROOT / "ai-service" / "docs" / "CLUSTER_INTEGRATION_GUIDE.md"
 EVENT_HANDLER_PATTERNS_DOC = REPO_ROOT / "ai-service" / "docs" / "coordination" / "EVENT_HANDLER_PATTERNS.md"
@@ -897,9 +898,18 @@ def test_data_events_tracker_and_assessment_use_package_layout() -> None:
     assert "`app/distributed/data_events/`" in assessment_text
     assert "`event_types.py`, `event_bus.py`, `emit.py`; 4,309 lines total" in assessment_text
     assert "`app/ai/neural_net/model_factory.py` plus `app/ai/unified_loader.py`" in assessment_text
+    assert "NPZ_EXPORT_COMPLETE" in assessment_text
+    assert "NPZ_EXPORT_COMPLETED" not in assessment_text
     assert "`app/ai/model_loading.py`" not in assessment_text
     assert "`app/distributed/data_events.py`" not in tracker_text
     assert "`app/distributed/data_events.py`" not in assessment_text
+
+
+def test_coordination_api_reference_uses_canonical_npz_export_event_name() -> None:
+    text = COORDINATION_API_REFERENCE_DOC.read_text(encoding="utf-8")
+
+    assert 'router.subscribe("NPZ_EXPORT_COMPLETE", on_export_complete)' in text
+    assert "NPZ_EXPORT_COMPLETED" not in text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

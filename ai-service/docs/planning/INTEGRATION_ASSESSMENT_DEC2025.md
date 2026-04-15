@@ -67,7 +67,7 @@ Selfplay → [EVENT: games_ready] → Export → [EVENT: export_complete]
 
 **Resolution:**
 
-- `NPZ_EXPORT_COMPLETED` event emitted after export
+- `NPZ_EXPORT_COMPLETE` event emitted after export
 - `DataPipelineOrchestrator` triggers training automatically
 
 **Original State:** Export completes with no notification, `auto_retrain.py` polls every 30 minutes.

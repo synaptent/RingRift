@@ -684,7 +684,7 @@ async def setup_pipeline():
             )
 
     router.subscribe("DATA_SYNC_COMPLETED", on_sync_complete)
-    router.subscribe("NPZ_EXPORT_COMPLETED", on_export_complete)
+    router.subscribe("NPZ_EXPORT_COMPLETE", on_export_complete)
 ```
 
 ### Example: Priority Sync with Feedback
