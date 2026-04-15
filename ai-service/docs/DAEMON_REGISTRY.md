@@ -169,7 +169,7 @@ Model evaluation and tournament scheduling.
 
 | Daemon Type         | Priority | Description                                                                                      | Dependencies |
 | ------------------- | -------- | ------------------------------------------------------------------------------------------------ | ------------ |
-| `EVALUATION`        | HIGH     | Auto-triggers evaluation after TRAINING_COMPLETE events.                                         | EVENT_ROUTER |
+| `EVALUATION`        | HIGH     | Auto-triggers evaluation after TRAINING_COMPLETED events.                                        | EVENT_ROUTER |
 | `TOURNAMENT_DAEMON` | MEDIUM   | Automatic tournament scheduling for model comparison.                                            | EVENT_ROUTER |
 | `GAUNTLET_FEEDBACK` | MEDIUM   | Bridges gauntlet evaluation results to training feedback. Emits REGRESSION_CRITICAL on failures. | EVENT_ROUTER |
 

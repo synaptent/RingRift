@@ -27,6 +27,7 @@ OPERATOR_ENTRYPOINT_DOCS = (
     DOCS_ROOT / "architecture" / "TRAINING_INFRASTRUCTURE_STRATEGY.md",
 )
 INTEGRATION_README = REPO_ROOT / "ai-service" / "app" / "integration" / "README.md"
+APP_TESTING_README = REPO_ROOT / "ai-service" / "app" / "testing" / "README.md"
 UTILS_README = REPO_ROOT / "ai-service" / "app" / "utils" / "README.md"
 INTERFACES_README = REPO_ROOT / "ai-service" / "app" / "interfaces" / "README.md"
 METRICS_README = REPO_ROOT / "ai-service" / "app" / "metrics" / "README.md"
@@ -106,6 +107,7 @@ INTEGRATION_ASSESSMENT_DEC2025_DOC = REPO_ROOT / "ai-service" / "docs" / "planni
 EXPERIMENTAL_AI_DOC = REPO_ROOT / "ai-service" / "docs" / "EXPERIMENTAL_AI.md"
 TRAINING_EXPERIMENTAL_ALGORITHMS_DOC = REPO_ROOT / "ai-service" / "docs" / "training" / "EXPERIMENTAL_ALGORITHMS.md"
 EBMO_RESULTS_DOC = REPO_ROOT / "ai-service" / "docs" / "EBMO_RESULTS.md"
+QUICK_START_DOC = REPO_ROOT / "ai-service" / "docs" / "QUICK_START.md"
 PARITY_GATE_RESOLUTION_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "PARITY_GATE_RESOLUTION.md"
 PARITY_MISMATCH_DEBUG_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "PARITY_MISMATCH_DEBUG.md"
 AI_SERVICE_ARCHITECTURE_OVERVIEW_DOC = (
@@ -910,6 +912,24 @@ def test_coordination_api_reference_uses_canonical_npz_export_event_name() -> No
 
     assert 'router.subscribe("NPZ_EXPORT_COMPLETE", on_export_complete)' in text
     assert "NPZ_EXPORT_COMPLETED" not in text
+
+
+def test_training_event_examples_use_canonical_completed_name() -> None:
+    quick_start_text = QUICK_START_DOC.read_text(encoding="utf-8")
+    testing_text = APP_TESTING_README.read_text(encoding="utf-8")
+    daemon_registry_text = DAEMON_REGISTRY_DOC.read_text(encoding="utf-8")
+
+    assert 'router.subscribe("TRAINING_COMPLETED", on_training_complete)' in quick_start_text
+    assert 'publish_event_sync("TRAINING_COMPLETED", {"model_id": "v123"}, source="quick_start")' in quick_start_text
+    assert "StageEvent.TRAINING_COMPLETE" not in quick_start_text
+
+    assert 'event_bus.emit("TRAINING_COMPLETED", {"model": "v3"})' in testing_text
+    assert 'assert event_bus.events[-1].type == "TRAINING_COMPLETED"' in testing_text
+    assert 'event_bus.emit("TRAINING_COMPLETE", {"model": "v3"})' not in testing_text
+    assert 'assert event_bus.events[-1].type == "TRAINING_COMPLETE"' not in testing_text
+
+    assert "Auto-triggers evaluation after TRAINING_COMPLETED events." in daemon_registry_text
+    assert "Auto-triggers evaluation after TRAINING_COMPLETE events." not in daemon_registry_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

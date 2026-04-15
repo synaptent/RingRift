@@ -145,7 +145,7 @@ For programmatic training control, see `app/training/ORCHESTRATOR_GUIDE.md`.
 The system uses an event-driven architecture:
 
 ```python
-from app.coordination import StageEvent, get_event_router, publish_event_sync
+from app.coordination import get_event_router, publish_event_sync
 
 router = get_event_router()
 
@@ -153,10 +153,10 @@ router = get_event_router()
 def on_training_complete(event):
     print(f"Training finished: {event.payload.get('model_id')}")
 
-router.subscribe(StageEvent.TRAINING_COMPLETE, on_training_complete)
+router.subscribe("TRAINING_COMPLETED", on_training_complete)
 
 # Emit events
-publish_event_sync(StageEvent.TRAINING_COMPLETE, {"model_id": "v123"}, source="quick_start")
+publish_event_sync("TRAINING_COMPLETED", {"model_id": "v123"}, source="quick_start")
 ```
 
 ### 5. Model Promotion

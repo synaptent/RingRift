@@ -111,8 +111,8 @@ from app.testing import (
 
 # Mock event bus for testing event emission
 event_bus = MockEventBus()
-event_bus.emit("TRAINING_COMPLETE", {"model": "v3"})
-assert event_bus.events[-1].type == "TRAINING_COMPLETE"
+event_bus.emit("TRAINING_COMPLETED", {"model": "v3"})
+assert event_bus.events[-1].type == "TRAINING_COMPLETED"
 
 # Mock cluster state
 cluster = MockClusterState()
