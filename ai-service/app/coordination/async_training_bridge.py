@@ -21,7 +21,8 @@ Usage:
     # Training progress automatically emits events
     await bridge.update_progress(job_id, epochs=10, loss=0.05)
 
-    # Complete training (emits TRAINING_COMPLETE event)
+    # Complete training (emits legacy TRAINING_COMPLETE stage alias;
+    # normalized router/public guidance uses TRAINING_COMPLETED)
     await bridge.complete_training(job_id)
 """
 
@@ -80,7 +81,8 @@ class AsyncTrainingBridge:
         # Progress updates emit events for monitoring
         await bridge.update_progress(job_id, epochs=50, loss=0.02)
 
-        # Completion emits TRAINING_COMPLETE event
+        # Completion emits the legacy TRAINING_COMPLETE stage alias.
+        # Normalized router/public guidance uses TRAINING_COMPLETED.
         await bridge.complete_training(job_id, final_elo=1650.0)
     """
 
@@ -233,7 +235,10 @@ class AsyncTrainingBridge:
         )
 
         if success and self._emit_events:
-            # January 2026: Migrated to safe_emit_event_async
+            # January 2026: Migrated to safe_emit_event_async.
+            # Emits the legacy TRAINING_COMPLETE stage alias for older
+            # stage-event consumers; normalized router/public guidance uses
+            # TRAINING_COMPLETED.
             await safe_emit_event_async(
                 "TRAINING_COMPLETE",
                 {

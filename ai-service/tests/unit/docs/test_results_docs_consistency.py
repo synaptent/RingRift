@@ -137,6 +137,8 @@ DATA_PIPELINE_ORCHESTRATOR_MODULE = (
     REPO_ROOT / "ai-service" / "app" / "coordination" / "data_pipeline_orchestrator.py"
 )
 TASK_COORDINATOR_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "task_coordinator.py"
+ASYNC_TRAINING_BRIDGE_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "async_training_bridge.py"
+TRAINING_PROTOCOL_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "training_protocol.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -1063,6 +1065,20 @@ def test_sync_and_evaluation_stage_alias_docs_are_marked_as_legacy_aliases() -> 
     assert "training → legacy TRAINING_COMPLETE/TRAINING_FAILED stage aliases" in task_coordinator_text
     assert "evaluation → legacy EVALUATION_COMPLETE stage alias" in task_coordinator_text
     assert "sync → legacy SYNC_COMPLETE stage alias" in task_coordinator_text
+
+
+def test_remaining_training_stage_alias_comments_are_marked_as_legacy() -> None:
+    bridge_text = ASYNC_TRAINING_BRIDGE_MODULE.read_text(encoding="utf-8")
+    protocol_text = TRAINING_PROTOCOL_MODULE.read_text(encoding="utf-8")
+
+    assert "emits legacy TRAINING_COMPLETE stage alias;" in bridge_text
+    assert "normalized router/public guidance uses TRAINING_COMPLETED" in bridge_text
+    assert "Completion emits the legacy TRAINING_COMPLETE stage alias." in bridge_text
+    assert "Emits the legacy TRAINING_COMPLETE stage alias for older" in bridge_text
+
+    assert "Emit legacy TRAINING_COMPLETE or TRAINING_FAILED stage alias" in protocol_text
+    assert "Normalized router/public guidance uses" in protocol_text
+    assert "TRAINING_COMPLETED / TRAINING_FAILED." in protocol_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

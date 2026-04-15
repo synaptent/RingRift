@@ -776,7 +776,9 @@ class TrainingProtocolMixin:
 
         logger.info(f"Completed training job {job_id} with status {status}")
 
-        # Emit TRAINING_COMPLETE or TRAINING_FAILED event (December 2025)
+        # Emit legacy TRAINING_COMPLETE or TRAINING_FAILED stage alias
+        # (December 2025). Normalized router/public guidance uses
+        # TRAINING_COMPLETED / TRAINING_FAILED.
         # Feb 2026: Include model_path so tournament_daemon can queue evaluation
         event_type = "complete" if status == "completed" else "failed"
         canonical_model = f"models/canonical_{job['board_type']}_{job['num_players']}p.pth"
