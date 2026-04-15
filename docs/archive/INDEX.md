@@ -4,7 +4,7 @@
 
 ## Quick Guide
 
-- **Looking for current docs?** See [DOCUMENTATION_INDEX.md](../../DOCUMENTATION_INDEX.md)
+- **Looking for current docs?** See [docs/INDEX.md](../INDEX.md)
 - **Need the latest status?** See [CURRENT_STATE_ASSESSMENT.md](historical/CURRENT_STATE_ASSESSMENT.md)
 - **Looking for an incident?** See [docs/incidents/INDEX.md](../incidents/INDEX.md)
 
@@ -40,6 +40,21 @@ Completed planning documents and remediation reports.
 | LEGACY_PATH_DEPRECATION_PLAN.md            | Legacy path deprecation plan     |
 | PASS20-21_DOCUMENTATION_UPDATE_PLAN.md     | Documentation update plan        |
 | WEAKNESS_ASSESSMENT_REPORT.md              | Weakness assessment              |
+| ARCHITECTURAL_IMPROVEMENT_PLAN.md          | Completed technical-debt plan    |
+| P2P_DECOMPOSITION_PLAN.md                  | Completed P2P decomposition plan |
+| PLAN_AI_WORK.md                            | Archived AI work lanes           |
+
+---
+
+## /docs/archive/editorial/
+
+Exploratory public-writing drafts that are no longer part of the active docs
+surface.
+
+| Document             | Description                         |
+| -------------------- | ----------------------------------- |
+| BLOG_POST_OUTLINE.md | Narrative/blog framing draft        |
+| CASE_STUDY_DRAFT.md  | Long-form infrastructure case study |
 
 ---
 

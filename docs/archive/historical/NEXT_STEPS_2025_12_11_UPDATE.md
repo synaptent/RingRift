@@ -209,7 +209,7 @@ Post-v1.0 scope. Schema is ready.
 - [../../production/PRODUCTION_READINESS_CHECKLIST.md](../../production/PRODUCTION_READINESS_CHECKLIST.md) - Launch criteria
 - [KNOWN_ISSUES.md](../../../KNOWN_ISSUES.md) - Current issue tracker
 - [../../testing/SKIPPED_TESTS_TRIAGE.md](../../testing/SKIPPED_TESTS_TRIAGE.md) - Test categorization
-- [../../ARCHITECTURAL_IMPROVEMENT_PLAN.md](../../ARCHITECTURAL_IMPROVEMENT_PLAN.md) - Technical debt tracking
+- [../plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md](../plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md) - Technical debt tracking
 
 ---
 

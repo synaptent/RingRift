@@ -3276,7 +3276,7 @@ The following four items form the **critical path** to making RingRift usable by
 ## Related Documents
 
 - [CONSOLIDATION_ROADMAP.md](../ai-service/docs/CONSOLIDATION_ROADMAP.md) - Existing consolidation work
-- [ARCHITECTURAL_IMPROVEMENT_PLAN.md](ARCHITECTURAL_IMPROVEMENT_PLAN.md) - TypeScript improvements
+- [../plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md](../plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md) - TypeScript improvements
 - [PRODUCTION_READINESS_CHECKLIST.md](production/PRODUCTION_READINESS_CHECKLIST.md) - Launch criteria
 - [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) - Current known issues
 - [RULES_CANONICAL_SPEC.md](../RULES_CANONICAL_SPEC.md) - Authoritative rules SSoT

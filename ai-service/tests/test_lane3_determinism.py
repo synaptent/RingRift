@@ -6,7 +6,7 @@ These tests ensure:
 3. Factory correctly routes all AI types including experimental ones (GMO, IG_GMO, EBMO)
 4. Fallback behavior is consistent and documented
 
-See docs/PLAN_AI_WORK.md Lane 3 for full scope.
+See docs/archive/plans/PLAN_AI_WORK.md Lane 3 for the original planning scope.
 """
 
 

@@ -1,239 +1,72 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2026-04-13
-> **Status:** actively curated during Part 3 cleanup
+> Last updated: 2026-04-15
+> Scope: living documentation only
 
-This index provides navigation and status tracking for all project documentation.
+This index is the curated front door for the project docs. It points to the
+documents that are meant to be read now. Historical plans, drafts, and
+completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 
----
+## Start Here
 
-## Quick Start
+| Document                                     | Why it matters                                                   |
+| -------------------------------------------- | ---------------------------------------------------------------- |
+| [../README.md](../README.md)                 | Fastest external-facing overview of the game and training result |
+| [../QUICKSTART.md](../QUICKSTART.md)         | Local setup for the supported path                               |
+| [RESULTS.md](RESULTS.md)                     | Checked-in evidence, caveats, and charts                         |
+| [REPRODUCIBILITY.md](REPRODUCIBILITY.md)     | Exact training commands, hardware, and artifact locations        |
+| [PROJECT_BRIEF.md](PROJECT_BRIEF.md)         | Short technical orientation for new readers                      |
+| [RESEARCH_SNAPSHOT.md](RESEARCH_SNAPSHOT.md) | Short shareable research summary                                 |
 
-| Document                      | Purpose                     | Status |
-| ----------------------------- | --------------------------- | ------ |
-| `../README.md`                | Project overview            | Active |
-| `PROJECT_BRIEF.md`            | Short external-facing brief | Active |
-| `RESEARCH_SNAPSHOT.md`        | Shareable research summary  | Active |
-| `../QUICKSTART.md`            | Setup guide                 | Active |
-| `RESULTS.md`                  | Current research results    | Active |
-| `CODEBASE_QUALITY_PROGRAM.md` | Long-horizon cleanup plan   | Active |
-| `ARCHITECTURE_OVERVIEW.md`    | External architecture guide | Active |
-| `REPOSITORY_MAP.md`           | Supported vs legacy map     | Active |
-| `DEVELOPER_GUIDE.md`          | New developer quick start   | Active |
-| `../SECURITY.md`              | Security policy             | Active |
-| `../CONTRIBUTING.md`          | Contribution guidelines     | Active |
-| `../AGENTS.md`                | AI agent expectations       | Active |
+## Game And Rules
 
----
+| Document                                                                 | Why it matters                                  |
+| ------------------------------------------------------------------------ | ----------------------------------------------- |
+| [../RULES_CANONICAL_SPEC.md](../RULES_CANONICAL_SPEC.md)                 | Normative rules single source of truth          |
+| [rules/HUMAN_RULES.md](rules/HUMAN_RULES.md)                             | Human-readable explanation of how to play       |
+| [rules/COMPLETE_RULES.md](rules/COMPLETE_RULES.md)                       | Full rulebook and examples                      |
+| [rules/COMPACT_RULES.md](rules/COMPACT_RULES.md)                         | Compact implementation-oriented rules reference |
+| [UX_RULES_EXPLANATION_MODEL_SPEC.md](UX_RULES_EXPLANATION_MODEL_SPEC.md) | UX/game-end explanation model                   |
 
-## Rules & Game Design
+## Architecture And Supported Path
 
-### Canonical Sources (SSoT)
+| Document                                             | Why it matters                             |
+| ---------------------------------------------------- | ------------------------------------------ |
+| [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) | External architecture map                  |
+| [REPOSITORY_MAP.md](REPOSITORY_MAP.md)               | What is active, legacy, or historical      |
+| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)             | Practical engineer/operator path           |
+| [SCRIPT_INVENTORY.md](SCRIPT_INVENTORY.md)           | Supported script entrypoints and ownership |
+| [PARITY_RUNBOOK.md](PARITY_RUNBOOK.md)               | TS↔Python parity workflow                  |
+| [GPU_PARITY_CHECKLIST.md](GPU_PARITY_CHECKLIST.md)   | GPU-vs-CPU parity checklist                |
 
-| Document                     | Purpose                                    | Status   |
-| ---------------------------- | ------------------------------------------ | -------- |
-| `../RULES_CANONICAL_SPEC.md` | Formal rules specification (RR-CANON-RXXX) | **SSoT** |
-| `rules/COMPLETE_RULES.md`    | Full rulebook with examples                | Active   |
-| `rules/COMPACT_RULES.md`     | Quick reference rules                      | Active   |
-| `rules/HUMAN_RULES.md`       | Simplified human-readable rules            | Active   |
+## Operations And Product
 
-### Rules Analysis & Audits
+| Document                                                             | Why it matters                      |
+| -------------------------------------------------------------------- | ----------------------------------- |
+| [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)                   | Deployment guardrail checklist      |
+| [production/PRODUCTION_RUNBOOK.md](production/PRODUCTION_RUNBOOK.md) | Production operating guide          |
+| [operations/CLUSTER_OPERATIONS.md](operations/CLUSTER_OPERATIONS.md) | Cluster/node operations             |
+| [incidents/INDEX.md](incidents/INDEX.md)                             | Incident response entrypoint        |
+| [ACCESSIBILITY.md](ACCESSIBILITY.md)                                 | Accessibility behavior and controls |
 
-| Document                                                        | Purpose                             | Status    |
-| --------------------------------------------------------------- | ----------------------------------- | --------- |
-| `archive/historical/RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md` | Historical consistency audit        | Reference |
-| `rules/RULES_SSOT_MAP.md`                                       | SSoT hierarchy guide                | Active    |
-| `rules/CURRENT_RULES_STATE.md`                                  | Current rules implementation status | Active    |
-| `supplementary/rules_analysis/*`                                | Deep dives (LPS, ring count)        | Reference |
+## Maintainer Notes
 
----
+| Document                                                     | Why it matters                                        |
+| ------------------------------------------------------------ | ----------------------------------------------------- |
+| [CODEBASE_QUALITY_PROGRAM.md](CODEBASE_QUALITY_PROGRAM.md)   | Durable cleanup log and next seams                    |
+| [LOAD_TEST_RESULTS.md](LOAD_TEST_RESULTS.md)                 | Current checked-in load-test snapshot                 |
+| [SECRET_ROTATION_CHECKLIST.md](SECRET_ROTATION_CHECKLIST.md) | Security remediation checklist retained for operators |
 
-## Architecture & Design
+## Archived Material
 
-| Document                                           | Purpose                  | Status |
-| -------------------------------------------------- | ------------------------ | ------ |
-| `ARCHITECTURE_OVERVIEW.md`                         | External system overview | Active |
-| `architecture/RULES_ENGINE_ARCHITECTURE.md`        | Engine design            | Active |
-| `architecture/DOMAIN_AGGREGATE_DESIGN.md`          | Aggregate patterns       | Active |
-| `architecture/STATE_MACHINES.md`                   | FSM design               | Active |
-| `architecture/CANONICAL_ENGINE_API.md`             | Engine API reference     | Active |
-| `architecture/PHASE_ORCHESTRATION_ARCHITECTURE.md` | Phase/turn orchestration | Active |
-| `architecture/WEBSOCKET_API.md`                    | WebSocket contract       | Active |
+The following top-level docs were moved out of the active index because they
+are historical drafts or completed plans:
 
----
+- `archive/plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md`
+- `archive/plans/P2P_DECOMPOSITION_PLAN.md`
+- `archive/plans/PLAN_AI_WORK.md`
+- `archive/editorial/BLOG_POST_OUTLINE.md`
+- `archive/editorial/CASE_STUDY_DRAFT.md`
 
-## AI Service & Training
-
-### Primary Docs
-
-| Document                                              | Purpose                      | Status |
-| ----------------------------------------------------- | ---------------------------- | ------ |
-| `../ai-service/README.md`                             | AI service overview          | Active |
-| `../ai-service/scripts/README.md`                     | Curated AI scripts map       | Active |
-| `RESULTS.md`                                          | Published experiment summary | Active |
-| `../ai-service/docs/README.md`                        | AI service doc hub + SSoT    | Active |
-| `../ai-service/docs/training/TRAINING_FEATURES.md`    | Training feature guide       | Active |
-| `../ai-service/docs/CONSOLIDATION_ROADMAP.md`         | Consolidation progress       | Active |
-| `../ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md` | GPU training pipeline        | Active |
-| `../ai-service/docs/training/DISTRIBUTED_SELFPLAY.md` | Distributed training         | Active |
-
-### Human Calibration
-
-| Document                                   | Purpose                   | Status |
-| ------------------------------------------ | ------------------------- | ------ |
-| `ai/AI_HUMAN_CALIBRATION_GUIDE.md`         | Human calibration process | Active |
-| `ai/AI_HUMAN_CALIBRATION_STUDY_DESIGN.md`  | Study methodology         | Active |
-| `ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md` | Calibration results       | Active |
-
-### Operations
-
-| Document                             | Purpose               | Status |
-| ------------------------------------ | --------------------- | ------ |
-| `ai/AI_CALIBRATION_RUNBOOK.md`       | Calibration runbook   | Active |
-| `ai/AI_LADDER_PRODUCTION_RUNBOOK.md` | Production ladder ops | Active |
-| `ai/CLUSTER_NODE_CONFIGURATION.md`   | Cluster setup         | Active |
-
----
-
-## UX & Teaching
-
-| Document                                | Purpose                       | Status  |
-| --------------------------------------- | ----------------------------- | ------- |
-| `ux/RULES_QUICK_REFERENCE_DIAGRAMS.md`  | ASCII rule diagrams           | **New** |
-| `ux/UX_RULES_CONCEPTS_INDEX.md`         | Rules concepts navigation map | Active  |
-| `ux/UX_RULES_TEACHING_SCENARIOS.md`     | Teaching scenario definitions | Active  |
-| `ux/UX_RULES_EXPLANATION_MODEL_SPEC.md` | Game-end explanation model    | Active  |
-| `ux/UX_RULES_COPY_SPEC.md`              | UI copy specifications        | Active  |
-| `ux/UX_RULES_WEIRD_STATES_SPEC.md`      | Edge case UX handling         | Active  |
-| `ux/UX_RULES_TELEMETRY_SPEC.md`         | UX telemetry design           | Active  |
-| `getting-started/AUDIENCE.md`           | Target audience positioning   | Active  |
-
----
-
-## Operations & Runbooks
-
-### Production Operations
-
-| Document                                       | Purpose                     | Status |
-| ---------------------------------------------- | --------------------------- | ------ |
-| `production/PRODUCTION_RUNBOOK.md`             | Production operations guide | Active |
-| `production/PRODUCTION_READINESS_CHECKLIST.md` | Go-live checklist           | Active |
-| `operations/CLUSTER_OPERATIONS.md`             | Cluster management          | Active |
-| `operations/STAGING_ENVIRONMENT.md`            | Staging setup               | Active |
-| `operations/ENVIRONMENT_VARIABLES.md`          | Environment configuration   | Active |
-| `operations/ENVIRONMENT_VARIABLES_INTERNAL.md` | Internal env flags appendix | Active |
-
-### Incident Response
-
-| Document                    | Purpose         | Status |
-| --------------------------- | --------------- | ------ |
-| `runbooks/INDEX.md`         | Runbook index   | Active |
-| `incidents/INDEX.md`        | Incident index  | Active |
-| `incidents/TRIAGE_GUIDE.md` | Incident triage | Active |
-
-### Specific Runbooks
-
-See `runbooks/` for 25+ specific runbooks covering:
-
-- AI service issues (`AI_*.md`)
-- Database issues (`DATABASE_*.md`)
-- Deployment (`DEPLOYMENT_*.md`)
-- WebSocket/Redis (`WEBSOCKET_*.md`, `REDIS_*.md`)
-
----
-
-## Testing
-
-| Document                          | Purpose                | Status |
-| --------------------------------- | ---------------------- | ------ |
-| `../tests/README.md`              | Test suite overview    | Active |
-| `testing/TEST_CATEGORIES.md`      | Test categorization    | Active |
-| `testing/LOAD_TEST_BASELINE.md`   | Load test baselines    | Active |
-| `testing/GOLDEN_REPLAYS.md`       | Golden replay testing  | Active |
-| `testing/SKIPPED_TESTS_TRIAGE.md` | Skipped test triage    | Active |
-| `testing/CLIENT_TEST_PLAN.md`     | Frontend coverage plan | Active |
-
----
-
-## Planning & Status
-
-| Document                                                   | Purpose                              | Status    |
-| ---------------------------------------------------------- | ------------------------------------ | --------- |
-| `CURRENT_STATUS.md`                                        | Historical owner-facing ops snapshot | Reference |
-| `RESULTS.md`                                               | Current evidence summary             | Active    |
-| `ARCHITECTURE_OVERVIEW.md`                                 | External architecture view           | Active    |
-| `architecture/PART3_INFRASTRUCTURE_ROADMAP.md`             | Current cleanup roadmap              | Active    |
-| `archive/planning/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md` | Historical action plan               | Reference |
-| `archive/historical/CURRENT_STATE_ASSESSMENT.md`           | Project state summary                | Reference |
-| `planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md`               | NN self-play loop plan               | Active    |
-| `planning/SELFPLAY_LOOP_CLOSURE_PLAN.md`                   | Self-play bottleneck plan            | Active    |
-| `../PROJECT_GOALS.md`                                      | High-level goals                     | Active    |
-| `../TODO.md`                                               | Active task tracker                  | Active    |
-| `../KNOWN_ISSUES.md`                                       | Known issues tracker                 | Active    |
-| `production/RELEASE_NOTES_v0.1.0-beta.md`                  | Release notes draft                  | Draft     |
-
----
-
-## Drafts & Narrative Materials
-
-These documents are useful writing or packaging material, but they are not the main supported technical path through the repository.
-
-| Document               | Purpose                      | Status |
-| ---------------------- | ---------------------------- | ------ |
-| `RESEARCH_SNAPSHOT.md` | Shareable research summary   | Active |
-| `PROJECT_BRIEF.md`     | Short external-facing brief  | Active |
-| `CASE_STUDY_DRAFT.md`  | Long-form infrastructure arc | Draft  |
-| `BLOG_POST_OUTLINE.md` | Narrative/blog outline       | Draft  |
-| `TWITTER_THREAD.md`    | Social-summary draft         | Draft  |
-
----
-
-## Security
-
-| Document                                   | Purpose          | Status |
-| ------------------------------------------ | ---------------- | ------ |
-| `../SECURITY.md`                           | Security policy  | Active |
-| `security/SECURITY_THREAT_MODEL.md`        | Threat model     | Active |
-| `security/DATA_LIFECYCLE_AND_PRIVACY.md`   | Data privacy     | Active |
-| `security/SUPPLY_CHAIN_AND_CI_SECURITY.md` | CI/CD security   | Active |
-| `operations/SECRETS_MANAGEMENT.md`         | Secrets handling | Active |
-
----
-
-## Archived Documentation
-
-Superseded or historical documents are in `archive/`:
-
-| Directory                              | Contents                               |
-| -------------------------------------- | -------------------------------------- |
-| `archive/assessments/`                 | Historical pass assessments (PASS1-22) |
-| `archive/plans/`                       | Older planning documents               |
-| `archive/planning/`                    | Archived 2025 planning snapshots       |
-| `archive/historical/`                  | Historical snapshots and assessments   |
-| `archive/historical/ROADMAP_2025Q1.md` | Historical roadmap snapshot            |
-
-Legacy root archives live in `../archive/` (see `../archive/README.md`).
-
----
-
-## Documentation Maintenance
-
-### Status Definitions
-
-- **SSoT**: Single Source of Truth - authoritative for its domain
-- **Active**: Current and maintained
-- **New**: Recently created (< 7 days)
-- **Draft**: Exploratory or narrative material, not the primary technical source
-- **Reference**: Historical context, not actively updated
-- **Deprecated**: Scheduled for archival
-
-### Freshness Guidelines
-
-- Active docs should be reviewed every 90 days
-- Docs older than 90 days without updates should be reviewed for archival
-- Archive superseded docs with a deprecation notice at the top
-
-### Related
-
-- See `../DOCUMENTATION_INDEX.md` at repo root for the full catalog
-- See `rules/SSOT_BANNER_GUIDE.md` for adding SSoT banners
+Use [archive/INDEX.md](archive/INDEX.md) for historical planning, assessments,
+and editorial drafts.

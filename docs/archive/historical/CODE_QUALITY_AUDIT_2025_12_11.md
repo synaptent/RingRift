@@ -240,5 +240,5 @@ All changes were verified:
 ## Related Documents
 
 - [CODEBASE_REVIEW_2025_12_11.md](CODEBASE_REVIEW_2025_12_11.md) - Comprehensive codebase review
-- [../../ARCHITECTURAL_IMPROVEMENT_PLAN.md](../../ARCHITECTURAL_IMPROVEMENT_PLAN.md) - Refactoring opportunities
+- [../plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md](../plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md) - Refactoring opportunities
 - [../../production/PRODUCTION_READINESS_CHECKLIST.md](../../production/PRODUCTION_READINESS_CHECKLIST.md) - Launch criteria

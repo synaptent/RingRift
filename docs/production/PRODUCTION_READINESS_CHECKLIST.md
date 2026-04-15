@@ -806,7 +806,7 @@ Based on the current checklist status, the recommended action sequence:
 
 ### Code Quality (Complete)
 
-11. ~~**Architectural improvements**~~ ✅ Complete (see `ARCHITECTURAL_IMPROVEMENT_PLAN.md`)
+11. ~~**Architectural improvements**~~ ✅ Complete (see `archive/plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md`)
 12. ~~**Test coverage**~~ ✅ All aggregates exceed 80% target
 13. ~~**Parity verification**~~ ✅ 90/90 contract vectors, 286 parity fixtures
 

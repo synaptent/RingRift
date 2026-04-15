@@ -80,7 +80,7 @@ If this session pauses before all phases are complete, resume from the first pha
 
 - Phase 0 completed: this roadmap was created so the Part 3 goals survive session context loss.
 - Phase 1 completed: the optional Ruff contract now skips when Ruff is unavailable, and contract tests pass locally.
-- Phase 2 completed: `scripts/p2p_orchestrator.py` was reduced below 3,000 LOC by extracting additional mixins; see `docs/P2P_DECOMPOSITION_PLAN.md`.
+- Phase 2 completed: `scripts/p2p_orchestrator.py` was reduced below 3,000 LOC by extracting additional mixins; see `docs/archive/plans/P2P_DECOMPOSITION_PLAN.md`.
 - Phase 3 completed: `COORDINATION_AUDIT.md` was created, the largest coordination modules were split, and the 2,500 LOC size contract now passes.
 - Phase 3 extraction batch 1: `training_trigger_daemon.py` is 1,836 LOC and `daemon_manager.py` is 1,483 LOC after extracting execution and lifecycle mixins.
 - Phase 3 extraction batch 2: `evaluation_daemon.py` is 1,563 LOC, `unified_queue_populator.py` is 1,470 LOC, and `data_pipeline_orchestrator.py` is 1,936 LOC after extracting execution/strategy/stage mixins.
