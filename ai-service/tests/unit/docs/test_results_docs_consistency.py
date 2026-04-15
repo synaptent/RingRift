@@ -96,6 +96,7 @@ RESILIENT_TRANSFER_GUIDE_DOC = REPO_ROOT / "ai-service" / "docs" / "RESILIENT_TR
 MODEL_LIFECYCLE_DOC = REPO_ROOT / "ai-service" / "docs" / "MODEL_LIFECYCLE.md"
 CLUSTER_DEPLOYMENT_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "cluster_deployment.md"
 DAEMON_REGISTRY_DOC = REPO_ROOT / "ai-service" / "docs" / "DAEMON_REGISTRY.md"
+INTEGRATION_ASSESSMENT_DEC2025_DOC = REPO_ROOT / "ai-service" / "docs" / "planning" / "INTEGRATION_ASSESSMENT_DEC2025.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -829,3 +830,16 @@ def test_distribution_planning_and_migration_docs_use_unified_distribution_story
     assert "Unified daemon handles both models and NPZ via MODEL_PROMOTED /" in migration_text
     assert "await daemon.distribute(DataType.MODEL" not in migration_text
     assert "await daemon.distribute(DataType.NPZ" not in migration_text
+
+
+def test_data_events_tracker_and_assessment_use_package_layout() -> None:
+    tracker_text = DEPRECATION_TRACKER_DOC.read_text(encoding="utf-8")
+    assessment_text = INTEGRATION_ASSESSMENT_DEC2025_DOC.read_text(encoding="utf-8")
+
+    assert "`data_events` package aliases" in tracker_text
+    assert "`app/distributed/data_events/`" in tracker_text
+    assert "Direct enum imports / package helpers" in tracker_text
+    assert "`app/distributed/data_events/`" in assessment_text
+    assert "`event_types.py`, `event_bus.py`, `emit.py`; 4,309 lines total" in assessment_text
+    assert "`app/distributed/data_events.py`" not in tracker_text
+    assert "`app/distributed/data_events.py`" not in assessment_text

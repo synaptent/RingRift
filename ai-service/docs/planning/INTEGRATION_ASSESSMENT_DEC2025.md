@@ -118,7 +118,7 @@ Selfplay → [EVENT: games_ready] → Export → [EVENT: export_complete]
 
 | Layer             | Module                                     | Purpose                   | Lines |
 | ----------------- | ------------------------------------------ | ------------------------- | ----- |
-| DataEventBus      | `app/distributed/data_events.py`           | Async in-memory events    | 1,841 |
+| DataEventBus      | `app/distributed/data_events/`             | Async in-memory events    | 4,309 |
 | StageEventBus     | `app/coordination/stage_events.py`         | Pipeline stage events     | ~300  |
 | CrossProcessQueue | `app/coordination/cross_process_events.py` | SQLite-backed persistence | ~500  |
 
@@ -378,7 +378,7 @@ def add_db_args(parser):
 - `app/coordination/event_router.py`
 - `app/coordination/event_emitters.py` (1,980 lines)
 - `app/coordination/event_mappings.py`
-- `app/distributed/data_events.py` (1,841 lines)
+- `app/distributed/data_events/` (`event_types.py`, `event_bus.py`, `emit.py`; 4,309 lines total)
 
 ### Duplication Sources
 

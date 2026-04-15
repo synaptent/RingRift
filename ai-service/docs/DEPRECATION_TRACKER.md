@@ -28,14 +28,14 @@ This document provides a consolidated, actionable view of all deprecated modules
 
 These are actively imported and emit warnings frequently:
 
-| Module/Function          | Location                               | Calls/Day | Replacement                  |
-| ------------------------ | -------------------------------------- | --------- | ---------------------------- |
-| `queue_populator.py`     | `app/coordination/queue_populator.py`  | High      | `unified_queue_populator.py` |
-| `SmartCheckpointManager` | `app/training/advanced_training.py`    | Medium    | `UnifiedCheckpointManager`   |
-| `SelfPlayConfig`         | `app/training/config.py`               | Medium    | `SelfplayConfig`             |
-| `get_sync_coordinator()` | `app/coordination/sync_coordinator.py` | Medium    | `auto_sync_daemon.py`        |
-| `cluster/sync.py`        | `app/coordination/cluster/sync.py`     | Medium    | `sync_facade.py`             |
-| `data_events.py` aliases | `app/distributed/data_events.py`       | High      | Direct enum imports          |
+| Module/Function               | Location                               | Calls/Day | Replacement                           |
+| ----------------------------- | -------------------------------------- | --------- | ------------------------------------- |
+| `queue_populator.py`          | `app/coordination/queue_populator.py`  | High      | `unified_queue_populator.py`          |
+| `SmartCheckpointManager`      | `app/training/advanced_training.py`    | Medium    | `UnifiedCheckpointManager`            |
+| `SelfPlayConfig`              | `app/training/config.py`               | Medium    | `SelfplayConfig`                      |
+| `get_sync_coordinator()`      | `app/coordination/sync_coordinator.py` | Medium    | `auto_sync_daemon.py`                 |
+| `cluster/sync.py`             | `app/coordination/cluster/sync.py`     | Medium    | `sync_facade.py`                      |
+| `data_events` package aliases | `app/distributed/data_events/`         | High      | Direct enum imports / package helpers |
 
 ### Verification Commands
 
