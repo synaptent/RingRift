@@ -221,14 +221,19 @@ describe('SandboxContext - Developer Tools Toggle', () => {
     expect(typeof result.current.setDeveloperToolsEnabled).toBe('function');
   });
 
-  it('developerToolsEnabled defaults to true', () => {
+  it('developerToolsEnabled defaults to false in beginner mode', () => {
     const { result } = renderHook(() => useSandbox(), { wrapper });
 
-    expect(result.current.developerToolsEnabled).toBe(true);
+    expect(result.current.sandboxMode).toBe('beginner');
+    expect(result.current.developerToolsEnabled).toBe(false);
   });
 
   it('can toggle developerToolsEnabled', () => {
     const { result } = renderHook(() => useSandbox(), { wrapper });
+
+    act(() => {
+      result.current.setDeveloperToolsEnabled(true);
+    });
 
     expect(result.current.developerToolsEnabled).toBe(true);
 
@@ -237,12 +242,33 @@ describe('SandboxContext - Developer Tools Toggle', () => {
     });
 
     expect(result.current.developerToolsEnabled).toBe(false);
+  });
+
+  it('enables developer tools automatically in debug mode', () => {
+    const { result } = renderHook(() => useSandbox(), { wrapper });
 
     act(() => {
-      result.current.setDeveloperToolsEnabled(true);
+      result.current.setSandboxMode('debug');
     });
 
+    expect(result.current.sandboxMode).toBe('debug');
     expect(result.current.developerToolsEnabled).toBe(true);
+  });
+
+  it('disables developer tools automatically when switching back to beginner mode', () => {
+    localStorageMock.getItem.mockReturnValue('debug');
+
+    const { result } = renderHook(() => useSandbox(), { wrapper });
+
+    expect(result.current.sandboxMode).toBe('debug');
+    expect(result.current.developerToolsEnabled).toBe(true);
+
+    act(() => {
+      result.current.setSandboxMode('beginner');
+    });
+
+    expect(result.current.sandboxMode).toBe('beginner');
+    expect(result.current.developerToolsEnabled).toBe(false);
   });
 });
 

@@ -38,7 +38,7 @@ describe('difficultyUx descriptors', () => {
     expect(d2Text).toContain('learner');
     expect(d2Text).toContain('casual');
 
-    const d4Text = `${d4!.name} ${d4!.shortDescription}`.toLowerCase();
+    const d4Text = `${d4!.name} ${d4!.shortDescription} ${d4!.recommendedAudience}`.toLowerCase();
     expect(d4Text).toContain('challenging');
     expect(d4Text).toContain('intermediate');
 

@@ -24,3 +24,14 @@ Next:
 
 - Batch 2 edits applied: visitor-facing AI labels, mobile preset layout, quick-rules help, guest launch copy, training submission availability note.
 - Next: focused sandbox/UI tests and browser screenshots.
+
+- Full npm test after landing/sandbox polish exposed 3 stale frontend expectations: difficultyUx, GameHUD snapshot, SandboxContext mode.
+- SandboxContext mode expectations already updated to match beginner/debug developer-tools behavior.
+- Next: patch difficultyUx + GameHUD snapshot, rerun focused slice, then rerun full npm test and commit the final test batch.
+
+- Patched difficultyUx expectation to anchor D4 against the current recommended-audience wording.
+- Updated the GameHUD snapshot to the new visitor-facing AI labels (Strong · D5 / Guided AI).
+
+- GameHUD snapshot still had serialized whitespace drift; updating it with Jest to keep the snapshot authoritative.
+
+- Full npm test rerun completed cleanly: 582 passed, 50 skipped, 11740 passed tests, 1 snapshot, no failing suites.
