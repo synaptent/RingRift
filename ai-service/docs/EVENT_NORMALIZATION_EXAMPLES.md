@@ -407,6 +407,10 @@ def test_sync_complete():
 - [ ] Remove duplicate subscriptions for variant names
 - [ ] Update test assertions to use canonical names
 
+Legacy stage enums may still expose names like `TRAINING_COMPLETE`; the router
+normalizes those inputs, but new subscriptions and user-facing docs should stay
+on the canonical `TRAINING_COMPLETED` spelling.
+
 ### For Documentation
 
 - [ ] Update code comments to reference canonical names

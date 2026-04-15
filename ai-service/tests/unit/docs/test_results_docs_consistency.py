@@ -28,6 +28,7 @@ OPERATOR_ENTRYPOINT_DOCS = (
 )
 INTEGRATION_README = REPO_ROOT / "ai-service" / "app" / "integration" / "README.md"
 APP_TESTING_README = REPO_ROOT / "ai-service" / "app" / "testing" / "README.md"
+APP_EVENTS_README = REPO_ROOT / "ai-service" / "app" / "events" / "README.md"
 UTILS_README = REPO_ROOT / "ai-service" / "app" / "utils" / "README.md"
 INTERFACES_README = REPO_ROOT / "ai-service" / "app" / "interfaces" / "README.md"
 METRICS_README = REPO_ROOT / "ai-service" / "app" / "metrics" / "README.md"
@@ -98,6 +99,8 @@ EVENT_WIRING_DIAGRAM_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architectur
 EVENT_FLOW_INTEGRATION_ARCH_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "EVENT_FLOW_INTEGRATION.md"
 P2P_MANAGER_INTEGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "p2p-manager-integration.md"
 EVENT_NAMING_CONVENTION_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_NAMING_CONVENTION.md"
+EVENT_NORMALIZATION_SUMMARY_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_NORMALIZATION_SUMMARY.md"
+EVENT_NORMALIZATION_EXAMPLES_DOC = REPO_ROOT / "ai-service" / "docs" / "EVENT_NORMALIZATION_EXAMPLES.md"
 EVENT_WIRING_VERIFICATION_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "EVENT_WIRING_VERIFICATION.md"
 COORDINATION_EVENT_SYSTEM_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "COORDINATION_EVENT_SYSTEM.md"
 PRIORITY_ACTION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "PRIORITY_ACTION_PLAN_2025_12_26.md"
@@ -956,6 +959,27 @@ def test_training_completed_guidance_is_canonical_outside_compat_docs() -> None:
 
     assert "TRAINING_COMPLETED → auto-trigger EVALUATION" in consolidation_text
     assert "TRAINING_COMPLETE → auto-trigger EVALUATION" not in consolidation_text
+
+
+def test_event_migration_docs_distinguish_legacy_stage_aliases_from_public_events() -> None:
+    events_readme_text = APP_EVENTS_README.read_text(encoding="utf-8")
+    naming_text = EVENT_NAMING_CONVENTION_DOC.read_text(encoding="utf-8")
+    summary_text = EVENT_NORMALIZATION_SUMMARY_DOC.read_text(encoding="utf-8")
+    examples_text = EVENT_NORMALIZATION_EXAMPLES_DOC.read_text(encoding="utf-8")
+
+    assert "RingRiftEventType.STAGE_TRAINING_COMPLETE" in events_readme_text
+    assert "`StageEvent.TRAINING_COMPLETE` alias only" in events_readme_text
+    assert "`RingRiftEventType.TRAINING_COMPLETED`" in events_readme_text
+
+    assert "compatibility-only aliases" in naming_text
+    assert "StageEvent.TRAINING_COMPLETE" in naming_text
+    assert "canonical `_COMPLETED` event names" in naming_text
+
+    assert "Legacy stage-bus aliases such as `StageEvent.TRAINING_COMPLETE`" in summary_text
+    assert "canonical router event name `TRAINING_COMPLETED`" in summary_text
+
+    assert "Legacy stage enums may still expose names like `TRAINING_COMPLETE`" in examples_text
+    assert "canonical `TRAINING_COMPLETED` spelling" in examples_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

@@ -122,6 +122,10 @@ await publish("SYNC_COMPLETE", payload)
 router.subscribe("DATA_SYNC_COMPLETED", handler)
 ```
 
+Legacy stage-bus aliases such as `StageEvent.TRAINING_COMPLETE` remain valid
+normalization inputs, but subscribers and public guidance should use the
+canonical router event name `TRAINING_COMPLETED`.
+
 ### 2. Case Insensitivity
 
 Normalization works regardless of case:

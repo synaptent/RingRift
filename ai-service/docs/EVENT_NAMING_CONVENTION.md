@@ -209,6 +209,11 @@ The following forms are automatically normalized by the event router but should 
 | `MODEL_SYNC_COMPLETE`   | `P2P_MODEL_SYNCED`     | Medium            |
 | `EVALUATION_COMPLETE`   | `EVALUATION_COMPLETED` | Low (still clear) |
 
+Legacy stage-bus enums may still expose `_COMPLETE` spellings such as
+`StageEvent.TRAINING_COMPLETE`. Treat those as compatibility-only aliases;
+for normalized router usage, subscriptions, and public docs, use the
+canonical `_COMPLETED` event names instead.
+
 ## Migration Path
 
 ### Automatic Normalization

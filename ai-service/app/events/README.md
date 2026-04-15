@@ -153,6 +153,11 @@ event = RingRiftEventType.TRAINING_COMPLETED
    event = RingRiftEventType.STAGE_TRAINING_COMPLETE
    ```
 
+   `RingRiftEventType.STAGE_TRAINING_COMPLETE` mirrors the legacy
+   `StageEvent.TRAINING_COMPLETE` alias only. For normalized router
+   subscriptions and user-facing guidance, prefer
+   `RingRiftEventType.TRAINING_COMPLETED`.
+
 ## Benefits
 
 1. **Single Source of Truth**: All events defined in one place
