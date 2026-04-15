@@ -1,27 +1,45 @@
 # RingRift
 
-RingRift is a deterministic abstract strategy game and a research codebase for training neural agents on a novel multiplayer ruleset. The repository contains the playable web app, the canonical TypeScript rules engine, a Python AI service that mirrors those rules, parity tooling, and a minimal AlphaZero-style training loop used to produce the current results.
+RingRift is a deterministic abstract board game and an AlphaZero-style training project built around it.
 
-## Research Status
+The repository contains:
 
-Status below is current as of April 9, 2026.
+- a playable web app
+- a canonical TypeScript rules engine
+- a Python AI/parity mirror
+- a minimal self-play training loop used to produce the current results
 
-| Config       | Best Reported Elo | Promotions | Evidence                                                                         |
-| ------------ | ----------------: | ---------: | -------------------------------------------------------------------------------- |
-| `hex8_2p`    |          `1967.6` |        `6` | Strongest result so far; clear iterative improvement from the 1500 baseline      |
-| `square8_2p` |          `1601.8` |        `2` | Clean fixed-LR run now promotes under the corrected experiment harness           |
-| `square8_3p` |          `1534.9` |        `1` | Promising multiplayer result; useful evidence, but weaker than the 2-player runs |
+## Why It Is Interesting
 
-These results came from long-running GH200 cluster experiments. Reproducing the same behavior locally is possible, but it requires GPU time and multiple training iterations.
+RingRift is not just another minimax toy. Moving stacks leaves markers behind, marker lines collapse into territory, and forced eliminations stop players from stalling forever. That creates a game with no randomness, a lot of tactical volatility, and multiplayer dynamics that are harder to model than the usual 2-player board benchmarks.
 
-For the concrete evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md).
+The strongest evidence so far is narrow but real:
 
-If you want the shortest external-facing orientation before diving into code, read [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md).
-If you want the shortest shareable research summary, read [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md).
+- `hex8_2p`: `1500 -> 1979.8` Elo, `7` promotions
+- `square8_2p`: `1500 -> 1601.8` Elo, `2` promotions
 
-## Quick Start
+The honest caveat is that the proof is still concentrated in 2-player runs. Multiplayer and larger boards are interesting, but not yet convincingly solved.
 
-### 1. Run the web app
+For the full evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md). For the exact commands, hyperparameters, and archived artifacts, see [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md).
+
+## What The Game Looks Like
+
+```text
+      .    .    .    .
+   .   A2   a    B1   .
+ .   .    xA   #A    .   .
+   .   B2   b    .    .
+      .    .    .    .
+
+A2 / B2  two-ring stacks
+a / b    markers left behind by movement
+#A       collapsed territory owned by A
+xA       a live tactical point contested by A
+```
+
+That sketch is simplified, but it captures the core rhythm: movement changes the board permanently, local tactics can become territorial claims, and the board gets tighter as the game progresses.
+
+## Quick Start: Play The Game
 
 ```bash
 git clone https://github.com/synaptent/RingRift.git
@@ -34,12 +52,12 @@ npm run db:generate
 npm run dev
 ```
 
-- Client: `http://localhost:5173`
-- Server: `http://localhost:3000`
+Then open:
 
-More setup detail is in [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md).
+- client: `http://localhost:5173`
+- server: `http://localhost:3000`
 
-### 2. Run the AI service
+If you want the Python AI service running locally too:
 
 ```bash
 cd ai-service
@@ -47,97 +65,93 @@ cd ai-service
 ./run.sh
 ```
 
-- Health: `http://localhost:8001/health`
-- Docs: `http://localhost:8001/docs`
+More setup detail is in [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md).
 
-### 3. Launch a proven training configuration
+## Quick Start: Train An AI
 
-From the repo root:
+The supported training path is the minimal loop in [ai-service/scripts/minimal_alphazero_loop.py](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
+
+Example `square8_2p` run:
+
+```bash
+cd ai-service
+export PYTHONPATH=.
+
+python scripts/minimal_alphazero_loop.py \
+  --model models/canonical_square8_2p.pth \
+  --board-type square8 \
+  --num-players 2 \
+  --iterations 10 \
+  --games-per-iter 100 \
+  --selfplay-budget 128 \
+  --eval-budget 128 \
+  --lr 5e-5 \
+  --lr-schedule fixed \
+  --train-lr-scheduler none \
+  --train-window 3 \
+  --work-dir data/minimal_loop_square8_2p
+```
+
+That is the same supported loop family used for the published results. Local runs are useful for validation, but the headline Elo improvements came from much longer GH200 cluster runs.
+
+If you want the curated wrapper instead of typing the full command, use:
 
 ```bash
 ./scripts/run_proven_experiment.sh square8_2p --print-only
-./scripts/run_proven_experiment.sh square8_2p --iterations 10
 ```
 
-Supported experiment presets:
+## What Is Proven, And What Is Not
 
-- `hex8_2p`
-- `square8_2p`
+What is proven:
 
-The script launches the same minimal loop configurations used for the published results and writes artifacts under `ai-service/data/proven_experiments/<config>/`.
+- the game is playable end to end in the web app
+- the TypeScript engine is the canonical rules source of truth
+- the Python service mirrors those rules closely enough for replay parity and training
+- the minimal self-play loop can produce iterative NN improvement on at least two supported 2-player configurations
 
-### 4. Inspect results
+What is not proven yet:
 
-```bash
-cat ai-service/data/proven_experiments/square8_2p/summary.json
-tail -n 5 ai-service/data/proven_experiments/square8_2p/metrics.jsonl
-```
+- strong multiplayer training results
+- large-board training maturity
+- a general claim that every RingRift configuration trains well
 
-## Architecture Overview
+## Supported Path Through The Repo
 
-The supported architecture is intentionally narrow:
+If you want the shortest path to understanding the project, use this order:
 
-1. The canonical game rules live in TypeScript under [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine).
-2. The web app and backend both use that TypeScript engine.
-3. The Python AI service mirrors those rules for inference, replay validation, and training.
-4. The supported training engine is the minimal loop at [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
-5. TS↔Python replay parity is checked with [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py).
-
-The broader coordinator, daemon, and P2P infrastructure remains in the repository for cluster operations and historical experiments, but it is not required to understand or reproduce the core results.
-
-See [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md) for the external-facing architecture guide.
-
-## Repository Guide
-
-Start here if you are new to the repo:
-
-- [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md) for the shortest external-facing summary
-- [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md) for the shortest shareable research summary
-- [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md) for local setup
-- [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md) for the current evidence
-- [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md) for the system model
-- [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md) for what is active versus legacy
+1. [README.md](/Users/armand/Development/RingRift/README.md)
+2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
+3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+4. [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
+6. [docs/rules/HUMAN_RULES.md](/Users/armand/Development/RingRift/docs/rules/HUMAN_RULES.md)
 
 Core code directories:
 
 - [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine): canonical game rules
-- [`src/server`](/Users/armand/Development/RingRift/src/server): Node/Express backend
 - [`src/client`](/Users/armand/Development/RingRift/src/client): React frontend
-- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI service
-- [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts): training, parity, and ops scripts
+- [`src/server`](/Users/armand/Development/RingRift/src/server): backend host using the shared engine
+- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI, parity, and replay logic
+- [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts): training and validation entrypoints
 
-## Validation
+## Trust-Building Checks
 
-Useful trust-building checks for the supported path:
+Useful validation commands for the supported path:
 
 ```bash
 bash scripts/check_supported_path.sh
-```
-
-To refresh the checked-in results snapshot and SVG artifacts from local metrics:
-
-```bash
 npm run results:refresh
 ```
 
-## Supported vs Legacy
+## What To Ignore At First
 
-RingRift is a large, historically layered repository. Not every subsystem is equally current.
+RingRift is historically layered. If you are evaluating whether it is interesting, do not start with the entire coordination/orchestration surface.
 
-- Supported for external readers:
-  - web app
-  - canonical TS rules engine
-  - Python parity tooling
-  - minimal training loop
-  - proven experiment script and results docs
-- Useful but secondary:
-  - production deployment docs
-  - cluster monitoring and operational scripts
-  - AI ladder and calibration tooling
-- Historical or operationally specialized:
-  - `archive/`
-  - `docs/archive/`
-  - deprecated training and orchestration paths
-  - many cluster automation scripts under `ai-service/scripts`
+Treat these as secondary or historical until you need them:
 
-If your goal is to understand the research result, follow the supported path first and treat the rest as secondary context.
+- `archive/`
+- `docs/archive/`
+- legacy coordinator and daemon paths under `ai-service/app/coordination`
+- many ops and cluster scripts under `ai-service/scripts`
+
+The shortest, most defensible story is: novel game, canonical engine, parity-checked Python mirror, and a minimal loop that really did make at least some models stronger.
