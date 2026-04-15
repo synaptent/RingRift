@@ -55,7 +55,7 @@ Inference: Gradient descent on action embedding → project to legal move
 ### Online Learning (Implemented)
 
 ```python
-from app.ai.ebmo_online import EBMOOnlineAI, EBMOOnlineConfig
+from app.ai.ebmo_online_learner import EBMOOnlineAI, EBMOOnlineConfig
 
 config = EBMOOnlineConfig(
     buffer_size=20,      # Rolling buffer of recent games
@@ -82,7 +82,7 @@ metrics = ai.end_game(winner)
 | ----------------------------------------------- | -------------------------------- |
 | `app/ai/ebmo_network.py`                        | EBMO neural network architecture |
 | `app/ai/ebmo_ai.py`                             | EBMO AI agent implementation     |
-| `app/ai/ebmo_online.py`                         | Online/continuous learning       |
+| `app/ai/ebmo_online_learner.py`                 | Online/continuous learning       |
 | `models/ebmo_56ch/ebmo_quality_best.pt`         | Trained 56-channel model         |
 | `scripts/archive/ebmo/eval_ebmo_56ch.py`        | Evaluation script (archived)     |
 | `scripts/archive/ebmo/benchmark_ebmo_ladder.py` | Ladder benchmark (archived)      |

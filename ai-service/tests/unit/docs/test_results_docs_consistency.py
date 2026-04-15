@@ -97,6 +97,9 @@ MODEL_LIFECYCLE_DOC = REPO_ROOT / "ai-service" / "docs" / "MODEL_LIFECYCLE.md"
 CLUSTER_DEPLOYMENT_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "cluster_deployment.md"
 DAEMON_REGISTRY_DOC = REPO_ROOT / "ai-service" / "docs" / "DAEMON_REGISTRY.md"
 INTEGRATION_ASSESSMENT_DEC2025_DOC = REPO_ROOT / "ai-service" / "docs" / "planning" / "INTEGRATION_ASSESSMENT_DEC2025.md"
+EXPERIMENTAL_AI_DOC = REPO_ROOT / "ai-service" / "docs" / "EXPERIMENTAL_AI.md"
+TRAINING_EXPERIMENTAL_ALGORITHMS_DOC = REPO_ROOT / "ai-service" / "docs" / "training" / "EXPERIMENTAL_ALGORITHMS.md"
+EBMO_RESULTS_DOC = REPO_ROOT / "ai-service" / "docs" / "EBMO_RESULTS.md"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -843,3 +846,36 @@ def test_data_events_tracker_and_assessment_use_package_layout() -> None:
     assert "`event_types.py`, `event_bus.py`, `emit.py`; 4,309 lines total" in assessment_text
     assert "`app/distributed/data_events.py`" not in tracker_text
     assert "`app/distributed/data_events.py`" not in assessment_text
+
+
+def test_experimental_ai_docs_use_current_module_paths() -> None:
+    experimental_text = EXPERIMENTAL_AI_DOC.read_text(encoding="utf-8")
+    training_text = TRAINING_EXPERIMENTAL_ALGORITHMS_DOC.read_text(encoding="utf-8")
+    ebmo_text = EBMO_RESULTS_DOC.read_text(encoding="utf-8")
+
+    assert "app/ai/ebmo_online_learner.py" in experimental_text
+    assert "archive/deprecated_ai/gmo_ai.py" in experimental_text
+    assert "app/ai/archive/cage_ai.py" in experimental_text
+    assert "app/ai/archive/cage_network.py" in experimental_text
+    assert "app/ai/gpu_minimax_ai.py" in experimental_text
+    assert "app/ai/ebmo_online.py" not in experimental_text
+    assert "app/ai/gmo_network.py" not in experimental_text
+    assert "app/ai/cage_ai.py" not in experimental_text
+    assert "app/ai/cage_network.py" not in experimental_text
+    assert "app/ai/gpu_minimax.py" not in experimental_text
+
+    assert "from app.ai.gmo_ai import GMOAI" in training_text
+    assert "ai = GMOAI(player_number=1, config=config)" in training_text
+    assert "app/ai/archive/cage_ai.py" in training_text
+    assert "app/ai/archive/cage_network.py" in training_text
+    assert "from app.ai.archive.cage_network import CAGEConfig" in training_text
+    assert "from app.ai.archive.cage_ai import CAGE_AI" in training_text
+    assert "Archived under `app.ai.archive`" in training_text
+    assert "from app.ai.gmo_ai import GMO_AI" not in training_text
+    assert "app/ai/cage_ai.py" not in training_text
+    assert "app/ai/cage_network.py" not in training_text
+
+    assert "from app.ai.ebmo_online_learner import EBMOOnlineAI, EBMOOnlineConfig" in ebmo_text
+    assert "`app/ai/ebmo_online_learner.py`" in ebmo_text
+    assert "from app.ai.ebmo_online import EBMOOnlineAI, EBMOOnlineConfig" not in ebmo_text
+    assert "`app/ai/ebmo_online.py`" not in ebmo_text

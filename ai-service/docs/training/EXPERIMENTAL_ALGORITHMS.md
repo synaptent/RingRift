@@ -163,11 +163,11 @@ config = GMOConfig(
 ### Usage
 
 ```python
-from app.ai.gmo_ai import GMO_AI
+from app.ai.gmo_ai import GMOAI
 from app.models import AIConfig
 
 config = AIConfig(difficulty=5)
-ai = GMO_AI(player_number=1, config=config)
+ai = GMOAI(player_number=1, config=config)
 move = ai.select_move(game_state)
 ```
 
@@ -193,7 +193,7 @@ move = ai.select_move(game_state)
 
 ## CAGE: Constraint-Aware Graph Energy-Based Move Optimization
 
-**Location**: `app/ai/cage_ai.py`, `app/ai/cage_network.py`
+**Location**: `app/ai/archive/cage_ai.py`, `app/ai/archive/cage_network.py`
 
 ### Concept
 
@@ -221,7 +221,7 @@ CAGE combines graph neural networks for board representation with primal-dual op
 ### Configuration
 
 ```python
-from app.ai.cage_network import CAGEConfig
+from app.ai.archive.cage_network import CAGEConfig
 
 config = CAGEConfig(
     # Graph neural network
@@ -248,7 +248,7 @@ config = CAGEConfig(
 ### Usage
 
 ```python
-from app.ai.cage_ai import CAGE_AI
+from app.ai.archive.cage_ai import CAGE_AI
 from app.models import AIConfig
 
 config = AIConfig(difficulty=5)
@@ -299,7 +299,7 @@ move = ai.select_move(game_state)
 ### CAGE
 
 - Experimental stage
-- Graph representation complete
+- Archived under `app.ai.archive`
 - Primal-dual optimization in development
 
 ---

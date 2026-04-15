@@ -39,7 +39,7 @@ This document describes the experimental AI algorithms available in RingRift bey
 
 - `app/ai/ebmo_ai.py` - Main AI agent
 - `app/ai/ebmo_network.py` - Neural network
-- `app/ai/ebmo_online.py` - Online learning
+- `app/ai/ebmo_online_learner.py` - Online learning
 
 ## GMO (Gradient Move Optimization)
 
@@ -57,7 +57,7 @@ This document describes the experimental AI algorithms available in RingRift bey
 **Files:**
 
 - `app/ai/gmo_ai.py`
-- `app/ai/gmo_network.py`
+- `archive/deprecated_ai/gmo_ai.py` - Archived implementation behind `app/ai/gmo_ai.py`
 
 ## IG-GMO (Information-Gain GMO)
 
@@ -127,8 +127,8 @@ This override is wired in `app/ai/factory.py` and affects difficulty-based AI se
 
 **Files:**
 
-- `app/ai/cage_ai.py`
-- `app/ai/cage_network.py`
+- `app/ai/archive/cage_ai.py`
+- `app/ai/archive/cage_network.py`
 
 ## GPU Minimax
 
@@ -145,7 +145,7 @@ This override is wired in `app/ai/factory.py` and affects difficulty-based AI se
 
 **Files:**
 
-- `app/ai/gpu_minimax.py`
+- `app/ai/gpu_minimax_ai.py`
 - `app/ai/gpu_kernels.py`
 
 ## Using Experimental AIs
