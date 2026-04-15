@@ -219,8 +219,9 @@ python scripts/export_replay_dataset.py \
   --use-discovery --board-type hex8 --num-players 2 \
   --output data/training/hex8_2p_$(date +%Y%m%d).npz
 
-# Distribute to training nodes
-python -m app.coordination.npz_distribution_daemon --once
+# Ensure the unified distribution daemon is running so NPZ_EXPORT_COMPLETE
+# drives delivery to training nodes.
+python -m app.coordination.unified_distribution_daemon
 ```
 
 ---

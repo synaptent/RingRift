@@ -24,7 +24,7 @@ Usage:
 Integration:
     This module is used by:
     - app/distributed/resilient_transfer.py (post-transfer validation)
-    - app/coordination/npz_distribution_daemon.py (before distribution)
+    - app/coordination/unified_distribution_daemon.py (before NPZ distribution)
     - scripts/export_replay_dataset.py (after export)
 """
 

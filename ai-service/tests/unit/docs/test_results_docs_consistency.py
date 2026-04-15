@@ -41,6 +41,9 @@ COORDINATION_PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "coordination
 PROVIDERS_README = REPO_ROOT / "ai-service" / "app" / "providers" / "README.md"
 COORDINATION_README = REPO_ROOT / "ai-service" / "app" / "coordination" / "README.md"
 TRAINING_README = REPO_ROOT / "ai-service" / "app" / "training" / "README.md"
+COORDINATION_RESILIENT_TRANSFER_GUIDE_DOC = (
+    REPO_ROOT / "ai-service" / "docs" / "coordination" / "RESILIENT_TRANSFER_GUIDE.md"
+)
 COORDINATION_EXPORT_TIERS_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "EXPORT_TIERS.md"
 TRAINING_ORCHESTRATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "training" / "ORCHESTRATOR_GUIDE.md"
 COORDINATOR_GUIDE = REPO_ROOT / "ai-service" / "app" / "coordination" / "COORDINATOR_GUIDE.md"
@@ -97,6 +100,7 @@ RESILIENT_TRANSFER_GUIDE_DOC = REPO_ROOT / "ai-service" / "docs" / "RESILIENT_TR
 MODEL_LIFECYCLE_DOC = REPO_ROOT / "ai-service" / "docs" / "MODEL_LIFECYCLE.md"
 CLUSTER_DEPLOYMENT_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "cluster_deployment.md"
 DAEMON_REGISTRY_DOC = REPO_ROOT / "ai-service" / "docs" / "DAEMON_REGISTRY.md"
+DATA_SYNC_ASSESSMENT_DOC = REPO_ROOT / "ai-service" / "docs" / "DATA_SYNC_ASSESSMENT.md"
 INTEGRATION_ASSESSMENT_DEC2025_DOC = REPO_ROOT / "ai-service" / "docs" / "planning" / "INTEGRATION_ASSESSMENT_DEC2025.md"
 EXPERIMENTAL_AI_DOC = REPO_ROOT / "ai-service" / "docs" / "EXPERIMENTAL_AI.md"
 TRAINING_EXPERIMENTAL_ALGORITHMS_DOC = REPO_ROOT / "ai-service" / "docs" / "training" / "EXPERIMENTAL_ALGORITHMS.md"
@@ -111,6 +115,7 @@ AI_NEURAL_NET_ANALYSIS_DOC = REPO_ROOT / "ai-service" / "app" / "ai" / "neural_n
 AI_INIT_MODULE = REPO_ROOT / "ai-service" / "app" / "ai" / "__init__.py"
 GENERATE_DATA_MODULE = REPO_ROOT / "ai-service" / "app" / "training" / "generate_data.py"
 TOURNAMENT_DAEMON_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "tournament_daemon.py"
+NPZ_VALIDATION_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "npz_validation.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -861,6 +866,25 @@ def test_distribution_reference_docs_use_unified_distribution_paths() -> None:
     assert "app/coordination/_deprecated_npz_distribution_daemon.py" in roadmap_text
     assert "| `model_distribution_daemon.py` | `_deprecated_model_distribution_daemon.py`" not in roadmap_text
     assert "| `npz_distribution_daemon.py`   | `_deprecated_npz_distribution_daemon.py`" not in roadmap_text
+
+
+def test_distribution_support_docs_use_unified_daemon_entrypoints() -> None:
+    coordination_transfer_text = COORDINATION_RESILIENT_TRANSFER_GUIDE_DOC.read_text(encoding="utf-8")
+    data_sync_text = DATA_SYNC_ASSESSMENT_DOC.read_text(encoding="utf-8")
+    npz_validation_text = NPZ_VALIDATION_MODULE.read_text(encoding="utf-8")
+
+    assert "create_unified_distribution_daemon" in coordination_transfer_text
+    assert "verify_model_distribution" in coordination_transfer_text
+    assert "get_distribution_daemon" in coordination_transfer_text
+    assert "create_model_distribution_daemon" not in coordination_transfer_text
+    assert "create_npz_distribution_daemon" not in coordination_transfer_text
+    assert "await daemon.distribute(" not in coordination_transfer_text
+
+    assert "python -m app.coordination.unified_distribution_daemon" in data_sync_text
+    assert "python -m app.coordination.npz_distribution_daemon --once" not in data_sync_text
+
+    assert "app/coordination/unified_distribution_daemon.py (before NPZ distribution)" in npz_validation_text
+    assert "app/coordination/npz_distribution_daemon.py" not in npz_validation_text
 
 
 def test_data_events_tracker_and_assessment_use_package_layout() -> None:

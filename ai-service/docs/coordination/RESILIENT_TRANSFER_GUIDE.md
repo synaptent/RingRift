@@ -287,28 +287,36 @@ async def on_sync_complete(event):
 ```python
 # December 2025: Use unified_distribution_daemon (consolidates model + NPZ)
 from app.coordination.unified_distribution_daemon import (
-    create_model_distribution_daemon,
-    create_npz_distribution_daemon,
+    DistributionConfig,
+    create_unified_distribution_daemon,
+    verify_model_distribution,
 )
 
-# Daemon automatically subscribes to MODEL_PROMOTED events
-daemon = create_model_distribution_daemon()
+# Preferred path: use the unified factory, not the deprecated split factories
+config = DistributionConfig(
+    verify_checksums=True,
+    validate_npz_structure=True,
+)
+daemon = create_unified_distribution_daemon(config)
 await daemon.start()
 
-# Or trigger manually
-await daemon.distribute(
-    path=Path("models/canonical_hex8_2p.pth"),
-    target_nodes=["runpod-h100", "nebius-h100", "vast-rtx4090"],
-)
+# Distribution is event-driven after MODEL_PROMOTED
+success, node_count = await verify_model_distribution("models/canonical_hex8_2p.pth")
+print(f"Model visible on {node_count} nodes (ok={success})")
 ```
 
 ### 2. Distribute NPZ Training Data
 
 ```python
-from app.coordination.unified_distribution_daemon import create_npz_distribution_daemon
+from app.coordination.unified_distribution_daemon import (
+    DistributionConfig,
+    get_distribution_daemon,
+)
 
-# Daemon automatically subscribes to NPZ_EXPORT_COMPLETE events
-daemon = create_npz_distribution_daemon()
+# The same unified daemon automatically subscribes to NPZ_EXPORT_COMPLETE
+daemon = get_distribution_daemon(
+    DistributionConfig(validate_npz_structure=True)
+)
 await daemon.start()
 ```
 
