@@ -92,7 +92,6 @@ __all__ = [
     "HAS_AUGMENTATION",
     "HAS_CHECKPOINTING",
     "HAS_CHECKPOINT_UNIFIED",
-    "HAS_CONFIG_RESOLVER",
     "HAS_CROSSBOARD_STRENGTH",
     "HAS_CURRICULUM",
     "HAS_UNIFIED_CURRICULUM",
@@ -126,7 +125,6 @@ __all__ = [
     "AsyncCheckpointer",
     # Data augmentation
     "AugmentedDataLoader",
-    "AugmentorConfig",
     # Value calibration
     "CalibrationReport",
     "CalibrationTracker",
@@ -279,12 +277,6 @@ __all__ = [
     # Version suffix stripping (Feb 2026)
     "strip_version_suffix",
     # Modular training components (December 2025)
-    # Config resolver
-    "ResolvedTrainingParams",
-    "get_board_size",
-    "get_effective_architecture",
-    "resolve_training_params",
-    "validate_model_id_for_board",
     # Model factory
     "ModelConfig",
     "compute_in_channels",
@@ -605,7 +597,6 @@ except ImportError:
 try:
     from app.training.data_augmentation import (
         AugmentedDataLoader,
-        AugmentorConfig,
         DataAugmentor,
     )
     HAS_AUGMENTATION = True
