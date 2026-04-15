@@ -23,6 +23,7 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 | Document                                                                 | Why it matters                                  |
 | ------------------------------------------------------------------------ | ----------------------------------------------- |
 | [../RULES_CANONICAL_SPEC.md](../RULES_CANONICAL_SPEC.md)                 | Normative rules single source of truth          |
+| [GAME_RULES.md](GAME_RULES.md)                                           | Five-minute player-facing rules explainer       |
 | [rules/HUMAN_RULES.md](rules/HUMAN_RULES.md)                             | Human-readable explanation of how to play       |
 | [rules/COMPLETE_RULES.md](rules/COMPLETE_RULES.md)                       | Full rulebook and examples                      |
 | [rules/COMPACT_RULES.md](rules/COMPACT_RULES.md)                         | Compact implementation-oriented rules reference |

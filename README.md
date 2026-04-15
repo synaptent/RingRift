@@ -124,7 +124,8 @@ If you want the shortest path to understanding the project, use this order:
 3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
 4. [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md)
 5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-6. [docs/rules/HUMAN_RULES.md](/Users/armand/Development/RingRift/docs/rules/HUMAN_RULES.md)
+6. [docs/GAME_RULES.md](/Users/armand/Development/RingRift/docs/GAME_RULES.md)
+7. [docs/rules/HUMAN_RULES.md](/Users/armand/Development/RingRift/docs/rules/HUMAN_RULES.md)
 
 Core code directories:
 
