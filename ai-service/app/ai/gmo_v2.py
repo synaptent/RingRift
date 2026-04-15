@@ -21,7 +21,7 @@ warnings.warn(
 
 # Re-export the deprecated implementation with validation
 try:
-    from archive.deprecated_ai.gmo_v2 import (
+    from app.ai._deprecated_gmo_v2 import (
         AttentionStateEncoder,
         GMOv2AI,
         GMOv2Config,
@@ -39,7 +39,6 @@ try:
     ]
 except ImportError as e:
     raise ImportError(
-        f"Failed to import GMOv2 from archive/deprecated_ai: {e}. "
-        "The GMOv2 implementation has been archived. If you need this module, "
-        "ensure archive/deprecated_ai/gmo_v2.py exists."
+        f"Failed to import deprecated GMOv2 implementation: {e}. "
+        "The compatibility implementation now lives under app.ai._deprecated_gmo_v2."
     ) from e

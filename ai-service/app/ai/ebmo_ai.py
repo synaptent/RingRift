@@ -21,14 +21,13 @@ warnings.warn(
 
 # Re-export the deprecated implementation with validation
 try:
-    from archive.deprecated_ai.ebmo_ai import (
+    from app.ai._deprecated_ebmo_ai import (
         EBMO_AI,
         EBMOConfig,
     )
     __all__ = ["EBMO_AI", "EBMOConfig"]
 except ImportError as e:
     raise ImportError(
-        f"Failed to import EBMO from archive/deprecated_ai: {e}. "
-        "The EBMO implementation has been archived. If you need this module, "
-        "ensure archive/deprecated_ai/ebmo_ai.py exists."
+        f"Failed to import deprecated EBMO implementation: {e}. "
+        "The compatibility implementation now lives under app.ai._deprecated_ebmo_ai."
     ) from e

@@ -452,7 +452,7 @@ except ImportError:
 try:
     with _w.catch_warnings():
         _w.filterwarnings("ignore", category=DeprecationWarning)
-        from archive.deprecated_training.orchestrated_training import (
+        from app.training._deprecated_orchestrated_training import (
             TrainingOrchestrator,
             TrainingOrchestratorConfig,
             TrainingOrchestratorState,

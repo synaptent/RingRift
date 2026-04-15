@@ -14,7 +14,7 @@ from __future__ import annotations
 
 # Re-export the deprecated implementation.
 # The underlying module already emits a DeprecationWarning.
-from archive.deprecated_ai.ebmo_network import (
+from app.ai._deprecated_ebmo_network import (
     ActionEncoder,
     ActionFeatureExtractor,
     EBMOConfig,

@@ -23,7 +23,7 @@ warnings.warn(
 
 # Re-export the deprecated implementation with validation
 try:
-    from archive.deprecated_ai.gmo_ai import (
+    from app.ai._deprecated_gmo_ai import (
         GMOAI,
         GMOConfig,
         GMOValueNetWithUncertainty,
@@ -49,7 +49,6 @@ try:
     ]
 except ImportError as e:
     raise ImportError(
-        f"Failed to import GMO from archive/deprecated_ai: {e}. "
-        "The GMO implementation has been archived. If you need this module, "
-        "ensure archive/deprecated_ai/gmo_ai.py exists."
+        f"Failed to import deprecated GMO implementation: {e}. "
+        "The compatibility implementation now lives under app.ai._deprecated_gmo_ai."
     ) from e
