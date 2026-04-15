@@ -16,28 +16,17 @@ RingRift is not just another minimax toy. Moving stacks leaves markers behind, m
 The strongest evidence so far is narrow but real:
 
 - `hex8_2p`: `1500 -> 1979.8` Elo, `7` promotions
-- `square8_2p`: `1500 -> 1601.8` Elo, `2` promotions
+- `square8_2p`: `1500 -> 1697.3` Elo, `4` promotions
 
 The honest caveat is that the proof is still concentrated in 2-player runs. Multiplayer and larger boards are interesting, but not yet convincingly solved.
 
-For the full evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md). For the exact commands, hyperparameters, and archived artifacts, see [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md).
+For the full evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md). For the exact commands, hyperparameters, and archived artifacts, see [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md). For the engineering retrospective on what broke and what actually worked, see [docs/LESSONS_LEARNED.md](/Users/armand/Development/RingRift/docs/LESSONS_LEARNED.md).
 
 ## What The Game Looks Like
 
-```text
-      .    .    .    .
-   .   A2   a    B1   .
- .   .    xA   #A    .   .
-   .   B2   b    .    .
-      .    .    .    .
+![Live hex8 sandbox board](docs/assets/readme/hex8-sandbox-live.png)
 
-A2 / B2  two-ring stacks
-a / b    markers left behind by movement
-#A       collapsed territory owned by A
-xA       a live tactical point contested by A
-```
-
-That sketch is simplified, but it captures the core rhythm: movement changes the board permanently, local tactics can become territorial claims, and the board gets tighter as the game progresses.
+This is a live `hex8` sandbox position from the public web client: compact hex board, stack-building ring placement, local AI opponent, and the sidecar HUD showing turn, score, and ring inventory. It is the most distinctive part of the project, and it already works end to end in the browser.
 
 ## Quick Start: Play The Game
 

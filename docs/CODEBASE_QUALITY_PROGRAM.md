@@ -222,6 +222,7 @@ Current objectives:
 - The live product surface is now being documented more honestly too: `docs/production/WEB_EXPERIENCE_AUDIT_2026-04-15.md` records a real first-visit production audit, including the login-first root redirect, CSP/font failures, sandbox `404` noise on `/api/games/sandbox/evaluate`, and the fact that anonymous sandbox play still works end to end.
 - The published research docs are now refreshed to the April 15 state too: `docs/RESULTS.md`, `docs/data/results_snapshot.json`, `docs/RESEARCH_SNAPSHOT.md`, `docs/PROJECT_BRIEF.md`, and `docs/REPRODUCIBILITY.md` now reflect `square8_2p` at `1697.3`, the verified `hex8_2p` iteration `36` plateau reject at `50.0%`, the first `hex8_3p` result at `35%`, and the fact that the `hex8_2p` `v4` run is an active experiment rather than a finished headline result.
 - The repo now has a substantive engineering retrospective too: `docs/LESSONS_LEARNED.md` captures the watchdog failure loops, systemd/P2P process-ownership mistakes, fixed-LR breakthrough, multiplayer evaluator bias, policy-data contract discovery, and the measured explanation behind the earlier `17k` Python-file scare.
+- The public entrypoint is visually stronger too: the root `README.md` now uses a real live `hex8` sandbox screenshot from the current product instead of relying on a placeholder ASCII sketch, and its headline training numbers now match the refreshed April 15 results.
 
 ## Execution Protocol
 
