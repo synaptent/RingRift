@@ -61,6 +61,13 @@ export interface TrainingSubmissionState {
   availabilityNote?: string | null;
 }
 
+export interface VictoryModalSessionRecord {
+  wins: number;
+  losses: number;
+}
+
+export type VictoryModalAiAverageThinkTimeByPlayer = Record<number, number>;
+
 interface VictoryModalProps {
   isOpen: boolean;
   gameResult?: GameResult | null;
@@ -108,6 +115,12 @@ interface VictoryModalProps {
    * Current state of training submission (managed by parent component).
    */
   trainingSubmission?: TrainingSubmissionState;
+  /** Optional total wall-clock duration for sandbox games, in milliseconds. */
+  gameDurationMs?: number | null;
+  /** Optional average AI think time summary for sandbox games, keyed by player number. */
+  aiAverageThinkTimeMsByPlayer?: VictoryModalAiAverageThinkTimeByPlayer;
+  /** Optional session win/loss record for sandbox games. */
+  sessionRecord?: VictoryModalSessionRecord | null;
 }
 
 /**
@@ -451,6 +464,105 @@ function GameSummary({ summary }: { summary: VictoryViewModel['gameSummary'] }) 
   );
 }
 
+function formatSummaryDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+function formatThinkTime(durationMs: number): string {
+  if (durationMs >= 1000) {
+    return `${(durationMs / 1000).toFixed(1)}s`;
+  }
+  return `${Math.max(0, Math.round(durationMs))}ms`;
+}
+
+function SandboxMatchSummary({
+  gameDurationMs,
+  aiAverageThinkTimeMsByPlayer,
+  sessionRecord,
+  players,
+}: {
+  gameDurationMs?: number | null;
+  aiAverageThinkTimeMsByPlayer?: VictoryModalAiAverageThinkTimeByPlayer;
+  sessionRecord?: VictoryModalSessionRecord | null;
+  players: Player[];
+}) {
+  const aiTimingEntries = Object.entries(aiAverageThinkTimeMsByPlayer ?? {})
+    .map(([playerNumber, averageMs]) => ({
+      playerNumber: Number(playerNumber),
+      averageMs,
+    }))
+    .filter((entry) => Number.isFinite(entry.averageMs))
+    .sort((a, b) => a.playerNumber - b.playerNumber);
+
+  const playerNameByNumber = new Map(
+    players.map((player) => [
+      player.playerNumber,
+      player.username || `Player ${player.playerNumber}`,
+    ])
+  );
+
+  if (gameDurationMs === null && aiTimingEntries.length === 0 && !sessionRecord) {
+    return null;
+  }
+
+  return (
+    <div className="bg-slate-800/50 rounded-lg p-4 space-y-3 text-sm text-slate-200">
+      {gameDurationMs !== null && gameDurationMs !== undefined && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-slate-400">Game duration:</span>
+          <span className="font-semibold">{formatSummaryDuration(gameDurationMs)}</span>
+        </div>
+      )}
+
+      {aiTimingEntries.length === 1 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-slate-400">AI avg think time:</span>
+          <span className="font-semibold">{formatThinkTime(aiTimingEntries[0].averageMs)}</span>
+        </div>
+      )}
+
+      {aiTimingEntries.length > 1 && (
+        <div className="space-y-1">
+          <div className="text-slate-400">AI avg think time:</div>
+          <div className="space-y-1">
+            {aiTimingEntries.map((entry) => (
+              <div
+                key={entry.playerNumber}
+                className="flex items-center justify-between gap-4 text-sm"
+              >
+                <span className="text-slate-300">
+                  {playerNameByNumber.get(entry.playerNumber) ?? `Player ${entry.playerNumber}`}
+                </span>
+                <span className="font-semibold">{formatThinkTime(entry.averageMs)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sessionRecord && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-slate-400">Session:</span>
+          <span className="font-semibold">
+            {sessionRecord.wins}W-{sessionRecord.losses}L
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Hook to calculate countdown time remaining
  */
@@ -776,6 +888,9 @@ export function VictoryModal({
   isSandbox,
   onSubmitForTraining,
   trainingSubmission,
+  gameDurationMs = null,
+  aiAverageThinkTimeMsByPlayer,
+  sessionRecord = null,
 }: VictoryModalProps) {
   const overlaySessionIdRef = useRef<string | null>(null);
   const weirdStateImpressionLoggedRef = useRef<string | null>(null);
@@ -1074,6 +1189,15 @@ export function VictoryModal({
               gameResult={effectiveGameResult}
               winner={finalStats.find((s) => s.isWinner)}
               playerCount={gameSummary.playerCount}
+            />
+          </div>
+
+          <div className={`${!effectiveReducedMotion ? 'stats-animate' : ''} relative z-10`.trim()}>
+            <SandboxMatchSummary
+              gameDurationMs={gameDurationMs}
+              aiAverageThinkTimeMsByPlayer={aiAverageThinkTimeMsByPlayer}
+              sessionRecord={sessionRecord}
+              players={effectivePlayers}
             />
           </div>
 

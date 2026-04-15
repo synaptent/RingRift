@@ -35,3 +35,9 @@ Next:
 - GameHUD snapshot still had serialized whitespace drift; updating it with Jest to keep the snapshot authoritative.
 
 - Full npm test rerun completed cleanly: 582 passed, 50 skipped, 11740 passed tests, 1 snapshot, no failing suites.
+
+- Added sandbox match summary plumbing: game duration, AI average think time, and session win/loss record.
+- Running focused VictoryModal + SandboxGameHost slices before the full Jest pass.
+
+- Implemented sandbox post-game match summary: game duration, AI average think time, and session win/loss record.
+- Verification: focused VictoryModal + SandboxGameHost slice passed; full npm test passed with 582 suites/tests passed block and no FAIL lines.

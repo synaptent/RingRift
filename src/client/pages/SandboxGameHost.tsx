@@ -105,6 +105,67 @@ import { useSoundOptional } from '../contexts/SoundContext';
 import { AIServiceStatusBanner } from '../components/AIServiceStatusBanner';
 import { getSandboxAiDiagnostics } from '../sandbox/sandboxAiDiagnostics';
 
+interface SandboxSessionRecord {
+  wins: number;
+  losses: number;
+}
+
+interface SandboxAiTimingTotals {
+  totalMs: number;
+  moveCount: number;
+}
+
+const SANDBOX_SESSION_RECORD_STORAGE_KEY = 'ringrift_sandbox_session_record';
+
+function loadSandboxSessionRecord(): SandboxSessionRecord {
+  if (typeof window === 'undefined') {
+    return { wins: 0, losses: 0 };
+  }
+
+  try {
+    const navigationEntries = window.performance?.getEntriesByType?.('navigation') as
+      | PerformanceNavigationTiming[]
+      | undefined;
+    const navigationEntry = navigationEntries?.[0];
+
+    if (navigationEntry?.type === 'reload') {
+      window.sessionStorage.removeItem(SANDBOX_SESSION_RECORD_STORAGE_KEY);
+      return { wins: 0, losses: 0 };
+    }
+
+    const raw = window.sessionStorage.getItem(SANDBOX_SESSION_RECORD_STORAGE_KEY);
+    if (!raw) {
+      return { wins: 0, losses: 0 };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<SandboxSessionRecord> | null;
+    const wins =
+      typeof parsed?.wins === 'number' && Number.isFinite(parsed.wins) && parsed.wins >= 0
+        ? Math.floor(parsed.wins)
+        : 0;
+    const losses =
+      typeof parsed?.losses === 'number' && Number.isFinite(parsed.losses) && parsed.losses >= 0
+        ? Math.floor(parsed.losses)
+        : 0;
+
+    return { wins, losses };
+  } catch {
+    return { wins: 0, losses: 0 };
+  }
+}
+
+function persistSandboxSessionRecord(record: SandboxSessionRecord): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(SANDBOX_SESSION_RECORD_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // Storage might be disabled; ignore.
+  }
+}
+
 const PHASE_COPY: Record<
   string,
   {
@@ -212,6 +273,15 @@ export const SandboxGameHost: React.FC = () => {
     error: null,
     availabilityNote: null,
   });
+  const [sandboxGameDurationMs, setSandboxGameDurationMs] = useState<number | null>(null);
+  const [sandboxAiTimingTotalsByPlayer, setSandboxAiTimingTotalsByPlayer] = useState<
+    Record<number, SandboxAiTimingTotals>
+  >({});
+  const [sandboxSessionRecord, setSandboxSessionRecord] =
+    useState<SandboxSessionRecord>(loadSandboxSessionRecord);
+  const sandboxActiveGameIdRef = useRef<string | null>(null);
+  const sandboxGameStartedAtRef = useRef<number | null>(null);
+  const processedSandboxAiTimingKeysRef = useRef<Set<string>>(new Set());
 
   // Game view once configured (local sandbox) - needed early for clock hook
   const sandboxGameStateForClock: GameState | null = sandboxEngine
@@ -909,6 +979,16 @@ export const SandboxGameHost: React.FC = () => {
 
   const sandboxVictoryResult = sandboxEngine ? sandboxEngine.getVictoryResult() : null;
   const sandboxGameEndExplanation = sandboxEngine ? sandboxEngine.getGameEndExplanation() : null;
+  const sandboxAiAverageThinkTimeMsByPlayer: Record<number, number> = Object.fromEntries(
+    Object.entries(sandboxAiTimingTotalsByPlayer)
+      .filter(([, stats]) => stats.moveCount > 0)
+      .map(([playerNumber, stats]) => [Number(playerNumber), stats.totalMs / stats.moveCount])
+  );
+  const effectiveSandboxGameDurationMs =
+    sandboxGameDurationMs ??
+    (sandboxVictoryResult && sandboxGameStartedAtRef.current !== null
+      ? Math.max(0, Date.now() - sandboxGameStartedAtRef.current)
+      : null);
 
   // Derive current player info for announcements
   const currentPlayerForAnnouncements = sandboxGameState?.players.find(
@@ -963,11 +1043,106 @@ export const SandboxGameHost: React.FC = () => {
     announce,
   });
 
+  useEffect(() => {
+    if (!isConfigured || !sandboxEngine) {
+      sandboxActiveGameIdRef.current = null;
+      sandboxGameStartedAtRef.current = null;
+      processedSandboxAiTimingKeysRef.current.clear();
+      setSandboxGameDurationMs(null);
+      setSandboxAiTimingTotalsByPlayer({});
+    }
+  }, [isConfigured, sandboxEngine]);
+
+  useEffect(() => {
+    if (!sandboxGameState || sandboxGameState.gameStatus !== 'active') {
+      return;
+    }
+
+    if (sandboxActiveGameIdRef.current === sandboxGameState.id) {
+      return;
+    }
+
+    sandboxActiveGameIdRef.current = sandboxGameState.id;
+    sandboxGameStartedAtRef.current = Date.now();
+    processedSandboxAiTimingKeysRef.current.clear();
+    setSandboxGameDurationMs(null);
+    setSandboxAiTimingTotalsByPlayer({});
+  }, [sandboxGameState?.gameStatus, sandboxGameState?.id]);
+
+  useEffect(() => {
+    if (!sandboxGameState) {
+      return;
+    }
+
+    const currentGameId = sandboxGameState.id;
+    const diagnostics = Object.values(getSandboxAiDiagnostics());
+    const processedKeys = processedSandboxAiTimingKeysRef.current;
+
+    setSandboxAiTimingTotalsByPlayer((previousTotals) => {
+      let nextTotals = previousTotals;
+
+      for (const entry of diagnostics) {
+        if (entry.gameId !== currentGameId) {
+          continue;
+        }
+        if (typeof entry.thinkingTimeMs !== 'number' || !Number.isFinite(entry.thinkingTimeMs)) {
+          continue;
+        }
+
+        const timingKey = `${entry.playerNumber}:${entry.timestamp}`;
+        if (processedKeys.has(timingKey)) {
+          continue;
+        }
+        processedKeys.add(timingKey);
+
+        const priorPlayerTotals = nextTotals[entry.playerNumber] ?? { totalMs: 0, moveCount: 0 };
+        if (nextTotals === previousTotals) {
+          nextTotals = { ...previousTotals };
+        }
+        nextTotals[entry.playerNumber] = {
+          totalMs: priorPlayerTotals.totalMs + Math.max(0, entry.thinkingTimeMs),
+          moveCount: priorPlayerTotals.moveCount + 1,
+        };
+      }
+
+      return nextTotals;
+    });
+  }, [sandboxGameState?.history.length, sandboxGameState?.id]);
+
   // Track victory for onboarding and telemetry (separate from announcements)
   const prevVictoryRef = useRef<boolean>(false);
   useEffect(() => {
     if (sandboxVictoryResult && !prevVictoryRef.current) {
       prevVictoryRef.current = true;
+
+      if (sandboxGameStartedAtRef.current !== null) {
+        setSandboxGameDurationMs(Math.max(0, Date.now() - sandboxGameStartedAtRef.current));
+      }
+
+      const trackedPlayerNumber = (() => {
+        if (!sandboxGameState || sandboxGameState.players.length === 0) {
+          return 1;
+        }
+
+        const humanPlayers = sandboxGameState.players.filter((player) => player.type === 'human');
+        if (humanPlayers.length === 1) {
+          return humanPlayers[0].playerNumber;
+        }
+
+        return 1;
+      })();
+
+      if (sandboxVictoryResult.reason !== 'draw' && sandboxVictoryResult.winner !== undefined) {
+        setSandboxSessionRecord((previousRecord) => {
+          const nextRecord =
+            sandboxVictoryResult.winner === trackedPlayerNumber
+              ? { wins: previousRecord.wins + 1, losses: previousRecord.losses }
+              : { wins: previousRecord.wins, losses: previousRecord.losses + 1 };
+
+          persistSandboxSessionRecord(nextRecord);
+          return nextRecord;
+        });
+      }
 
       // Mark first game completed for onboarding tracking
       markGameCompleted();
@@ -985,7 +1160,7 @@ export const SandboxGameHost: React.FC = () => {
     if (!sandboxVictoryResult && prevVictoryRef.current) {
       prevVictoryRef.current = false;
     }
-  }, [sandboxVictoryResult, markGameCompleted, lastLoadedScenario]);
+  }, [sandboxVictoryResult, sandboxGameState, markGameCompleted, lastLoadedScenario]);
 
   // Update training submission availability when victory occurs (January 2026)
   useEffect(() => {
@@ -2216,6 +2391,9 @@ export const SandboxGameHost: React.FC = () => {
             viewModel={sandboxVictoryViewModel}
             gameEndExplanation={sandboxGameEndExplanation}
             isSandbox
+            gameDurationMs={effectiveSandboxGameDurationMs}
+            aiAverageThinkTimeMsByPlayer={sandboxAiAverageThinkTimeMsByPlayer}
+            sessionRecord={sandboxSessionRecord}
             onClose={() => {
               setIsSandboxVictoryModalDismissed(true);
             }}

@@ -17,8 +17,8 @@ afterAll(() => {
   consoleErrorSpy.mockRestore();
 });
 
-function createPlayers(): Player[] {
-  return [
+function createPlayers(overrides: Partial<Player>[] = []): Player[] {
+  const players: Player[] = [
     {
       id: 'p1',
       username: 'Alice',
@@ -42,6 +42,8 @@ function createPlayers(): Player[] {
       territorySpaces: 4,
     },
   ];
+
+  return players.map((player, index) => ({ ...player, ...(overrides[index] ?? {}) }));
 }
 
 function createGameState(players: Player[]): GameState {
@@ -151,6 +153,57 @@ describe('VictoryModal – basic rendering', () => {
     expect(screen.getByText('Rings on Board')).toBeInTheDocument();
     expect(screen.getByText('Rings Eliminated')).toBeInTheDocument();
     expect(screen.getByText('Territory')).toBeInTheDocument();
+  });
+
+  it('renders sandbox match summary stats above the final table when provided', () => {
+    const players = createPlayers();
+    const gameState = createGameState(players);
+    const gameResult = createGameResult(1, 'ring_elimination');
+
+    render(
+      <VictoryModal
+        isOpen={true}
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        gameDurationMs={272000}
+        aiAverageThinkTimeMsByPlayer={{ 2: 1200 }}
+        sessionRecord={{ wins: 2, losses: 1 }}
+        onClose={jest.fn()}
+        onReturnToLobby={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('Game duration:')).toBeInTheDocument();
+    expect(screen.getByText('4m 32s')).toBeInTheDocument();
+    expect(screen.getByText('AI avg think time:')).toBeInTheDocument();
+    expect(screen.getByText('1.2s')).toBeInTheDocument();
+    expect(screen.getByText('Session:')).toBeInTheDocument();
+    expect(screen.getByText('2W-1L')).toBeInTheDocument();
+  });
+
+  it('shows per-player AI average think times when multiple AI seats are timed', () => {
+    const players = createPlayers([{ username: 'Oracle' }, { username: 'Sentinel' }]);
+    const gameState = createGameState(players);
+    const gameResult = createGameResult(1, 'ring_elimination');
+
+    render(
+      <VictoryModal
+        isOpen={true}
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        aiAverageThinkTimeMsByPlayer={{ 1: 1200, 2: 800 }}
+        onClose={jest.fn()}
+        onReturnToLobby={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('AI avg think time:')).toBeInTheDocument();
+    expect(screen.getAllByText('Oracle').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Sentinel').length).toBeGreaterThan(0);
+    expect(screen.getByText('1.2s')).toBeInTheDocument();
+    expect(screen.getByText('800ms')).toBeInTheDocument();
   });
 });
 
