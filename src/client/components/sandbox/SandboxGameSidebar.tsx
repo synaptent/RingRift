@@ -437,6 +437,26 @@ export const SandboxGameSidebar: React.FC<SandboxGameSidebarProps> = ({
         )}
       </div>
 
+      {isBeginnerMode && (
+        <div className="p-3 border border-emerald-700/60 rounded-2xl bg-emerald-950/40 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-emerald-100">Quick rules</h2>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-emerald-900/80 text-emerald-300 border border-emerald-600/70">
+              Beginner
+            </span>
+          </div>
+          <p className="text-emerald-100/90">
+            Build taller stacks to move farther, jump stacks to capture, then turn lines and sealed
+            regions into territory.
+          </p>
+          {phaseHint && (
+            <p className="rounded-xl border border-emerald-700/50 bg-slate-950/40 px-3 py-2 text-emerald-100/90">
+              <span className="font-semibold text-emerald-200">{phaseLabel}:</span> {phaseHint}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Advanced sidebar panels */}
       <details
         className="p-3 border border-slate-700 rounded-2xl bg-slate-900/60"

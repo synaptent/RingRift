@@ -210,6 +210,7 @@ export const SandboxGameHost: React.FC = () => {
     isSubmitting: false,
     wasSubmitted: false,
     error: null,
+    availabilityNote: null,
   });
 
   // Game view once configured (local sandbox) - needed early for clock hook
@@ -994,6 +995,7 @@ export const SandboxGameHost: React.FC = () => {
         isAvailable: false,
         wasSubmitted: false,
         error: null,
+        availabilityNote: null,
       }));
       return;
     }
@@ -1005,7 +1007,11 @@ export const SandboxGameHost: React.FC = () => {
     const isHumanVsAI = humanPlayers.length > 0 && aiPlayers.length > 0;
 
     if (!isHumanVsAI) {
-      setTrainingSubmissionState((prev) => ({ ...prev, isAvailable: false }));
+      setTrainingSubmissionState((prev) => ({
+        ...prev,
+        isAvailable: false,
+        availabilityNote: null,
+      }));
       return;
     }
 
@@ -1015,12 +1021,20 @@ export const SandboxGameHost: React.FC = () => {
 
     // Training only accepts human wins and needs move history
     const hasMoveHistory = sandboxGameState.moveHistory && sandboxGameState.moveHistory.length > 0;
+    const replayServiceConfigured = getReplayService().isConfigured();
+    const canSubmitForTraining = humanWon && hasMoveHistory && replayServiceConfigured;
+
+    const availabilityNote =
+      humanWon && hasMoveHistory && !replayServiceConfigured
+        ? 'This environment does not have the replay service configured, so this win cannot be queued for training review.'
+        : null;
 
     setTrainingSubmissionState((prev) => ({
       ...prev,
-      isAvailable: humanWon && hasMoveHistory,
+      isAvailable: canSubmitForTraining,
       wasSubmitted: false,
       error: null,
+      availabilityNote,
     }));
   }, [sandboxVictoryResult, sandboxGameState]);
 
@@ -1085,6 +1099,7 @@ export const SandboxGameHost: React.FC = () => {
           isSubmitting: false,
           wasSubmitted: true,
           error: null,
+          availabilityNote: null,
         }));
         toast.success(
           result.acceptedForTraining
@@ -1096,6 +1111,7 @@ export const SandboxGameHost: React.FC = () => {
           ...prev,
           isSubmitting: false,
           error: result.message || 'Submission failed',
+          availabilityNote: null,
         }));
       }
     } catch (error) {
@@ -1104,6 +1120,7 @@ export const SandboxGameHost: React.FC = () => {
         ...prev,
         isSubmitting: false,
         error: message,
+        availabilityNote: null,
       }));
     }
   }, [initialGameStateRef, sandboxGameState, sandboxVictoryResult]);

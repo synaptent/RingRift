@@ -207,8 +207,8 @@ describe('GameHUD', () => {
 
     render(<GameHUD gameState={gameState} currentPlayer={currentPlayer} />);
 
-    expect(screen.getByText(/Expert · MCTS/)).toBeInTheDocument();
-    expect(screen.getAllByText(/MCTS/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Expert · D7/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Search AI/).length).toBeGreaterThan(0);
   });
 
   it('should display connection status', () => {

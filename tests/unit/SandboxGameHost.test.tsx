@@ -222,7 +222,9 @@ describe('SandboxGameHost', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Launch Game/i }));
+    expect(screen.getByRole('button', { name: /Launch Local Game/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Launch Local Game/i }));
 
     await waitFor(() => {
       expect(initLocalSandboxEngine).toHaveBeenCalledTimes(1);

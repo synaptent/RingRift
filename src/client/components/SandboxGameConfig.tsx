@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { BoardType } from '../../shared/types/game';
 import { LocalConfig, LocalPlayerType } from '../contexts/SandboxContext';
 import { AIDifficultySelector, AIDifficultyBadge } from './AIDifficultySelector';
@@ -51,6 +52,12 @@ const BOARD_TYPE_ROW_HEADERS: Record<BoardType, string> = {
   square19: '19×19 Square',
   hexagonal: 'Hex24 (Full Hex)',
 };
+
+const BEGINNER_RULES_PRIMER = [
+  'Place rings to build stacks. A taller stack can move farther.',
+  'Jump over adjacent stacks to capture, then keep chaining if another capture exists.',
+  'Completed lines and sealed regions turn into territory. Most points or last player standing wins.',
+];
 
 /**
  * Sandbox time control configuration
@@ -509,6 +516,16 @@ export const SandboxGameConfig: React.FC<SandboxGameConfigProps> = ({
   const setupAiSeatCount = activePlayerTypes.length - setupHumanSeatCount;
   const selectedBoardPreset =
     BOARD_PRESETS.find((preset) => preset.value === config.boardType) ?? BOARD_PRESETS[0];
+  const aiStrengthSummary = Array.from({ length: config.numPlayers }, (_, i) => {
+    if (config.playerTypes[i] !== 'ai') {
+      return null;
+    }
+    const difficulty = config.aiDifficulties[i];
+    const descriptor = getDifficultyDescriptor(difficulty);
+    return descriptor ? descriptor.name : `D${difficulty}`;
+  })
+    .filter((value): value is string => value !== null)
+    .join(', ');
 
   const setAllPlayerTypes = (type: LocalPlayerType) => {
     const next = [...config.playerTypes];
@@ -597,7 +614,7 @@ export const SandboxGameConfig: React.FC<SandboxGameConfigProps> = ({
                 <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">
                   {BOARD_TYPE_ROW_HEADERS[boardType]}
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {presetsForType.map((preset) => {
                     const isLearnBasics =
                       preset.id === 'learn-basics' || preset.id === 'learn-basics-hex8';
@@ -610,7 +627,7 @@ export const SandboxGameConfig: React.FC<SandboxGameConfigProps> = ({
                         type="button"
                         onClick={() => onQuickStartPreset(preset)}
                         title={preset.learnMoreText}
-                        className={`relative flex items-center gap-2 px-3 py-2 rounded-xl border text-slate-200 transition text-sm ${
+                        className={`relative flex items-center gap-2 px-3 py-2 rounded-xl border text-slate-200 transition text-sm w-full ${
                           shouldHighlight
                             ? 'border-emerald-400 bg-emerald-900/40 ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-slate-900 animate-pulse hover:animate-none hover:bg-emerald-900/50'
                             : preset.badge
@@ -882,18 +899,43 @@ export const SandboxGameConfig: React.FC<SandboxGameConfigProps> = ({
                 {setupAiSeatCount > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-slate-300">AI strength</span>
-                    <span className="font-semibold text-sky-300">
-                      {Array.from({ length: config.numPlayers }, (_, i) =>
-                        config.playerTypes[i] === 'ai' ? `D${config.aiDifficulties[i]}` : null
-                      )
-                        .filter(Boolean)
-                        .join(', ')}
-                    </span>
+                    <span className="font-semibold text-sky-300">{aiStrengthSummary}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-slate-300">Total seats</span>
                   <span className="font-semibold">{config.numPlayers}</span>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-3 border-t border-slate-700/50">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Quick Rules</p>
+                  <h3 className="text-sm font-semibold text-white">What you need to know</h3>
+                </div>
+                <div className="space-y-2 text-xs text-slate-300">
+                  {BEGINNER_RULES_PRIMER.map((rule) => (
+                    <p
+                      key={rule}
+                      className="rounded-xl border border-slate-700/60 bg-slate-950/60 px-3 py-2"
+                    >
+                      {rule}
+                    </p>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/sandbox?preset=learn-basics"
+                    className="inline-flex items-center justify-center rounded-xl border border-emerald-500/60 bg-emerald-900/30 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400 hover:text-emerald-100"
+                  >
+                    Start guided tutorial
+                  </Link>
+                  <Link
+                    to="/help"
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-600 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-sky-400 hover:text-sky-200"
+                  >
+                    Open rules help
+                  </Link>
                 </div>
               </div>
 
@@ -942,15 +984,16 @@ export const SandboxGameConfig: React.FC<SandboxGameConfigProps> = ({
 
               <div className="space-y-2">
                 <p className="text-xs text-slate-400">
-                  We first attempt to stand up a backend game with these settings. If that fails, we
-                  fall back to a purely client-local sandbox so you can still test moves offline.
+                  {isLoggedIn
+                    ? 'We first attempt to stand up a backend game with these settings. If that fails, we fall back to a purely client-local sandbox so you can still test moves offline.'
+                    : 'No account required. This starts a local sandbox game instantly in your browser.'}
                 </p>
                 <button
                   type="button"
                   onClick={onStartGame}
                   className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition"
                 >
-                  Launch Game
+                  {isLoggedIn ? 'Launch Game' : 'Launch Local Game'}
                 </button>
               </div>
             </div>

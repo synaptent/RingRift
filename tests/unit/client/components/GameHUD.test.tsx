@@ -453,7 +453,7 @@ describe('GameHUD', () => {
       render(<GameHUD {...props} />);
 
       const p2Card = screen.getByTestId('player-card-player-2');
-      expect(p2Card.textContent).toContain('Lv7');
+      expect(p2Card.textContent).toContain('D7');
       expect(p2Card.textContent).toContain('Expert');
       expect(p2Card.textContent).toContain('MCTS');
     });
@@ -643,7 +643,7 @@ describe('GameHUD', () => {
 
       // Verify spectator mode is active by checking for the spectator banner
       expect(screen.getByText('Spectator Mode')).toBeInTheDocument();
-      
+
       // For spectators, the phase indicator should still exist
       expect(screen.getByTestId('phase-indicator')).toBeInTheDocument();
     });

@@ -21,3 +21,6 @@ Next:
 - Focused tests passed: App.authRouting, useSandboxEvaluation, securityHeaders.
 - Browser check via local Playwright against Vite: root shows LandingPage; /sandbox opens directly with onboarding modal; no Bunny-font or inline-script CSP issues remained.
 - Vite-only console still shows expected 500s for telemetry without the Express API; not treated as regressions for this batch.
+
+- Batch 2 edits applied: visitor-facing AI labels, mobile preset layout, quick-rules help, guest launch copy, training submission availability note.
+- Next: focused sandbox/UI tests and browser screenshots.

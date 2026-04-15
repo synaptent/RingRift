@@ -50,9 +50,9 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 3,
-    name: 'Casual (D3 – Minimax)',
+    name: 'Casual (D3 – Tactical AI)',
     shortDescription:
-      'Entry-level minimax that sees short tactics but still leaves chances to outplay it.',
+      'Entry-level tactical AI that sees short threats but still gives learners room to recover.',
     detailedDescription:
       'Backed by the canonical D3 minimax profile (heuristic evaluation only). Sees short tactical sequences and avoids many one-move blunders, but remains beatable through deeper planning, resource management, and complex multi-threat positions.',
     recommendedAudience:
@@ -62,9 +62,9 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 4,
-    name: 'Challenging (D4 – Intermediate)',
+    name: 'Challenging (D4 – Tactical AI)',
     shortDescription:
-      'Minimax with NNUE evaluation that punishes obvious mistakes and wins many close games.',
+      'Sharper tactical AI that punishes obvious mistakes and wins many close games.',
     detailedDescription:
       'Backed by the canonical D4 minimax profile (NNUE evaluation). Sees short tactics, avoids most outright blunders, and reliably converts clear material or territory advantages. Stronger casual players should find this engaging but still winnable.',
     recommendedAudience:
@@ -74,8 +74,8 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 5,
-    name: 'Tough (D5 – Descent)',
-    shortDescription: 'Neural search tier that plays more globally than minimax.',
+    name: 'Tough (D5 – Neural AI)',
+    shortDescription: 'Neural AI with better global planning than the tactical tiers.',
     detailedDescription:
       'Backed by the canonical D5 Descent profile (neural search). Plays with stronger global planning than minimax tiers, improving midgame conversion and reducing unforced mistakes while remaining within reasonable budgets.',
     recommendedAudience:
@@ -84,8 +84,8 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 6,
-    name: 'Advanced (D6 – Descent)',
-    shortDescription: 'Neural search with higher budget and stronger long-term planning.',
+    name: 'Advanced (D6 – Neural AI)',
+    shortDescription: 'Stronger neural AI with a higher search budget and steadier long-term play.',
     detailedDescription:
       'Backed by the canonical D6 Descent profile (neural search with higher budget). Avoids most obvious tactical shots, punishes over-extensions, and steadily converts small advantages over many moves.',
     recommendedAudience:
@@ -95,8 +95,8 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 7,
-    name: 'Expert (D7 – MCTS)',
-    shortDescription: 'Heuristic-only MCTS with a larger budget; mistakes are punished quickly.',
+    name: 'Expert (D7 – Search AI)',
+    shortDescription: 'High-budget search AI that punishes mistakes quickly.',
     detailedDescription:
       'Backed by the canonical D7 MCTS profile (heuristic-only, no neural guidance). Plays with high tactical awareness and strong conversion, and will quickly capitalise on poor trades or slow play.',
     recommendedAudience:
@@ -105,8 +105,9 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 8,
-    name: 'Strong Expert (D8 – Neural MCTS)',
-    shortDescription: 'Strong search-based AI intended as the top calibrated tier for most humans.',
+    name: 'Strong Expert (D8 – Neural Search AI)',
+    shortDescription:
+      'Strong search-based neural AI intended as the top calibrated tier for most humans.',
     detailedDescription:
       'Backed by the canonical D8 MCTS profile (neural guidance with large search budget). Rarely blunders outright, converts small advantages, and punishes greedy territory or elimination attempts. Even very strong human players should find sustaining a high win rate difficult.',
     recommendedAudience:
@@ -116,8 +117,8 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 9,
-    name: 'D9 – Gumbel MCTS',
-    shortDescription: 'Top-end neural search using Gumbel MCTS.',
+    name: 'Elite (D9 – Neural Network AI)',
+    shortDescription: 'Top-end neural network AI for expert players and engine stress tests.',
     detailedDescription:
       'Backed by the canonical D9 Gumbel MCTS profile (neural guidance with a large budget). It is a high ladder tier, but it is not a calibrated human Elo claim.',
     recommendedAudience:
@@ -127,8 +128,8 @@ export const DIFFICULTY_DESCRIPTORS: readonly DifficultyDescriptor[] = [
   },
   {
     id: 10,
-    name: 'D10 – Gumbel MCTS',
-    shortDescription: 'Maximum public difficulty; the strongest available engine tier.',
+    name: 'Max Challenge (D10 – Neural Network AI)',
+    shortDescription: 'Maximum public difficulty and the strongest available engine tier.',
     detailedDescription:
       'Backed by the canonical D10 Gumbel MCTS profile (largest public search budget). Intended for stress-testing high-level play, not as a human Elo rating.',
     recommendedAudience:

@@ -646,6 +646,42 @@ describe('VictoryModal – action buttons', () => {
     const rematchButton = screen.getByRole('button', { name: /Play Again/i });
     expect(rematchButton).toBeInTheDocument();
   });
+
+  it('shows a training availability note when sharing is unavailable', () => {
+    const players = createPlayers();
+    const gameState = createGameState(players);
+    const gameResult = createGameResult(1, 'ring_elimination');
+
+    render(
+      <VictoryModal
+        isOpen={true}
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        onClose={jest.fn()}
+        onReturnToLobby={jest.fn()}
+        onSubmitForTraining={jest.fn()}
+        trainingSubmission={{
+          isAvailable: false,
+          isSubmitting: false,
+          wasSubmitted: false,
+          error: null,
+          availabilityNote:
+            'This environment does not have the replay service configured, so this win cannot be queued for training review.',
+        }}
+      />
+    );
+
+    expect(screen.getByText('Training review unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /This environment does not have the replay service configured, so this win cannot be queued for training review/i
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Share This Win for Training/i })
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('VictoryModal – draw result', () => {

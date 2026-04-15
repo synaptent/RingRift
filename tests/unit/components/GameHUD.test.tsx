@@ -209,8 +209,8 @@ describe('GameHUD – view-model props', () => {
       ).length
     ).toBeGreaterThan(0);
     expect(screen.getByText(/AI/)).toBeInTheDocument();
-    expect(screen.getByText(/Advanced · Minimax Lv3/)).toBeInTheDocument();
-    // "Minimax" appears in both difficulty badge and AI type label
+    expect(screen.getByText(/Advanced · Minimax · D3/)).toBeInTheDocument();
+    // "Minimax" still appears in the explicit AI type badge for this fixture.
     expect(screen.getAllByText(/Minimax/).length).toBeGreaterThan(0);
 
     // Timers render in mm:ss format

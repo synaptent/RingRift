@@ -57,6 +57,8 @@ export interface TrainingSubmissionState {
   wasSubmitted: boolean;
   /** Error message if submission failed */
   error?: string | null;
+  /** Informational note when submission is intentionally unavailable */
+  availabilityNote?: string | null;
 }
 
 interface VictoryModalProps {
@@ -637,11 +639,23 @@ function TrainingSubmissionSection({
     );
   }
 
+  if (!state.isAvailable && state.availabilityNote) {
+    return (
+      <div className="bg-slate-800/70 border border-slate-600/60 rounded-lg px-4 py-3 text-center">
+        <div className="flex items-center justify-center gap-2 text-slate-200">
+          <span className="text-lg">&#9432;</span>
+          <span className="font-medium">Training review unavailable</span>
+        </div>
+        <p className="text-sm text-slate-300 mt-1">{state.availabilityNote}</p>
+      </div>
+    );
+  }
+
   // Show submission button
   return (
     <div className="bg-blue-900/20 border border-blue-600/30 rounded-lg px-4 py-3 text-center">
       <p className="text-sm text-blue-200/80 mb-2">
-        Your win can help improve the AI. Submit this game for training review?
+        Your win can help improve the AI. Share this match for training review?
       </p>
       <button
         type="button"
@@ -659,7 +673,7 @@ function TrainingSubmissionSection({
             Submitting...
           </span>
         ) : (
-          'Submit for Training Review'
+          'Share This Win for Training'
         )}
       </button>
     </div>
@@ -1091,16 +1105,21 @@ export function VictoryModal({
           )}
 
           {/* Training submission section (January 2026) - for human wins against AI in sandbox */}
-          {onSubmitForTraining && trainingSubmission?.isAvailable && (
-            <div
-              className={`${!effectiveReducedMotion ? 'buttons-animate' : ''} relative z-10`.trim()}
-            >
-              <TrainingSubmissionSection
-                onSubmit={onSubmitForTraining}
-                state={trainingSubmission}
-              />
-            </div>
-          )}
+          {onSubmitForTraining &&
+            trainingSubmission &&
+            (trainingSubmission.isAvailable ||
+              trainingSubmission.wasSubmitted ||
+              !!trainingSubmission.error ||
+              !!trainingSubmission.availabilityNote) && (
+              <div
+                className={`${!effectiveReducedMotion ? 'buttons-animate' : ''} relative z-10`.trim()}
+              >
+                <TrainingSubmissionSection
+                  onSubmit={onSubmitForTraining}
+                  state={trainingSubmission}
+                />
+              </div>
+            )}
 
           {/* Action Buttons with staggered animation */}
           <div

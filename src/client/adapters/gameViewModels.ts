@@ -627,42 +627,43 @@ function getAIDifficultyInfo(difficulty: number): {
   bgColor: string;
 } {
   // Aligned with canonical ladder from difficultyUx.ts:
-  // 1 → Random, 2 → Heuristic, 3–4 → Minimax, 5–6 → Descent, 7–8 → MCTS, 9–10 → Gumbel MCTS.
+  // 1 → Random, 2 → Guided AI, 3–4 → Tactical AI, 5–6 → Neural AI,
+  // 7–8 → Search AI, 9–10 → Neural Search AI.
   if (difficulty === 1) {
-    return { label: 'Beginner · Random', color: 'text-green-300', bgColor: 'bg-green-900/40' };
+    return { label: 'Beginner', color: 'text-green-300', bgColor: 'bg-green-900/40' };
   }
   if (difficulty === 2) {
-    return { label: 'Easy · Heuristic', color: 'text-emerald-300', bgColor: 'bg-emerald-900/40' };
+    return { label: 'Easy', color: 'text-emerald-300', bgColor: 'bg-emerald-900/40' };
   }
   if (difficulty >= 3 && difficulty <= 4) {
-    return { label: 'Advanced · Minimax', color: 'text-blue-300', bgColor: 'bg-blue-900/40' };
+    return { label: 'Challenging', color: 'text-blue-300', bgColor: 'bg-blue-900/40' };
   }
   if (difficulty >= 5 && difficulty <= 6) {
-    return { label: 'Tough · Descent', color: 'text-yellow-300', bgColor: 'bg-yellow-900/40' };
+    return { label: 'Strong', color: 'text-yellow-300', bgColor: 'bg-yellow-900/40' };
   }
   if (difficulty === 7 || difficulty === 8) {
-    return { label: 'Expert · MCTS', color: 'text-purple-300', bgColor: 'bg-purple-900/40' };
+    return { label: 'Expert', color: 'text-purple-300', bgColor: 'bg-purple-900/40' };
   }
   if (difficulty === 9) {
-    return { label: 'D9 · Gumbel MCTS', color: 'text-red-300', bgColor: 'bg-red-900/40' };
+    return { label: 'Elite', color: 'text-red-300', bgColor: 'bg-red-900/40' };
   }
-  return { label: 'D10 · Gumbel MCTS', color: 'text-red-400', bgColor: 'bg-red-900/50' };
+  return { label: 'Max Challenge', color: 'text-red-400', bgColor: 'bg-red-900/50' };
 }
 
 function getAITypeLabel(aiType?: string): string {
   switch (aiType) {
     case 'random':
-      return 'Random';
+      return 'Random AI';
     case 'heuristic':
-      return 'Heuristic';
+      return 'Guided AI';
     case 'minimax':
-      return 'Minimax';
+      return 'Tactical AI';
     case 'mcts':
-      return 'MCTS';
+      return 'Search AI';
     case 'descent':
-      return 'Descent';
+      return 'Neural AI';
     case 'gumbel_mcts':
-      return 'Gumbel MCTS';
+      return 'Neural Search AI';
     default:
       return 'AI';
   }
