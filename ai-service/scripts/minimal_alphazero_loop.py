@@ -63,7 +63,8 @@ def _make_ai(player: int, model_path: str, budget: int,
              randomness: float = 0.0) -> GumbelMCTSAI:
     cfg = AIConfig(difficulty=9, randomness=randomness, use_neural_net=True,
                    gumbel_simulation_budget=budget, nn_model_id=model_path,
-                   allow_fresh_weights=False, use_gpu_tree=True)
+                   allow_fresh_weights=False, use_gpu_tree=True,
+                   nn_model_version=MODEL_VERSION if MODEL_VERSION != "v2" else None)
     return GumbelMCTSAI(player, cfg, BOARD_ENUM)
 
 
