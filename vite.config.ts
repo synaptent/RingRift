@@ -73,20 +73,16 @@ export default defineConfig(({ mode }) => ({
       gzipSize: true,
       brotliSize: true,
     }),
-    // Copy contract test vectors to public scenarios directory for sandbox mode
-    // Only needed in development/test, not in Docker production builds
-    ...(mode !== 'production'
-      ? [
-          viteStaticCopy({
-            targets: [
-              {
-                src: '../../tests/fixtures/contract-vectors/v2/*.vectors.json',
-                dest: 'scenarios/vectors',
-              },
-            ],
-          }),
-        ]
-      : []),
+    // Copy contract test vectors into the built client so the sandbox scenario
+    // browser can load them in both local and production builds.
+    viteStaticCopy({
+      targets: [
+        {
+          src: '../../tests/fixtures/contract-vectors/v2/*.vectors.json',
+          dest: 'scenarios/vectors',
+        },
+      ],
+    }),
   ],
   root: 'src/client',
   build: {
