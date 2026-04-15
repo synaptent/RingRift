@@ -312,7 +312,9 @@ class BackgroundEvaluator:
         """Subscribe to training events for event-driven evaluation.
 
         Instead of polling every 5 seconds, this method subscribes to
-        TRAINING_COMPLETE and EPOCH_COMPLETE events to trigger evaluation.
+        the legacy StageEvent.TRAINING_COMPLETE / EPOCH_COMPLETE aliases to
+        trigger evaluation. Normalized router/public guidance uses the
+        canonical TRAINING_COMPLETED event name.
 
         Returns:
             True if successfully subscribed

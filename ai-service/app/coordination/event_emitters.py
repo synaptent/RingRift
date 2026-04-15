@@ -757,9 +757,10 @@ async def emit_training_complete(
     epochs_completed: int = 0,
     **metadata,
 ) -> bool:
-    """Emit TRAINING_COMPLETE or TRAINING_FAILED event.
+    """Emit legacy StageEvent.TRAINING_COMPLETE or TRAINING_FAILED event.
 
-    This is a critical event and uses retry logic to ensure delivery.
+    This is a critical compatibility path and uses retry logic to ensure
+    delivery. Router/public guidance uses TRAINING_COMPLETED.
 
     Args:
         job_id: Training job ID
@@ -810,7 +811,7 @@ def emit_training_complete_sync(
     success: bool = True,
     **kwargs,
 ) -> bool:
-    """Synchronous version of emit_training_complete."""
+    """Synchronous version of emit_training_complete for the legacy stage alias."""
     if not HAS_STAGE_EVENTS:
         return False
 

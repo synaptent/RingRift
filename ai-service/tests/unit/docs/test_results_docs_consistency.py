@@ -128,6 +128,10 @@ GENERATE_DATA_MODULE = REPO_ROOT / "ai-service" / "app" / "training" / "generate
 TOURNAMENT_DAEMON_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "tournament_daemon.py"
 NPZ_VALIDATION_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "npz_validation.py"
 HANDLER_BASE_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "handler_base.py"
+BACKGROUND_EVAL_MODULE = REPO_ROOT / "ai-service" / "app" / "training" / "background_eval.py"
+STAGE_EVENTS_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "stage_events.py"
+EVENT_EMITTERS_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "event_emitters.py"
+PIPELINE_ACTIONS_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "pipeline_actions.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -994,6 +998,27 @@ def test_event_package_docs_use_data_events_package_paths() -> None:
     assert "app.distributed.data_events package" in handler_base_text
     assert "event_types.py" in handler_base_text
     assert "app/distributed/data_events.py" not in handler_base_text
+
+
+def test_training_complete_compatibility_docs_are_marked_as_legacy_aliases() -> None:
+    background_eval_text = BACKGROUND_EVAL_MODULE.read_text(encoding="utf-8")
+    stage_events_text = STAGE_EVENTS_MODULE.read_text(encoding="utf-8")
+    emitters_text = EVENT_EMITTERS_MODULE.read_text(encoding="utf-8")
+    pipeline_actions_text = PIPELINE_ACTIONS_MODULE.read_text(encoding="utf-8")
+
+    assert "legacy StageEvent.TRAINING_COMPLETE / EPOCH_COMPLETE aliases" in background_eval_text
+    assert "canonical TRAINING_COMPLETED event name" in background_eval_text
+
+    assert "TRAINING_COMPLETE (legacy stage alias; normalized router event is" in stage_events_text
+    assert "TRAINING_COMPLETED) -> trigger evaluation" in stage_events_text
+
+    assert "legacy StageEvent.TRAINING_COMPLETE or TRAINING_FAILED event" in emitters_text
+    assert "Router/public guidance uses TRAINING_COMPLETED." in emitters_text
+    assert "legacy stage alias" in emitters_text
+
+    assert "Emit legacy TRAINING_COMPLETE stage alias." in pipeline_actions_text
+    assert "router/public guidance uses the canonical" in pipeline_actions_text
+    assert "legacy alias for older stage-event consumers" in pipeline_actions_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

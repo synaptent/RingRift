@@ -524,7 +524,8 @@ def create_pipeline_callbacks() -> dict[StageEvent, StageCompletionCallback]:
     - SYNC_COMPLETE -> trigger parity validation
     - PARITY_VALIDATION_COMPLETE -> trigger NPZ export
     - NPZ_EXPORT_COMPLETE -> trigger training
-    - TRAINING_COMPLETE -> trigger evaluation
+    - TRAINING_COMPLETE (legacy stage alias; normalized router event is
+      TRAINING_COMPLETED) -> trigger evaluation
     - EVALUATION_COMPLETE -> trigger promotion check
 
     Returns:

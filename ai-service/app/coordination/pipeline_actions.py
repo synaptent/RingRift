@@ -1594,7 +1594,12 @@ async def _emit_npz_export_complete(result: StageCompletionResult) -> None:
 
 
 async def _emit_training_complete(result: StageCompletionResult) -> None:
-    """Emit TRAINING_COMPLETE event (January 2026 - migrated to event_router)."""
+    """Emit legacy TRAINING_COMPLETE stage alias.
+
+    January 2026 migration note: router/public guidance uses the canonical
+    TRAINING_COMPLETED event name, but this compatibility path still emits the
+    legacy alias for older stage-event consumers.
+    """
     extra_meta = {k: v for k, v in result.metadata.items()
                   if k not in ("model_id", "board_type", "num_players", "val_loss", "epochs_completed")}
     payload = {
