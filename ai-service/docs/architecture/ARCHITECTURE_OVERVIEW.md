@@ -167,13 +167,14 @@ DEVELOPMENT ──▶ STAGING ──▶ PRODUCTION ──▶ ARCHIVED
 
 Python implementation maintaining TypeScript parity:
 
-| Module                    | Purpose                             |
-| ------------------------- | ----------------------------------- |
-| `game_state.py`           | Immutable game state representation |
-| `game_engine/__init__.py` | Move application, phase handling    |
-| `board_manager.py`        | Board topology, adjacency           |
-| `territory.py`            | Territory calculation               |
-| `forced_elimination.py`   | Elimination rules                   |
+| Module                                                          | Purpose                                                     |
+| --------------------------------------------------------------- | ----------------------------------------------------------- |
+| `models/core.py`                                                | Pydantic game-state mirrors and phase enums                 |
+| `rules/default_engine.py`                                       | Stable RulesEngine facade (`get_valid_moves`, `apply_move`) |
+| `game_engine/__init__.py`                                       | Replay/apply semantics and phase handling                   |
+| `board_manager.py`                                              | Board topology, adjacency, region detection                 |
+| `rules/mutators/territory.py` + `rules/validators/territory.py` | Territory collapse and validation                           |
+| `rules/elimination.py`                                          | Elimination eligibility and FE/ANM contexts                 |
 
 ### 6. P2P Orchestrator (`scripts/p2p_orchestrator.py`)
 

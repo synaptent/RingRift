@@ -96,14 +96,14 @@ print(diff)
 
 ### 3.4 Common Mismatch Types
 
-| Mismatch Kind      | Usually Indicates       | Check Files                            |
-| ------------------ | ----------------------- | -------------------------------------- |
-| `current_phase`    | Phase transition bug    | `app/rules/phase_machine.py`, `fsm.py` |
-| `board_state`      | Move application bug    | `app/rules/board_manager.py`           |
-| `scores`           | Scoring calculation bug | `app/rules/scoring.py`                 |
-| `anm_state`        | ANM detection bug       | `app/rules/anm_detection.py`           |
-| `legal_moves`      | Move generation bug     | `app/rules/move_generator.py`          |
-| `collapsed_spaces` | Territory collapse bug  | `app/rules/territory.py`               |
+| Mismatch Kind      | Usually Indicates       | Check Files                                                            |
+| ------------------ | ----------------------- | ---------------------------------------------------------------------- |
+| `current_phase`    | Phase transition bug    | `app/rules/phase_machine.py`, `app/rules/fsm.py`                       |
+| `board_state`      | Move application bug    | `app/board_manager.py`, `app/rules/default_engine.py`                  |
+| `scores`           | Scoring calculation bug | `app/rules/mutators/territory.py`, `app/rules/elimination.py`          |
+| `anm_state`        | ANM detection bug       | `app/rules/global_actions.py`, `app/rules/phase_machine.py`            |
+| `legal_moves`      | Move generation bug     | `app/rules/default_engine.py`, `app/rules/generators/*.py`             |
+| `collapsed_spaces` | Territory collapse bug  | `app/rules/mutators/territory.py`, `app/rules/validators/territory.py` |
 
 ---
 
@@ -113,14 +113,14 @@ print(diff)
 
 ```bash
 # Replay specific game to divergence point
-python scripts/selfplay-db-ts-replay.py \
+npx ts-node -T ../scripts/selfplay-db-ts-replay.ts \
   --db data/games/my_games.db \
   --game <game_id>
 
 # With state dumps at specific move
 RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K=57 \
 RINGRIFT_TS_REPLAY_DUMP_DIR=/tmp/parity_debug \
-python scripts/selfplay-db-ts-replay.py \
+npx ts-node -T ../scripts/selfplay-db-ts-replay.ts \
   --db data/games/my_games.db \
   --game <game_id>
 ```
@@ -182,30 +182,29 @@ if hasattr(region, "spaces"):     # Correct!
 
 #### Board State Divergence
 
-Check `app/rules/board_manager.py`:
+Check `app/board_manager.py` and `app/rules/serialization.py`:
 
 ```python
 # Common issue: Different iteration order
 # BUG - Dict iteration may differ
-for pos, marker in markers.items():
+for pos_key, marker in markers.items():
 
-# FIX - Sort for deterministic order
-for pos in sorted(markers.keys(), key=lambda p: (p.x, p.y, p.z)):
-    marker = markers[pos]
+# FIX - Sort serialized keys before parity diffing / hashing
+for pos_key, marker in sorted(markers.items()):
+    ...
 ```
 
 #### ANM Detection
 
-Check `app/rules/anm_detection.py`:
+Check `app/rules/global_actions.py` and `app/rules/phase_machine.py`:
 
 ```python
-# Common issue: Different line detection
-# Ensure hex direction vectors match TypeScript
-HEX_DIRECTIONS = [
-    (1, 0, -1), (-1, 0, 1),   # axial
-    (0, 1, -1), (0, -1, 1),   # axial
-    (1, -1, 0), (-1, 1, 0),   # axial
-]
+# Common issue: ANM/global-action helpers disagree with phase gating
+summary = global_legal_actions_summary(state, state.current_player)
+if is_anm_state(state):
+    assert not summary.has_global_placement_action
+    assert not summary.has_phase_local_interactive_move
+    assert not summary.has_forced_elimination_action
 ```
 
 ### 4.5 Validate Fix
@@ -323,7 +322,7 @@ python scripts/check_ts_python_replay_parity.py \
 RINGRIFT_TRACE_DEBUG=1 \
 RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K=<move> \
 RINGRIFT_TS_REPLAY_DUMP_DIR=/tmp/debug \
-python scripts/selfplay-db-ts-replay.py \
+npx ts-node -T ../scripts/selfplay-db-ts-replay.ts \
   --db <db_path> --game <game_id>
 
 # Diff states

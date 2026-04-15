@@ -158,7 +158,7 @@ $ node --version
 The parity script requires:
 
 ```bash
-npx ts-node -T scripts/selfplay-db-ts-replay.ts --db <database>
+npx ts-node -T ../scripts/selfplay-db-ts-replay.ts --db <database>
 ```
 
 ### Affected Databases
@@ -346,9 +346,9 @@ Parity Error: Move 15 mismatch
   TypeScript: PLACE_RING to=(3, 4)
 ```
 
-**Cause:** Coordinate system difference (Python 0-indexed vs TypeScript 1-indexed?)
+**Cause:** Position serialization or board-topology mismatch
 
-**Fix:** Check `app/rules/coordinate_transforms.py`
+**Fix:** Check `app/board_manager.py` and `app/rules/serialization.py` against `src/shared/types/game.ts`
 
 #### 2. Phase Mismatch
 
@@ -360,7 +360,7 @@ Parity Error: Move 22 phase mismatch
 
 **Cause:** Different phase transition logic
 
-**Fix:** Compare `app/rules/phase_transitions.py` with `src/shared/engine/phases.ts`
+**Fix:** Compare `app/rules/phase_machine.py` and `app/rules/fsm.py` with `src/shared/engine/orchestration/turnOrchestrator.ts` and `src/shared/engine/fsm/TurnStateMachine.ts`
 
 #### 3. Territory Calculation Mismatch
 
@@ -370,9 +370,9 @@ Parity Error: Final score mismatch
   TypeScript: P1=23, P2=19
 ```
 
-**Cause:** Territory calculation difference
+**Cause:** Territory detection, validation, or collapse difference
 
-**Fix:** Compare `app/rules/territory.py` with `src/shared/engine/territory.ts`
+**Fix:** Compare `app/rules/generators/territory.py`, `app/rules/mutators/territory.py`, and `app/rules/validators/territory.py` with `src/shared/engine/territoryDetection.ts`, `src/shared/engine/territoryProcessing.ts`, and `src/shared/engine/aggregates/TerritoryAggregate.ts`
 
 #### 4. Chain Capture FSM Mismatch
 
@@ -382,9 +382,9 @@ Parity Error: Move 45 capture failure
   TypeScript: captured_positions=[]
 ```
 
-**Cause:** Chain capture logic difference
+**Cause:** Capture application or chain-continuation difference
 
-**Fix:** Compare `app/rules/capture.py` with `src/shared/engine/capture.ts`
+**Fix:** Compare `app/rules/generators/capture.py`, `app/rules/mutators/capture.py`, `app/rules/validators/capture.py`, and `app/rules/capture_chain.py` with `src/shared/engine/captureLogic.ts` and `src/shared/engine/aggregates/CaptureAggregate.ts`
 
 ### Debug Workflow
 
@@ -400,7 +400,7 @@ python scripts/check_ts_python_replay_parity.py \
 
 ```bash
 RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K=42 \
-  npx ts-node -T scripts/selfplay-db-ts-replay.ts \
+  npx ts-node -T ../scripts/selfplay-db-ts-replay.ts \
     --db data/games/canonical_hex8_2p.db \
     --game <game_id>
 ```

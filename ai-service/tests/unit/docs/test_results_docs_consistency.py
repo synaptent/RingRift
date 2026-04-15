@@ -100,6 +100,11 @@ INTEGRATION_ASSESSMENT_DEC2025_DOC = REPO_ROOT / "ai-service" / "docs" / "planni
 EXPERIMENTAL_AI_DOC = REPO_ROOT / "ai-service" / "docs" / "EXPERIMENTAL_AI.md"
 TRAINING_EXPERIMENTAL_ALGORITHMS_DOC = REPO_ROOT / "ai-service" / "docs" / "training" / "EXPERIMENTAL_ALGORITHMS.md"
 EBMO_RESULTS_DOC = REPO_ROOT / "ai-service" / "docs" / "EBMO_RESULTS.md"
+PARITY_GATE_RESOLUTION_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "PARITY_GATE_RESOLUTION.md"
+PARITY_MISMATCH_DEBUG_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" / "PARITY_MISMATCH_DEBUG.md"
+AI_SERVICE_ARCHITECTURE_OVERVIEW_DOC = (
+    REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_OVERVIEW.md"
+)
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -879,3 +884,62 @@ def test_experimental_ai_docs_use_current_module_paths() -> None:
     assert "`app/ai/ebmo_online_learner.py`" in ebmo_text
     assert "from app.ai.ebmo_online import EBMOOnlineAI, EBMOOnlineConfig" not in ebmo_text
     assert "`app/ai/ebmo_online.py`" not in ebmo_text
+
+
+def test_parity_runbooks_use_live_rules_and_replay_paths() -> None:
+    resolution_text = PARITY_GATE_RESOLUTION_RUNBOOK.read_text(encoding="utf-8")
+    mismatch_text = PARITY_MISMATCH_DEBUG_RUNBOOK.read_text(encoding="utf-8")
+
+    assert "../scripts/selfplay-db-ts-replay.ts" in resolution_text
+    assert "app/board_manager.py" in resolution_text
+    assert "app/rules/serialization.py" in resolution_text
+    assert "src/shared/types/game.ts" in resolution_text
+    assert "app/rules/phase_machine.py" in resolution_text
+    assert "app/rules/fsm.py" in resolution_text
+    assert "src/shared/engine/orchestration/turnOrchestrator.ts" in resolution_text
+    assert "src/shared/engine/fsm/TurnStateMachine.ts" in resolution_text
+    assert "app/rules/generators/territory.py" in resolution_text
+    assert "app/rules/mutators/territory.py" in resolution_text
+    assert "app/rules/validators/territory.py" in resolution_text
+    assert "src/shared/engine/territoryDetection.ts" in resolution_text
+    assert "src/shared/engine/territoryProcessing.ts" in resolution_text
+    assert "src/shared/engine/aggregates/TerritoryAggregate.ts" in resolution_text
+    assert "app/rules/generators/capture.py" in resolution_text
+    assert "app/rules/mutators/capture.py" in resolution_text
+    assert "app/rules/validators/capture.py" in resolution_text
+    assert "app/rules/capture_chain.py" in resolution_text
+    assert "src/shared/engine/captureLogic.ts" in resolution_text
+    assert "src/shared/engine/aggregates/CaptureAggregate.ts" in resolution_text
+    assert "app/rules/coordinate_transforms.py" not in resolution_text
+    assert "app/rules/phase_transitions.py" not in resolution_text
+    assert "app/rules/territory.py" not in resolution_text
+    assert "app/rules/capture.py" not in resolution_text
+
+    assert "../scripts/selfplay-db-ts-replay.ts" in mismatch_text
+    assert "scripts/selfplay-db-ts-replay.py" not in mismatch_text
+    assert "app/board_manager.py" in mismatch_text
+    assert "app/rules/default_engine.py" in mismatch_text
+    assert "app/rules/mutators/territory.py" in mismatch_text
+    assert "app/rules/elimination.py" in mismatch_text
+    assert "app/rules/global_actions.py" in mismatch_text
+    assert "app/rules/generators/*.py" in mismatch_text
+    assert "app/rules/validators/territory.py" in mismatch_text
+    assert "app/rules/board_manager.py" not in mismatch_text
+    assert "app/rules/scoring.py" not in mismatch_text
+    assert "app/rules/anm_detection.py" not in mismatch_text
+    assert "app/rules/move_generator.py" not in mismatch_text
+    assert "app/rules/territory.py" not in mismatch_text
+
+
+def test_ai_service_architecture_overview_uses_current_rules_layout() -> None:
+    text = AI_SERVICE_ARCHITECTURE_OVERVIEW_DOC.read_text(encoding="utf-8")
+
+    assert "`models/core.py`" in text
+    assert "`rules/default_engine.py`" in text
+    assert "`game_engine/__init__.py`" in text
+    assert "`board_manager.py`" in text
+    assert "`rules/mutators/territory.py` + `rules/validators/territory.py`" in text
+    assert "`rules/elimination.py`" in text
+    assert "| `game_state.py`" not in text
+    assert "| `territory.py`" not in text
+    assert "| `forced_elimination.py`" not in text
