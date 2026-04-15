@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import app.coordination.availability as availability_pkg
+import app.coordination as coordination_pkg
 import app.coordination.cluster as cluster_pkg
 import app.coordination.deprecated as deprecated_pkg
 import app.coordination.feedback as feedback_pkg
@@ -385,3 +388,24 @@ def test_lifecycle_module_declares_public_exports() -> None:
     for name in expected:
         assert name in dir(lifecycle_pkg)
         assert callable(getattr(lifecycle_pkg, name))
+
+
+def test_coordination_package_entrypoint_stays_thin_and_exposes_boundary_helpers() -> None:
+    init_path = Path(coordination_pkg.__file__).resolve()
+
+    assert sum(1 for _ in init_path.open(encoding="utf-8")) < 100
+
+    expected = {
+        "initialize_all_coordinators",
+        "get_all_coordinator_status",
+        "get_system_health",
+        "start_coordinator_heartbeats",
+        "stop_coordinator_heartbeats",
+        "is_heartbeat_running",
+        "core_utils",
+        "core_events",
+    }
+
+    assert expected.issubset(set(coordination_pkg.__all__))
+    for name in expected:
+        assert name in dir(coordination_pkg)
