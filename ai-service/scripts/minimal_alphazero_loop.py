@@ -48,7 +48,7 @@ logger = logging.getLogger("minimal_alphazero")
 BOARD_TYPE = "hex8"
 BOARD_ENUM = BoardType.HEX8
 NUM_PLAYERS = 2
-MODEL_VERSION = "v2"
+MODEL_VERSION = "v2"  # Overridden by --model-version CLI arg
 MAX_MOVES = 800
 
 BOARD_TYPE_MAP = {
@@ -180,9 +180,12 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
     # Delete existing NPZ first to avoid stale data if export fails
     if npz.exists():
         npz.unlink()
+    # v4 and v5-heavy need v3 encoder (64 channels); v2 uses v2 encoder (40 channels)
+    encoder = "v3" if MODEL_VERSION in ("v4", "v5-heavy") else "v2"
     cmd = [sys.executable, str(SCRIPT_DIR / "jsonl_to_npz.py"),
            "--input", str(jsonl), "--output", str(npz),
            "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
+           "--encoder-version", encoder,
            "--gpu-selfplay"]
     logger.info(f"  exporting {jsonl.name} -> {npz.name}")
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -260,6 +263,7 @@ def train_model(
         cmd = [sys.executable, "-m", "app.training.train",
                "--data-path", str(npz), "--save-path", str(out),
                "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
+               "--model-version", MODEL_VERSION,
                "--epochs", str(epochs),
                "--batch-size", str(b), "--learning-rate", str(lr),
                "--init-weights", str(init), "--no-auto-tune-batch-size",
@@ -556,7 +560,7 @@ def _push_heartbeat_s3(
 
 
 def main() -> None:
-    global BOARD_TYPE, BOARD_ENUM, NUM_PLAYERS
+    global BOARD_TYPE, BOARD_ENUM, NUM_PLAYERS, MODEL_VERSION
 
     ap = argparse.ArgumentParser(description="Minimal AlphaZero loop")
     ap.add_argument("--model", required=True, help="Starting model checkpoint")
@@ -564,6 +568,9 @@ def main() -> None:
                     choices=list(BOARD_TYPE_MAP.keys()),
                     help="Board type (default: hex8)")
     ap.add_argument("--num-players", type=int, default=2, choices=[2, 3, 4])
+    ap.add_argument("--model-version", type=str, default="v2",
+                    choices=["v2", "v3", "v4", "v5-heavy"],
+                    help="Neural network architecture version (default: v2)")
     ap.add_argument(
         "--profile",
         type=str,
@@ -637,6 +644,7 @@ def main() -> None:
     BOARD_TYPE = args.board_type
     BOARD_ENUM = BOARD_TYPE_MAP[args.board_type]
     NUM_PLAYERS = args.num_players
+    MODEL_VERSION = args.model_version
     profile_info = resolve_loop_profile(
         BOARD_TYPE,
         NUM_PLAYERS,
