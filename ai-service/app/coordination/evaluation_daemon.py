@@ -3,12 +3,12 @@
 December 2025: Part of Phase 11 (Auto-Evaluation Pipeline).
 December 27, 2025: Migrated to HandlerBase (Wave 4 Phase 1).
 
-This daemon subscribes to TRAINING_COMPLETE events and automatically triggers
+This daemon subscribes to TRAINING_COMPLETED events and automatically triggers
 gauntlet evaluation for newly trained models. This closes the training loop
 by ensuring every trained model gets evaluated without manual intervention.
 
 Key Features:
-- Subscribes to TRAINING_COMPLETE events
+- Subscribes to TRAINING_COMPLETED events
 - Runs baseline gauntlet evaluation against RANDOM and HEURISTIC
 - Emits EVALUATION_COMPLETED events for promotion consideration
 - Supports early stopping based on statistical confidence
@@ -575,7 +575,7 @@ class EvaluationDaemon(HandlerBase, EvaluationExecutorMixin):
         return last_eval is not None and now - last_eval < self.config.dedup_cooldown_seconds
 
     async def _on_training_complete(self, event: Any) -> None:
-        """Handle TRAINING_COMPLETE event.
+        """Handle TRAINING_COMPLETED event.
 
         Sprint 15 (Jan 3, 2026): Added support for backlog evaluation sources.
         Events with source="backlog_*" are queued with lower priority.
@@ -587,7 +587,7 @@ class EvaluationDaemon(HandlerBase, EvaluationExecutorMixin):
             board_type, num_players = self._extract_board_config(metadata)
 
             if not model_path:
-                logger.warning("[EvaluationDaemon] No checkpoint_path/model_path in TRAINING_COMPLETE event")
+                logger.warning("[EvaluationDaemon] No checkpoint_path/model_path in TRAINING_COMPLETED event")
                 return
 
             # Sprint 15: Detect backlog evaluation source

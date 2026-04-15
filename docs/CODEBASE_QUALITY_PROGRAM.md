@@ -209,6 +209,7 @@ Current objectives:
 - The remaining support docs around NPZ distribution now match the same unified story too: `docs/coordination/RESILIENT_TRANSFER_GUIDE.md`, `docs/DATA_SYNC_ASSESSMENT.md`, and `app/coordination/npz_validation.py` now point at `create_unified_distribution_daemon()` / `get_distribution_daemon()` and the event-driven `NPZ_EXPORT_COMPLETE` flow instead of the deprecated split factories or a nonexistent `python -m app.coordination.npz_distribution_daemon --once` path.
 - The remaining `NPZ_EXPORT_COMPLETE` naming drift is being drained too: `COORDINATION_API_REFERENCE.md` and `planning/INTEGRATION_ASSESSMENT_DEC2025.md` now use the canonical event name instead of the stale `NPZ_EXPORT_COMPLETED` variant, and the docs ratchet now locks that spelling.
 - The next training-event doc drift is being drained carefully too: `QUICK_START.md`, `app/testing/README.md`, and `DAEMON_REGISTRY.md` now teach the canonical `TRAINING_COMPLETED` event name in current user-facing examples instead of the older `TRAINING_COMPLETE` compatibility spelling, while the ratchet leaves explicit compatibility docs alone.
+- The next code-adjacent training-event drift is being drained too: `app/coordination/evaluation_daemon.py`, `app/coordination/feedback_loop_controller.py`, and `docs/planning/CONSOLIDATION_ROADMAP.md` now use `TRAINING_COMPLETED` in current guidance and docstrings where the code already subscribes to the canonical router event, while the compatibility-oriented `StageEvent.TRAINING_COMPLETE` notes remain untouched.
 
 ## Execution Protocol
 

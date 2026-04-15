@@ -56,6 +56,10 @@ UNIFIED_TRAINING_ORCHESTRATOR = REPO_ROOT / "ai-service" / "app" / "training" / 
 P2P_INTEGRATION = REPO_ROOT / "ai-service" / "app" / "integration" / "p2p_integration.py"
 MODEL_LIFECYCLE = REPO_ROOT / "ai-service" / "app" / "integration" / "model_lifecycle.py"
 ARCHIVED_TRAINING_ORCHESTRATOR = REPO_ROOT / "ai-service" / "archive" / "deprecated_training" / "orchestrated_training.py"
+EVALUATION_DAEMON_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "evaluation_daemon.py"
+FEEDBACK_LOOP_CONTROLLER_MODULE = (
+    REPO_ROOT / "ai-service" / "app" / "coordination" / "feedback_loop_controller.py"
+)
 CONFIG_SOURCES_DOC = REPO_ROOT / "ai-service" / "docs" / "CONFIG_SOURCES.md"
 DEPRECATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_ROADMAP.md"
 DEPRECATED_MODULES_MIGRATION_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATED_MODULES_MIGRATION.md"
@@ -70,6 +74,7 @@ TITANS_IMPLEMENTATION_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "TITANS_IMP
 STRATEGIC_IMPROVEMENT_PLAN_DOC = REPO_ROOT / "ai-service" / "docs" / "STRATEGIC_IMPROVEMENT_PLAN_2025_12.md"
 ARCHITECTURE_NAMING_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_NAMING.md"
 CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_ROADMAP.md"
+PLANNING_CONSOLIDATION_ROADMAP_DOC = REPO_ROOT / "ai-service" / "docs" / "planning" / "CONSOLIDATION_ROADMAP.md"
 DEPRECATION_TIMELINE_DOC = REPO_ROOT / "ai-service" / "docs" / "DEPRECATION_TIMELINE.md"
 CONSOLIDATION_STATUS_2025_12_28_DOC = REPO_ROOT / "ai-service" / "docs" / "CONSOLIDATION_STATUS_2025_12_28.md"
 DEPRECATED_AI_README = REPO_ROOT / "ai-service" / "archive" / "deprecated_ai" / "README.md"
@@ -930,6 +935,27 @@ def test_training_event_examples_use_canonical_completed_name() -> None:
 
     assert "Auto-triggers evaluation after TRAINING_COMPLETED events." in daemon_registry_text
     assert "Auto-triggers evaluation after TRAINING_COMPLETE events." not in daemon_registry_text
+
+
+def test_training_completed_guidance_is_canonical_outside_compat_docs() -> None:
+    evaluation_daemon_text = EVALUATION_DAEMON_MODULE.read_text(encoding="utf-8")
+    feedback_loop_text = FEEDBACK_LOOP_CONTROLLER_MODULE.read_text(encoding="utf-8")
+    consolidation_text = PLANNING_CONSOLIDATION_ROADMAP_DOC.read_text(encoding="utf-8")
+
+    assert "subscribes to TRAINING_COMPLETED events" in evaluation_daemon_text
+    assert "- Subscribes to TRAINING_COMPLETED events" in evaluation_daemon_text
+    assert 'Handle TRAINING_COMPLETED event.' in evaluation_daemon_text
+    assert "No checkpoint_path/model_path in TRAINING_COMPLETED event" in evaluation_daemon_text
+    assert "subscribes to TRAINING_COMPLETE events" not in evaluation_daemon_text
+    assert "- Subscribes to TRAINING_COMPLETE events" not in evaluation_daemon_text
+    assert "Handle TRAINING_COMPLETE event." not in evaluation_daemon_text
+    assert "No checkpoint_path/model_path in TRAINING_COMPLETE event" not in evaluation_daemon_text
+
+    assert "- TRAINING_COMPLETED: Trigger evaluation, adjust curriculum" in feedback_loop_text
+    assert "- TRAINING_COMPLETE: Trigger evaluation, adjust curriculum" not in feedback_loop_text
+
+    assert "TRAINING_COMPLETED → auto-trigger EVALUATION" in consolidation_text
+    assert "TRAINING_COMPLETE → auto-trigger EVALUATION" not in consolidation_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

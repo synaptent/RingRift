@@ -124,7 +124,7 @@ initialize_all_coordinators(auto_trigger_pipeline=True)
 SELFPLAY_COMPLETE → auto-trigger SYNC
 SYNC_COMPLETE → auto-trigger EXPORT
 EXPORT_COMPLETE → auto-trigger TRAINING
-TRAINING_COMPLETE → auto-trigger EVALUATION
+TRAINING_COMPLETED → auto-trigger EVALUATION
 ```
 
 ### 3.2 Implement ExportOrchestrator

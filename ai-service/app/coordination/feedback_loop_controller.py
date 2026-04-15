@@ -303,7 +303,7 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
 
     Subscribes to:
     - SELFPLAY_COMPLETE: Assess data quality, adjust training intensity
-    - TRAINING_COMPLETE: Trigger evaluation, adjust curriculum
+    - TRAINING_COMPLETED: Trigger evaluation, adjust curriculum
     - EVALUATION_COMPLETED: Consider promotion, record results
     - PROMOTION_COMPLETE: Adjust curriculum and exploration based on outcome
     - REGRESSION_DETECTED: Boost exploration, request more selfplay (Dec 2025)
