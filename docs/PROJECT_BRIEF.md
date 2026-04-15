@@ -8,17 +8,17 @@ RingRift is both a deterministic abstract strategy game and a research codebase 
 
 ## What The Project Has Proven So Far
 
-As of April 13, 2026, the strongest reported results are:
+As of April 15, 2026, the strongest reported results are:
 
-| Config       | Best Reported Elo | Promotions | Notes                                                                         |
-| ------------ | ----------------: | ---------: | ----------------------------------------------------------------------------- |
-| `hex8_2p`    |          `1979.8` |        `7` | Strongest overall result; fixed-LR minimal loop pushed the line near 2000 Elo |
-| `square8_2p` |          `1601.8` |        `2` | Clean fixed-LR run now promotes under the corrected experiment harness        |
-| `square8_3p` |          `1534.9` |        `1` | Promising multiplayer evidence, but still too weak to overclaim               |
+| Config       | Best Reported Elo | Promotions | Notes                                                                       |
+| ------------ | ----------------: | ---------: | --------------------------------------------------------------------------- |
+| `hex8_2p`    |          `1979.8` |        `7` | Strongest overall result; current v3 line now looks plateaued near 2000 Elo |
+| `square8_2p` |          `1697.3` |        `4` | Clean fixed-LR run is now a materially stronger second proof point          |
+| `square8_3p` |          `1534.9` |        `1` | Promising multiplayer evidence, but still too weak to overclaim             |
 
 These results came from longer GH200 cluster runs. Local reproduction is possible through the supported experiment path, but the same scale of improvement still depends on GPU time and multiple iterations.
 
-The supported claim is therefore narrow and defensible: RingRift has shown iterative NN improvement clearly on `hex8_2p` and `square8_2p`, with only an early multiplayer signal so far.
+The supported claim is therefore narrow and defensible: RingRift has shown iterative NN improvement clearly on `hex8_2p` and `square8_2p`, with only an early multiplayer signal so far. The next branch of work is not more orchestration. It is whether a new `hex8_2p` `v4` architecture can break the current plateau.
 
 ## The Current Supported Path
 

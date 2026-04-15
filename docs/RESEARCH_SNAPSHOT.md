@@ -1,6 +1,6 @@
 # RingRift Research Snapshot
 
-This is the shortest shareable summary of the RingRift training project as of April 13, 2026.
+This is the shortest shareable summary of the RingRift training project as of April 15, 2026.
 
 ## What RingRift Is
 
@@ -15,11 +15,11 @@ RingRift is a deterministic abstract strategy game plus a research codebase for 
 
 The project now has credible evidence of iterative neural-network improvement on more than one configuration.
 
-| Config       | Best Reported Elo | Promotions | Interpretation                                                        |
-| ------------ | ----------------: | ---------: | --------------------------------------------------------------------- |
-| `hex8_2p`    |          `1979.8` |        `7` | Strongest result; fixed-LR minimal loop pushed the line near 2000 Elo |
-| `square8_2p` |          `1601.8` |        `2` | Second clean 2-player proof under the corrected experiment harness    |
-| `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                    |
+| Config       | Best Reported Elo | Promotions | Interpretation                                                                |
+| ------------ | ----------------: | ---------: | ----------------------------------------------------------------------------- |
+| `hex8_2p`    |          `1979.8` |        `7` | Strongest result; current v3 line now looks plateaued at the edge of 2000 Elo |
+| `square8_2p` |          `1697.3` |        `4` | Second clean 2-player proof is now materially stronger after a `62%` promote  |
+| `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                            |
 
 The core research claim is no longer "can the pipeline run at all?" It is now: the RingRift self-play training loop can produce stronger models over time on at least two supported configurations, with one weaker multiplayer signal that is not yet strong enough to generalize from.
 
@@ -40,7 +40,8 @@ In other words, the current evidence is post-fix evidence, not a continuation of
 
 The project is not finished.
 
-- `hex8_2p` may be plateauing near 2000 Elo
+- `hex8_2p` now looks plateaued on the current v3 line, and a v4 architecture experiment is the next attempt to break through
+- `hex8_3p` finally produced a first clean result, but it was a `35%` reject
 - `square8_3p` still needs another clean promotion before it should count as persuasive multiplayer evidence
 - `square8_4p` and the larger-board paths remain unproven
 - larger boards and slower multiplayer configurations remain much less mature than the 2-player path

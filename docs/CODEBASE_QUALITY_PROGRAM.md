@@ -220,6 +220,7 @@ Current objectives:
 - The docs front door is now being narrowed too: `docs/INDEX.md` is now a curated living-doc index instead of a warehouse manifest, obvious top-level drafts/plans (`ARCHITECTURAL_IMPROVEMENT_PLAN.md`, `P2P_DECOMPOSITION_PLAN.md`, `PLAN_AI_WORK.md`, `BLOG_POST_OUTLINE.md`, `CASE_STUDY_DRAFT.md`) now live under `docs/archive/`, and the top-level docs directory is back down to `19` active markdown files.
 - The project now has a real player-facing rules entrypoint too: `docs/GAME_RULES.md` explains setup, turn flow, movement, overtaking captures, territory collapse, victory conditions, and the game's strategic/AI-hardness story in one short document, while the formal `rules/*.md` files remain the deeper references.
 - The live product surface is now being documented more honestly too: `docs/production/WEB_EXPERIENCE_AUDIT_2026-04-15.md` records a real first-visit production audit, including the login-first root redirect, CSP/font failures, sandbox `404` noise on `/api/games/sandbox/evaluate`, and the fact that anonymous sandbox play still works end to end.
+- The published research docs are now refreshed to the April 15 state too: `docs/RESULTS.md`, `docs/data/results_snapshot.json`, `docs/RESEARCH_SNAPSHOT.md`, `docs/PROJECT_BRIEF.md`, and `docs/REPRODUCIBILITY.md` now reflect `square8_2p` at `1697.3`, the verified `hex8_2p` iteration `36` plateau reject at `50.0%`, the first `hex8_3p` result at `35%`, and the fact that the `hex8_2p` `v4` run is an active experiment rather than a finished headline result.
 
 ## Execution Protocol
 

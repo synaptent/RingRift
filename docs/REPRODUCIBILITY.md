@@ -42,7 +42,7 @@ python scripts/minimal_alphazero_loop.py \
   --work-dir data/minimal_loop_hex8_2p
 ```
 
-### square8_2p (second result: 1500 → 1601.8 Elo, 2 promotions)
+### square8_2p (second result: 1500 → 1697.3 Elo, 4 promotions)
 
 ```bash
 python scripts/minimal_alphazero_loop.py \
@@ -104,7 +104,7 @@ s3://ringrift-models-20251214/archive/
 │   ├── models/best.pth
 │   ├── metrics.jsonl
 │   └── training_data/iter_*.npz
-├── gh200-9/          # square8_2p (1601.8 Elo)
+├── gh200-9/          # square8_2p (1697.3 Elo)
 │   ├── models/best.pth
 │   ├── metrics.jsonl
 │   └── training_data/iter_*.npz

@@ -2,16 +2,17 @@
 
 This document summarizes the current research evidence from the RingRift self-play training project.
 
-Status is current as of April 13, 2026.
+Status is current as of April 15, 2026.
 
 ## Headline Results
 
-| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                         |
-| ------------ | --------: | ----------------: | ---------: | -------------------------------------------------------------- |
-| `hex8_2p`    |    `1500` |          `1979.8` |        `7` | Strongest result; promoted again at iteration `33` on fixed LR |
-| `square8_2p` |    `1500` |          `1601.8` |        `2` | Second clean 2P proof under the corrected minimal-loop harness |
-| `square8_3p` |    `1500` |          `1534.9` |        `1` | Only current multiplayer promotion; still weak evidence        |
-| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                           |
+| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                                               |
+| ------------ | --------: | ----------------: | ---------: | ------------------------------------------------------------------------------------ |
+| `hex8_2p`    |    `1500` |          `1979.8` |        `7` | Flagship result; current v3 line hit an exact `50.0%` reject at iteration `36`       |
+| `square8_2p` |    `1500` |          `1697.3` |        `4` | Strongest recent mover; iteration `34` promoted at `62%` for the biggest recent jump |
+| `square8_3p` |    `1500` |          `1534.9` |        `1` | Multiplayer still weak; iteration `21` rejected at `30%`                             |
+| `hex8_3p`    |    `1500` |          `1500.0` |        `0` | First completed hex multiplayer eval rejected at `35%`                               |
+| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                                                 |
 
 ![Headline results snapshot](assets/results/headline_results.svg)
 
@@ -21,7 +22,9 @@ RingRift was built as a novel deterministic strategy game plus an end-to-end Alp
 
 The answer is now yes.
 
-The strongest evidence is still `hex8_2p`, and `square8_2p` remains important because it demonstrates that the loop can improve on a second configuration under the same general training stack. The current state is not a universal success story, though: only `2` of `12` configs have strong evidence of improvement, multiplayer remains weak, and larger boards remain unproven.
+The strongest evidence is still `hex8_2p`, but `square8_2p` is now materially stronger than it was in the April 13 snapshot. It is no longer just a second weak proof point. It has reached `1697.3` Elo with `4` promotions and a fresh `62%` promote at iteration `34`.
+
+The current state is still not a universal success story, though: only `2` of `12` configs have strong evidence of improvement, multiplayer remains weak, and larger boards remain unproven.
 
 ## Concrete Evidence
 
@@ -29,10 +32,10 @@ The strongest evidence is still `hex8_2p`, and `square8_2p` remains important be
 
 - Best reported Elo: `1979.8`
 - Promotions: `7`
-- Latest milestone: iteration `33` promoted on the fixed-learning-rate minimal-loop line
-- Interpretation: strong iterative improvement from the `1500` baseline to a checkpoint family that is now within one more promotion of the `2000` Elo headline
+- Latest verified v3 milestone: iteration `36` rejected at `50.0%` over `400` staged eval games
+- Interpretation: strong iterative improvement from the `1500` baseline to a checkpoint family that got very close to `2000`, then flattened on the current v3 line
 
-The scientific interpretation is unchanged by the extra promotion: the path is real, but it is also clearly in the plateau regime where uninterrupted runtime matters more than more infrastructure churn.
+The scientific interpretation changed in one important way after the April 15 verification pass: the current supported v3 line now looks plateaued rather than merely noisy. The node is therefore doing the right next thing: keep the `1979.8` result as the supported flagship checkpoint, but spend new GPU time on a `v4` architecture experiment instead of pretending the existing line is still climbing cleanly.
 
 ### `square8_2p`
 
@@ -42,18 +45,27 @@ Recent progression:
 
 | Iteration | Win Rate |         Eval Games | Result  | Estimated Elo |
 | --------- | -------: | -----------------: | ------- | ------------: |
-| `27`      |  `52.0%` |   legacy eval path | reject  |      `1500.0` |
-| `28`      |  `52.0%` |   legacy eval path | reject  |      `1500.0` |
 | `29`      |  `54.5%` | `200` staged games | promote |      `1531.4` |
 | `30`      |  `60.0%` |  `50` staged games | promote |      `1601.8` |
+| `32`      |  `51.5%` | `400` staged games | promote |      `1612.2` |
+| `33`      |  `40.0%` |  `50` staged games | reject  |      `1612.2` |
+| `34`      |  `62.0%` |  `50` staged games | promote |      `1697.3` |
 
 ![square8_2p progression](assets/results/square8_2p_progression.svg)
 
 Important context:
 
-- iteration `29` and `30` were produced after the minimal loop gained true fixed-LR support end-to-end
-- those promotions also used staged evaluation and the cleaned-up experiment harness
-- `square8_2p` remains the second clean proof point for iterative NN improvement even though it is materially weaker than `hex8_2p`
+- iteration `29` onward came after the minimal loop gained true fixed-LR support end to end
+- the `34` promote is the largest recent jump in the checked-in results narrative, moving the public square8_2p line from `1601.8` to `1697.3`
+- `square8_2p` is now the clearest proof that the cleaned-up minimal-loop stack works on more than one supported 2-player configuration
+
+### `hex8_3p`
+
+- Best reported Elo: `1500.0`
+- Promotions: `0`
+- First completed result: iteration `1` rejected at `35%` over `400` staged eval games
+
+This result matters because it proves the hex multiplayer path can at least complete the full minimal-loop cycle under the current harness. It does not count as evidence of improvement. The correct interpretation is: first clean result achieved, but no strength gain demonstrated yet.
 
 ### `square8_3p`
 
@@ -61,9 +73,9 @@ Important context:
 - Promotions: `1`
 - Best promotion came at iteration `6` with a `55%` win rate
 
-This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, and the recent April 10 seat-fair evaluations remain poor: `22%`, `24%`, then `22%` candidate win rate in the latest metrics tail.
+This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, but the corrected seat-fair results remain weak: iteration `19` rejected at `20%`, iteration `21` rejected at `30%`, and the current tail is still below a persuasive threshold.
 
-As of April 13, 2026, the result is still not strong enough to claim robust multiplayer progress. What it does show is that the multiplayer path is no longer blocked by the earlier evaluator bug; it now has one promotion under the corrected threshold and seat-fair regime, but it still needs another clean promotion before it should be treated as persuasive evidence.
+As of April 15, 2026, the result is still not strong enough to claim robust multiplayer progress. What it does show is that the multiplayer path is no longer blocked by the earlier evaluator bug; it now has one promotion under the corrected threshold and seat-fair regime, but it still needs another clean promotion before it should be treated as persuasive evidence.
 
 ### `square8_4p`
 
@@ -73,13 +85,18 @@ As of April 13, 2026, the result is still not strong enough to claim robust mult
 
 This configuration has not demonstrated improvement above baseline. It remains scientifically unproven and is not part of the current strongest evidence path.
 
-## April 13 Methodology And Operations State
+## April 15 Methodology And Operations State
 
-The most important fact about the April 13 state is that the training claim now depends more on preserving uninterrupted runtime than on changing infrastructure again. The `hex8_2p` path has already demonstrated the core research result. The next value is incremental: get `hex8_2p` over `2000`, get `square8_2p` to promote again, and get one more clean multiplayer promotion.
+The most important fact about the April 15 state is that the training claim now depends more on preserving uninterrupted runtime than on adding more orchestration. The minimal loop has already demonstrated the core research result. The new value is selective:
+
+- keep the supported `1979.8` `hex8_2p` checkpoint as the flagship evidence
+- keep pushing `square8_2p`, which just promoted to `1697.3`
+- use fresh architecture work on `hex8_2p` rather than pretending the current v3 line is still improving
+- keep collecting multiplayer data without overclaiming weak evaluations
 
 The active runtime is now organized as a role-based fleet:
 
-- `5` trainers: `gh200-8` (`hex8_2p`), `gh200-9` (`square8_2p`), `gh200-10` (`hex8_3p`), `gh200-12` (`square8_3p`), and `gh200-14` (`square19_2p`)
+- `5` trainers: `gh200-8` (now launching a `hex8_2p` `v4` architecture experiment), `gh200-9` (`square8_2p`), `gh200-10` (`hex8_3p`), `gh200-12` (`square8_3p`), and `gh200-14` (`square19_2p`)
 - `2` selfplay workers: `gh200-11` feeding `hex8_2p`, and `gh200-13` feeding `square8_2p`
 - `1` dedicated evaluator: `vultr-a100-20gb`
 
@@ -145,11 +162,11 @@ The project is not “finished” in a research sense.
 
 Current limitations:
 
-- `hex8_2p` appears to be plateauing near `2000` Elo
-- `square8_2p` has a credible `1601.8` result, but it still needs another promotion to make the second-board result feel robust rather than merely positive
+- `hex8_2p` has a real flagship result, but the current v3 line now looks plateaued rather than still ascending
+- `square8_2p` is much stronger at `1697.3`, but it still needs more promotions before the second-board story feels fully mature
 - `square8_3p` has only one multiplayer promotion and still looks weak under the corrected evaluator
+- `hex8_3p` can complete the cycle, but its first result was still a clear reject
 - `square8_4p` remains at baseline
-- no new iteration had completed since April 11 during the latest operational churn window, so cluster time was spent mostly recovering stability instead of accumulating fresh evidence
 - larger boards and other 3-4 player configs remain much slower and less mature
 - the strongest results still come from cluster runs, not commodity local hardware
 
@@ -185,11 +202,11 @@ RingRift has credible evidence that its neural self-play system can produce stro
 That evidence is real, but it is still narrow. The strongest supported claim is:
 
 - `hex8_2p` improved from `1500` to `1979.8`
-- `square8_2p` improved from `1500` to `1601.8`
+- `square8_2p` improved from `1500` to `1697.3`
 - the corrected minimal-loop stack, fixed-LR baseline, staged evaluator, and role-based fleet are sufficient to keep pushing that line of evidence forward
 
 The next challenge is not proving that the loop can ever improve. It is:
 
 1. keep the supported path reproducible and uninterrupted long enough to finish more iterations
-2. get `hex8_2p` over `2000` Elo and `square8_2p` to promote again
+2. get another clean `square8_2p` promotion and see whether the `hex8_2p` `v4` experiment can break the current plateau
 3. extend the proof to multiplayer and larger-board paths without overstating weak results

@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-04-13",
+  "as_of": "2026-04-15",
   "headline": [
     {
       "config": "hex8_2p",
@@ -10,8 +10,8 @@
     {
       "config": "square8_2p",
       "start_elo": 1500.0,
-      "best_elo": 1601.8,
-      "promotions": 2
+      "best_elo": 1697.3,
+      "promotions": 4
     },
     {
       "config": "square8_3p",
@@ -24,21 +24,6 @@
     "config": "square8_2p",
     "points": [
       {
-        "iteration": 25,
-        "elo": 1500.0,
-        "promoted": false
-      },
-      {
-        "iteration": 27,
-        "elo": 1500.0,
-        "promoted": false
-      },
-      {
-        "iteration": 28,
-        "elo": 1500.0,
-        "promoted": false
-      },
-      {
         "iteration": 29,
         "elo": 1531.4,
         "promoted": true
@@ -47,7 +32,69 @@
         "iteration": 30,
         "elo": 1601.8,
         "promoted": true
+      },
+      {
+        "iteration": 32,
+        "elo": 1612.2,
+        "promoted": true
+      },
+      {
+        "iteration": 33,
+        "elo": 1612.2,
+        "promoted": false
+      },
+      {
+        "iteration": 34,
+        "elo": 1697.3,
+        "promoted": true
       }
     ]
-  }
+  },
+  "recent_updates": [
+    {
+      "config": "square8_2p",
+      "iteration": 34,
+      "win_rate": 0.62,
+      "games_played": 50,
+      "decision": "promote",
+      "estimated_elo": 1697.3,
+      "note": "Largest recent jump in the published 2-player line."
+    },
+    {
+      "config": "hex8_2p",
+      "iteration": 36,
+      "win_rate": 0.5,
+      "games_played": 400,
+      "decision": "reject",
+      "estimated_elo": 1979.8,
+      "note": "Current v3 line appears plateaued after an exact 50.0% stage-4 reject."
+    },
+    {
+      "config": "hex8_3p",
+      "iteration": 1,
+      "win_rate": 0.35,
+      "games_played": 400,
+      "decision": "reject",
+      "estimated_elo": 1500.0,
+      "note": "First completed hex multiplayer result."
+    },
+    {
+      "config": "square8_3p",
+      "iteration": 21,
+      "win_rate": 0.3,
+      "games_played": 50,
+      "decision": "reject",
+      "estimated_elo": 1534.9,
+      "note": "Still stuck under corrected multiplayer evaluation."
+    }
+  ],
+  "current_experiments": [
+    {
+      "config": "hex8_2p",
+      "model_version": "v4",
+      "status": "launching",
+      "work_dir": "data/minimal_loop_hex8_2p_v4",
+      "note": "This is an active experiment, not a completed result."
+    }
+  ]
 }
