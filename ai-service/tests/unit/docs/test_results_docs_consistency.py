@@ -127,6 +127,7 @@ AI_INIT_MODULE = REPO_ROOT / "ai-service" / "app" / "ai" / "__init__.py"
 GENERATE_DATA_MODULE = REPO_ROOT / "ai-service" / "app" / "training" / "generate_data.py"
 TOURNAMENT_DAEMON_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "tournament_daemon.py"
 NPZ_VALIDATION_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "npz_validation.py"
+HANDLER_BASE_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "handler_base.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -980,6 +981,19 @@ def test_event_migration_docs_distinguish_legacy_stage_aliases_from_public_event
 
     assert "Legacy stage enums may still expose names like `TRAINING_COMPLETE`" in examples_text
     assert "canonical `TRAINING_COMPLETED` spelling" in examples_text
+
+
+def test_event_package_docs_use_data_events_package_paths() -> None:
+    events_readme_text = APP_EVENTS_README.read_text(encoding="utf-8")
+    handler_base_text = HANDLER_BASE_MODULE.read_text(encoding="utf-8")
+
+    assert "`app/distributed/data_events/`" in events_readme_text
+    assert "deprecated imports preserved via re-exports" in events_readme_text
+    assert "`app/distributed/data_events.py`" not in events_readme_text
+
+    assert "app.distributed.data_events package" in handler_base_text
+    assert "event_types.py" in handler_base_text
+    assert "app/distributed/data_events.py" not in handler_base_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

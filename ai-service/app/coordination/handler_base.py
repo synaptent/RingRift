@@ -993,7 +993,8 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             Use lowercase snake_case event names matching DataEventType enum:
             - "training_completed", "evaluation_completed", "model_promoted"
             - "data_sync_completed", "regression_detected", "node_recovered"
-            See app/distributed/data_events.py for full list (118 types).
+            See the app.distributed.data_events package (especially
+            event_types.py) for the full list.
 
         Event Deduplication:
             If self._dedup_enabled is True (default), use _is_duplicate_event()

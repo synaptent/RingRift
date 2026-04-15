@@ -197,6 +197,6 @@ MODEL_PROMOTED = "model_promoted"
 
 ## See Also
 
-- `app/distributed/data_events.py` - Original data event definitions (deprecated)
+- `app/distributed/data_events/` - Original data event definitions package (deprecated imports preserved via re-exports)
 - `app/coordination/stage_events.py` - Original stage event definitions (deprecated)
 - `app/coordination/event_router.py` - Unified event routing system
