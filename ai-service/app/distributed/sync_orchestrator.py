@@ -570,16 +570,18 @@ class SyncOrchestrator:
             f"{result.duration_seconds:.1f}s, success={result.success}"
         )
 
-        # Emit SYNC_COMPLETE event (December 2025)
+        # Emit legacy SYNC_COMPLETE stage alias (December 2025).
+        # Router/public guidance uses DATA_SYNC_COMPLETED.
         await self._emit_sync_complete_event(result)
 
         return result
 
     async def _emit_sync_complete_event(self, result: FullSyncResult) -> None:
-        """Emit SYNC_COMPLETE event using centralized emitter.
+        """Emit legacy SYNC_COMPLETE stage alias using centralized emitter.
 
         Note: event_emitters.py handles routing to all event systems
-        (data_events, stage_events, cross-process) internally.
+        (data_events, stage_events, cross-process) internally. Public/router
+        guidance uses DATA_SYNC_COMPLETED.
 
         Args:
             result: The full sync result

@@ -521,12 +521,15 @@ def create_pipeline_callbacks() -> dict[StageEvent, StageCompletionCallback]:
 
     These callbacks implement the typical pipeline flow:
     - SELFPLAY_COMPLETE -> trigger sync
-    - SYNC_COMPLETE -> trigger parity validation
-    - PARITY_VALIDATION_COMPLETE -> trigger NPZ export
+    - SYNC_COMPLETE (legacy stage alias; normalized router event is
+      DATA_SYNC_COMPLETED) -> trigger parity validation
+    - PARITY_VALIDATION_COMPLETE (legacy stage alias; normalized router event
+      is PARITY_VALIDATION_COMPLETED) -> trigger NPZ export
     - NPZ_EXPORT_COMPLETE -> trigger training
     - TRAINING_COMPLETE (legacy stage alias; normalized router event is
       TRAINING_COMPLETED) -> trigger evaluation
-    - EVALUATION_COMPLETE -> trigger promotion check
+    - EVALUATION_COMPLETE (legacy stage alias; normalized router event is
+      EVALUATION_COMPLETED) -> trigger promotion check
 
     Returns:
         Dict mapping events to their standard callbacks

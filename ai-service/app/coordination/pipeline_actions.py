@@ -1562,7 +1562,12 @@ async def trigger_promotion(
 
 
 async def _emit_sync_complete(result: StageCompletionResult) -> None:
-    """Emit SYNC_COMPLETE event (January 2026 - migrated to event_router)."""
+    """Emit legacy SYNC_COMPLETE stage alias.
+
+    January 2026 migration note: router/public guidance uses the canonical
+    DATA_SYNC_COMPLETED event name, but this compatibility path still emits the
+    legacy alias for older stage-event consumers.
+    """
     payload = {
         "sync_type": "data",
         "items_synced": result.metadata.get("files_synced", 0),
@@ -1633,7 +1638,12 @@ async def _emit_training_failed(result: StageCompletionResult) -> None:
 
 
 async def _emit_evaluation_complete(result: StageCompletionResult) -> None:
-    """Emit EVALUATION_COMPLETE event (January 2026 - migrated to event_router)."""
+    """Emit legacy EVALUATION_COMPLETE stage alias.
+
+    January 2026 migration note: router/public guidance uses the canonical
+    EVALUATION_COMPLETED event name, but this compatibility path still emits
+    the legacy alias for older stage-event consumers.
+    """
     extra_meta = {k: v for k, v in result.metadata.items()
                   if k not in ("model_id", "board_type", "num_players", "win_rates", "elo_delta", "games_played")}
     payload = {

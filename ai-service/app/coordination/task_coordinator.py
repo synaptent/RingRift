@@ -1558,9 +1558,9 @@ class TaskCoordinator(SingletonMixin):
 
         Uses event_emitters.py which handles mapping TaskType to StageEvent:
         - selfplay → SELFPLAY_COMPLETE
-        - training → TRAINING_COMPLETE/TRAINING_FAILED
-        - evaluation → EVALUATION_COMPLETE
-        - sync → SYNC_COMPLETE
+        - training → legacy TRAINING_COMPLETE/TRAINING_FAILED stage aliases
+        - evaluation → legacy EVALUATION_COMPLETE stage alias
+        - sync → legacy SYNC_COMPLETE stage alias
         """
         import asyncio
 

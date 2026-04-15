@@ -132,6 +132,11 @@ BACKGROUND_EVAL_MODULE = REPO_ROOT / "ai-service" / "app" / "training" / "backgr
 STAGE_EVENTS_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "stage_events.py"
 EVENT_EMITTERS_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "event_emitters.py"
 PIPELINE_ACTIONS_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "pipeline_actions.py"
+SYNC_ORCHESTRATOR_MODULE = REPO_ROOT / "ai-service" / "app" / "distributed" / "sync_orchestrator.py"
+DATA_PIPELINE_ORCHESTRATOR_MODULE = (
+    REPO_ROOT / "ai-service" / "app" / "coordination" / "data_pipeline_orchestrator.py"
+)
+TASK_COORDINATOR_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "task_coordinator.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -1019,6 +1024,45 @@ def test_training_complete_compatibility_docs_are_marked_as_legacy_aliases() -> 
     assert "Emit legacy TRAINING_COMPLETE stage alias." in pipeline_actions_text
     assert "router/public guidance uses the canonical" in pipeline_actions_text
     assert "legacy alias for older stage-event consumers" in pipeline_actions_text
+
+
+def test_sync_and_evaluation_stage_alias_docs_are_marked_as_legacy_aliases() -> None:
+    stage_events_text = STAGE_EVENTS_MODULE.read_text(encoding="utf-8")
+    emitters_text = EVENT_EMITTERS_MODULE.read_text(encoding="utf-8")
+    pipeline_actions_text = PIPELINE_ACTIONS_MODULE.read_text(encoding="utf-8")
+    sync_orchestrator_text = SYNC_ORCHESTRATOR_MODULE.read_text(encoding="utf-8")
+    data_pipeline_text = DATA_PIPELINE_ORCHESTRATOR_MODULE.read_text(encoding="utf-8")
+    task_coordinator_text = TASK_COORDINATOR_MODULE.read_text(encoding="utf-8")
+
+    assert "SYNC_COMPLETE (legacy stage alias; normalized router event is" in stage_events_text
+    assert "DATA_SYNC_COMPLETED) -> trigger parity validation" in stage_events_text
+    assert "PARITY_VALIDATION_COMPLETE (legacy stage alias; normalized router event" in stage_events_text
+    assert "PARITY_VALIDATION_COMPLETED) -> trigger NPZ export" in stage_events_text
+    assert "EVALUATION_COMPLETE (legacy stage alias; normalized router event is" in stage_events_text
+    assert "EVALUATION_COMPLETED) -> trigger promotion check" in stage_events_text
+
+    assert "legacy StageEvent.EVALUATION_COMPLETE event" in emitters_text
+    assert "Router/public guidance uses EVALUATION_COMPLETED." in emitters_text
+    assert "legacy StageEvent.SYNC_COMPLETE event" in emitters_text
+    assert "uses DATA_SYNC_COMPLETED." in emitters_text
+    assert "legacy EVALUATION_COMPLETE stage alias" in emitters_text
+    assert "legacy SYNC_COMPLETE stage alias" in emitters_text
+
+    assert "Emit legacy SYNC_COMPLETE stage alias." in pipeline_actions_text
+    assert "DATA_SYNC_COMPLETED event name" in pipeline_actions_text
+    assert "Emit legacy EVALUATION_COMPLETE stage alias." in pipeline_actions_text
+    assert "EVALUATION_COMPLETED event name" in pipeline_actions_text
+
+    assert "Emit legacy SYNC_COMPLETE stage alias using centralized emitter." in sync_orchestrator_text
+    assert "Router/public guidance uses DATA_SYNC_COMPLETED." in sync_orchestrator_text
+
+    assert "Legacy StageEvent aliases remain wired here for older emitters." in data_pipeline_text
+    assert "Public/router guidance uses DATA_SYNC_COMPLETED," in data_pipeline_text
+    assert "TRAINING_COMPLETED, and EVALUATION_COMPLETED where applicable." in data_pipeline_text
+
+    assert "training → legacy TRAINING_COMPLETE/TRAINING_FAILED stage aliases" in task_coordinator_text
+    assert "evaluation → legacy EVALUATION_COMPLETE stage alias" in task_coordinator_text
+    assert "sync → legacy SYNC_COMPLETE stage alias" in task_coordinator_text
 
 
 def test_experimental_ai_docs_use_current_module_paths() -> None:

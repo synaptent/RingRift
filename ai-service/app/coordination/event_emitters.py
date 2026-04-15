@@ -956,9 +956,10 @@ async def emit_evaluation_complete(
     games_played: int = 0,
     **metadata,
 ) -> bool:
-    """Emit EVALUATION_COMPLETE event.
+    """Emit legacy StageEvent.EVALUATION_COMPLETE event.
 
-    This is a critical event and uses retry logic to ensure delivery.
+    This is a critical compatibility path and uses retry logic to ensure
+    delivery. Router/public guidance uses EVALUATION_COMPLETED.
 
     Args:
         model_id: Model ID being evaluated
@@ -1167,7 +1168,10 @@ async def emit_sync_complete(
     errors: list | None = None,
     **metadata,
 ) -> bool:
-    """Emit SYNC_COMPLETE event.
+    """Emit legacy StageEvent.SYNC_COMPLETE event.
+
+    Compatibility path for older stage-event consumers. Router/public guidance
+    uses DATA_SYNC_COMPLETED.
 
     Args:
         sync_type: Type of sync (data, model, elo, registry)
@@ -1393,9 +1397,9 @@ async def emit_task_complete(
 
     Maps task_type to appropriate StageEvent:
     - selfplay → SELFPLAY_COMPLETE
-    - training → TRAINING_COMPLETE/FAILED
-    - evaluation → EVALUATION_COMPLETE
-    - sync → SYNC_COMPLETE
+    - training → legacy TRAINING_COMPLETE/TRAINING_FAILED stage aliases
+    - evaluation → legacy EVALUATION_COMPLETE stage alias
+    - sync → legacy SYNC_COMPLETE stage alias
 
     Args:
         task_id: Task ID

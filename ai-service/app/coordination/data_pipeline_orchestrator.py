@@ -1227,6 +1227,9 @@ class DataPipelineOrchestrator(
             from app.coordination.event_router import StageEvent, subscribe
 
             # Track subscriptions for proper error reporting
+            # Legacy StageEvent aliases remain wired here for older emitters.
+            # Public/router guidance uses DATA_SYNC_COMPLETED,
+            # TRAINING_COMPLETED, and EVALUATION_COMPLETED where applicable.
             subscriptions = [
                 (StageEvent.SELFPLAY_COMPLETE, self._on_selfplay_complete, "SELFPLAY_COMPLETE"),
                 (StageEvent.CANONICAL_SELFPLAY_COMPLETE, self._on_selfplay_complete, "CANONICAL_SELFPLAY_COMPLETE"),
