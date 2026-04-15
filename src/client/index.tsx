@@ -13,6 +13,38 @@ import { setupGlobalErrorHandlers, isErrorReportingEnabled } from './utils/error
 import './styles/globals.css';
 import './styles/accessibility.css';
 
+type AnalyticsWindow = Window & {
+  dataLayer?: unknown[];
+  gtag?: (...args: unknown[]) => void;
+};
+
+function bootstrapGoogleAnalytics(): void {
+  const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim();
+  if (!measurementId) {
+    return;
+  }
+
+  if (document.querySelector(`script[data-ringrift-ga="${measurementId}"]`)) {
+    return;
+  }
+
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
+  script.dataset.ringriftGa = measurementId;
+  document.head.appendChild(script);
+
+  const analyticsWindow = window as AnalyticsWindow;
+  analyticsWindow.dataLayer = analyticsWindow.dataLayer || [];
+  analyticsWindow.gtag = (...args: unknown[]) => {
+    analyticsWindow.dataLayer?.push(args);
+  };
+  analyticsWindow.gtag('js', new Date());
+  analyticsWindow.gtag('config', measurementId);
+}
+
+bootstrapGoogleAnalytics();
+
 // Initialize Sentry (only when DSN is configured)
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
 if (sentryDsn) {

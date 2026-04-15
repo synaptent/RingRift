@@ -147,15 +147,18 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
   const [sandboxLastProgressAt, setSandboxLastProgressAt] = useState<number | null>(null);
   const [sandboxStallWarning, setSandboxStallWarning] = useState<string | null>(null);
   const [sandboxStateVersion, setSandboxStateVersion] = useState(0);
-  const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(true);
   const sandboxDiagnosticsEnabled = isSandboxAiStallDiagnosticsEnabled();
 
   // Sandbox mode state with localStorage persistence
   const [sandboxMode, setSandboxModeState] = useState<SandboxMode>(getInitialSandboxMode);
+  const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(
+    () => getInitialSandboxMode() === 'debug'
+  );
 
   // Persist sandbox mode changes to localStorage
   const setSandboxMode = (mode: SandboxMode): void => {
     setSandboxModeState(mode);
+    setDeveloperToolsEnabled(mode === 'debug');
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(SANDBOX_MODE_STORAGE_KEY, mode);

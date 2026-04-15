@@ -132,8 +132,10 @@ function App() {
           />
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              {/* Public landing page for unauthenticated visitors */}
-              {!user && <Route path="/" element={<LandingPage />} />}
+              {/* Root route: public landing page for visitors, app shell for signed-in users */}
+              <Route path="/" element={user ? <Layout /> : <LandingPage />}>
+                {user && <Route index element={<HomePage />} />}
+              </Route>
 
               {/* Public routes */}
               <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
@@ -157,14 +159,12 @@ function App() {
 
               {/* Protected routes - wrapped in ProtectedRoute for graceful auth transition */}
               <Route
-                path="/"
                 element={
                   <ProtectedRoute>
                     <Layout />
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<HomePage />} />
                 <Route path="lobby" element={<LobbyPage />} />
                 <Route path="game/:gameId" element={<BackendGameHostRoute />} />
                 <Route path="profile" element={<ProfilePage />} />

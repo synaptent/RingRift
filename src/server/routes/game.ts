@@ -190,6 +190,10 @@ router.post(
 // Maximum size for serialized game state in sandbox endpoints (100KB)
 const MAX_SERIALIZED_STATE_SIZE = 100 * 1024;
 
+function isSandboxAiEnabled(): boolean {
+  return config.isTest || config.isDevelopment || config.featureFlags.sandboxAi.enabled;
+}
+
 /**
  * @openapi
  * /games/sandbox/evaluate:
@@ -222,7 +226,7 @@ const MAX_SERIALIZED_STATE_SIZE = 100 * 1024;
 sandboxHelperRoutes.post(
   '/sandbox/evaluate',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    if (!config.isTest && !config.isDevelopment) {
+    if (!isSandboxAiEnabled()) {
       throw createError('Not found', 404, 'NOT_FOUND');
     }
 
@@ -269,6 +273,22 @@ sandboxHelperRoutes.post(
         details: message,
       });
     }
+  })
+);
+
+sandboxHelperRoutes.get(
+  '/sandbox/ai/health',
+  asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+    if (!isSandboxAiEnabled()) {
+      throw createError('Not found', 404, 'NOT_FOUND');
+    }
+
+    const aiClient = getAIServiceClient();
+    const healthy = await aiClient.healthCheck();
+
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? 'healthy' : 'degraded',
+    });
   })
 );
 
@@ -319,9 +339,7 @@ sandboxHelperRoutes.post(
 sandboxHelperRoutes.post(
   '/sandbox/ai/move',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const enabled = config.isTest || config.isDevelopment || config.featureFlags.sandboxAi.enabled;
-
-    if (!enabled) {
+    if (!isSandboxAiEnabled()) {
       throw createError('Not found', 404, 'NOT_FOUND');
     }
 
@@ -436,9 +454,7 @@ sandboxHelperRoutes.post(
 sandboxHelperRoutes.get(
   '/sandbox/ai/ladder/health',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const enabled = config.isTest || config.isDevelopment || config.featureFlags.sandboxAi.enabled;
-
-    if (!enabled) {
+    if (!isSandboxAiEnabled()) {
       throw createError('Not found', 404, 'NOT_FOUND');
     }
 
