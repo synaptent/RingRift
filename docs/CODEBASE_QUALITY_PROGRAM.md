@@ -2,7 +2,7 @@
 
 This document is the durable execution plan for raising the RingRift codebase toward a high standard of quality, presentability, understandability, and maintainability without destabilizing the supported training path.
 
-Status is current as of April 13, 2026.
+Status is current as of April 15, 2026.
 
 ## Baseline Scores
 
@@ -219,6 +219,7 @@ Current objectives:
 - The AI-service Python-file audit is now grounded in the actual workspace shape too: the scary raw count was mostly local `.venv` payload (`14015` of `17381` `*.py` files), not checked-in source, so this pass pruned only the truly dead tracked archive helpers/tests (`7` files, taking the repo-relevant count from `3366` to `3359`) and cleared generated cache clutter (`652` `__pycache__` dirs and `4826` `*.pyc` files) without touching live archive-backed compatibility modules.
 - The docs front door is now being narrowed too: `docs/INDEX.md` is now a curated living-doc index instead of a warehouse manifest, obvious top-level drafts/plans (`ARCHITECTURAL_IMPROVEMENT_PLAN.md`, `P2P_DECOMPOSITION_PLAN.md`, `PLAN_AI_WORK.md`, `BLOG_POST_OUTLINE.md`, `CASE_STUDY_DRAFT.md`) now live under `docs/archive/`, and the top-level docs directory is back down to `19` active markdown files.
 - The project now has a real player-facing rules entrypoint too: `docs/GAME_RULES.md` explains setup, turn flow, movement, overtaking captures, territory collapse, victory conditions, and the game's strategic/AI-hardness story in one short document, while the formal `rules/*.md` files remain the deeper references.
+- The live product surface is now being documented more honestly too: `docs/production/WEB_EXPERIENCE_AUDIT_2026-04-15.md` records a real first-visit production audit, including the login-first root redirect, CSP/font failures, sandbox `404` noise on `/api/games/sandbox/evaluate`, and the fact that anonymous sandbox play still works end to end.
 
 ## Execution Protocol
 
