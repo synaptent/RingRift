@@ -105,6 +105,11 @@ PARITY_MISMATCH_DEBUG_RUNBOOK = REPO_ROOT / "ai-service" / "docs" / "runbooks" /
 AI_SERVICE_ARCHITECTURE_OVERVIEW_DOC = (
     REPO_ROOT / "ai-service" / "docs" / "architecture" / "ARCHITECTURE_OVERVIEW.md"
 )
+NEURAL_AI_ARCHITECTURE_DOC = REPO_ROOT / "ai-service" / "docs" / "architecture" / "NEURAL_AI_ARCHITECTURE.md"
+AI_NEURAL_NET_ANALYSIS_DOC = REPO_ROOT / "ai-service" / "app" / "ai" / "neural_net_analysis.md"
+AI_INIT_MODULE = REPO_ROOT / "ai-service" / "app" / "ai" / "__init__.py"
+GENERATE_DATA_MODULE = REPO_ROOT / "ai-service" / "app" / "training" / "generate_data.py"
+TOURNAMENT_DAEMON_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "tournament_daemon.py"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -943,3 +948,31 @@ def test_ai_service_architecture_overview_uses_current_rules_layout() -> None:
     assert "| `game_state.py`" not in text
     assert "| `territory.py`" not in text
     assert "| `forced_elimination.py`" not in text
+
+
+def test_neural_net_docs_use_package_facet_and_architecture_modules() -> None:
+    architecture_text = NEURAL_AI_ARCHITECTURE_DOC.read_text(encoding="utf-8")
+    analysis_text = AI_NEURAL_NET_ANALYSIS_DOC.read_text(encoding="utf-8")
+    ai_init_text = AI_INIT_MODULE.read_text(encoding="utf-8")
+    generate_data_text = GENERATE_DATA_MODULE.read_text(encoding="utf-8")
+    tournament_text = TOURNAMENT_DAEMON_MODULE.read_text(encoding="utf-8")
+
+    assert "ai-service/app/ai/neural_net/__init__.py" in architecture_text
+    assert "app/ai/neural_net/hex_architectures.py" in architecture_text
+    assert "app/ai/neural_net/model_factory.py" in architecture_text
+    assert "app/ai/neural_ai.py" not in architecture_text
+    assert "app/ai/neural_net.py" not in architecture_text
+
+    assert "app/ai/neural_net/" in analysis_text
+    assert "app/ai/_neural_net_legacy.py" in analysis_text
+    assert "ai-service/app/ai/neural_net.py" not in analysis_text
+
+    assert "neural_net/: Stable neural-network package facade and architecture modules" in ai_init_text
+    assert "neural_net.py: Neural network models" not in ai_init_text
+
+    assert "app.ai.neural_net" in generate_data_text
+    assert "app/ai/neural_net.py" not in generate_data_text
+
+    assert "app/ai/unified_factory.py" in tournament_text
+    assert "app.ai.neural_net package facade" in tournament_text
+    assert "app/ai/neural_net.py" not in tournament_text

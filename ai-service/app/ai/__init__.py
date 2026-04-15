@@ -24,7 +24,7 @@ Architecture (December 2025):
 - gumbel_mcts_ai.py: Gumbel-Top-k MCTS (AlphaZero-style)
 - gmo_ai.py: Gradient Move Optimization (experimental)
 - ig_gmo.py: Information-Gain GMO (research)
-- neural_net.py: Neural network models
+- neural_net/: Stable neural-network package facade and architecture modules
 - nnue.py: NNUE evaluation (incrementally updated)
 """
 

@@ -905,7 +905,7 @@ def generate_dataset(
         Optional neural network model ID (e.g. "ringrift_v4_sq8_2p"). If provided,
         AI instances will use this model for evaluation. If None, engines
         use their default model loading behavior (board-aware defaults in
-        `app/ai/neural_net.py`).
+        the `app.ai.neural_net` package facade).
     multi_player_values:
         If True, store per-player value vectors of shape (N, max_players)
         instead of scalar values from the current player's perspective.

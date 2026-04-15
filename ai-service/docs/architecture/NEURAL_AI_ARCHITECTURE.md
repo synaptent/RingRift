@@ -473,7 +473,7 @@ Phase 4: 3-player modes (ongoing)
 ### 6.1 Interface with Python Rules Engine
 
 ```python
-# In ai-service/app/ai/neural_ai.py
+# Exposed via ai-service/app/ai/neural_net/__init__.py
 
 class NeuralAI:
     def __init__(self, model_path, device='cuda'):
@@ -601,12 +601,14 @@ python scripts/train_nnue.py \
 
 ### 9.1 HexNeuralNet Variants
 
-Specialized architectures for hexagonal boards are implemented in `app/ai/neural_net.py`.
+Specialized architectures for hexagonal boards live under `app/ai/neural_net/`,
+primarily `hex_architectures.py`, and are selected via
+`app/ai/neural_net/model_factory.py`.
 
 #### HexNeuralNet_v2
 
 ```python
-# Location: neural_net.py:5519
+# Location: app/ai/neural_net/hex_architectures.py
 class HexNeuralNet_v2:
     """Original hex architecture with 10 channels per player."""
 
@@ -618,7 +620,7 @@ class HexNeuralNet_v2:
 #### HexNeuralNet_v3 (Recommended)
 
 ```python
-# Location: neural_net.py:5816
+# Location: app/ai/neural_net/hex_architectures.py
 class HexNeuralNet_v3:
     """Improved hex architecture with 16 channels per player."""
 

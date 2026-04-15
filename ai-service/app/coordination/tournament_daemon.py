@@ -122,7 +122,8 @@ class TournamentDaemonConfig:
     calibration_games: int = 10  # Games per calibration matchup
 
     # Cross-NN version tournaments - compare model versions (Dec 2025)
-    # Jan 4, 2026: Enabled - UnifiedNeuralNetFactory implemented in app/ai/neural_net.py
+    # Jan 4, 2026: Enabled - UnifiedNeuralNetFactory lives in app/ai/unified_factory.py
+    # and is re-exported through the app.ai.neural_net package facade.
     enable_cross_nn_tournaments: bool = True
     cross_nn_interval_seconds: float = 3600.0 * 4  # Every 4 hours
     cross_nn_games_per_pairing: int = 20
