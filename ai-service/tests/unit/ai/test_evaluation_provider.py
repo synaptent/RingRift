@@ -98,18 +98,14 @@ class TestProtocolCompliance:
 
     def test_protocol_with_heuristic_evaluator(self):
         """Test HeuristicEvaluator implements the protocol."""
-        try:
-            from app.ai.evaluation_provider import HeuristicEvaluator
+        from app.ai.evaluation_provider import HeuristicEvaluator
 
-            config = AIConfig(difficulty=5)
-            evaluator = HeuristicEvaluator(player_number=0, config=config)
+        config = AIConfig(difficulty=5)
+        evaluator = HeuristicEvaluator(player_number=0, config=config)
 
-            assert evaluator.player_number == 0
-            assert hasattr(evaluator, 'evaluate')
-            assert hasattr(evaluator, 'get_breakdown')
-        except ImportError:
-            # HeuristicEvaluator may not exist yet
-            pytest.skip("HeuristicEvaluator not available")
+        assert evaluator.player_number == 0
+        assert hasattr(evaluator, 'evaluate')
+        assert hasattr(evaluator, 'get_breakdown')
 
 
 class TestEvaluateMethodContract:

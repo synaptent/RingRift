@@ -247,9 +247,8 @@ class TestRealFeatureIntegration:
         reset_feature_registry()
 
     def test_data_catalog_feature_if_available(self):
-        """Test data_catalog feature if module is available."""
-        if not has_feature("data_catalog"):
-            pytest.skip("data_catalog not available")
+        """Test data_catalog feature registration."""
+        assert has_feature("data_catalog")
 
         DataCatalog = get_feature("data_catalog", "DataCatalog")
         get_data_catalog = get_feature("data_catalog", "get_data_catalog")
@@ -258,9 +257,8 @@ class TestRealFeatureIntegration:
         assert get_data_catalog is not None
 
     def test_training_facade_feature_if_available(self):
-        """Test training_facade feature if module is available."""
-        if not has_feature("training_facade"):
-            pytest.skip("training_facade not available")
+        """Test training_facade feature registration."""
+        assert has_feature("training_facade")
 
         FacadeConfig = get_feature("training_facade", "FacadeConfig")
         TrainingEnhancementsFacade = get_feature(

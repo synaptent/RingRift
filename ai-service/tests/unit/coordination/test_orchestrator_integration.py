@@ -357,42 +357,35 @@ class TestUnifiedInitialization:
 
     def test_initialize_returns_status_dict(self):
         """Test that initialize_all_coordinators returns status dict."""
-        # This test may fail if event bus is not available
-        try:
-            from app.coordination import initialize_all_coordinators
+        from app.coordination import initialize_all_coordinators
 
-            status = initialize_all_coordinators()
+        status = initialize_all_coordinators()
 
-            # Verify structure
-            assert isinstance(status, dict)
-            assert "selfplay" in status
-            assert "pipeline" in status
-            assert "task_lifecycle" in status
-            assert "optimization" in status
-            assert "metrics" in status
-            assert "resources" in status
-            assert "cache" in status
-            assert "event_coordinator" in status
-        except ImportError:
-            pytest.skip("Event bus not available")
+        # Verify structure
+        assert isinstance(status, dict)
+        assert "selfplay" in status
+        assert "pipeline" in status
+        assert "task_lifecycle" in status
+        assert "optimization" in status
+        assert "metrics" in status
+        assert "resources" in status
+        assert "cache" in status
+        assert "event_coordinator" in status
 
     def test_get_all_coordinator_status(self):
         """Test that get_all_coordinator_status returns comprehensive status."""
-        try:
-            from app.coordination import get_all_coordinator_status
+        from app.coordination import get_all_coordinator_status
 
-            status = get_all_coordinator_status()
+        status = get_all_coordinator_status()
 
-            # Verify structure
-            assert isinstance(status, dict)
-            assert "selfplay" in status
-            assert "pipeline" in status
+        # Verify structure
+        assert isinstance(status, dict)
+        assert "selfplay" in status
+        assert "pipeline" in status
 
-            # Each should have subscribed key
-            if "subscribed" in status.get("selfplay", {}):
-                assert isinstance(status["selfplay"]["subscribed"], bool)
-        except ImportError:
-            pytest.skip("Coordination package not fully available")
+        # Each should have subscribed key
+        if "subscribed" in status.get("selfplay", {}):
+            assert isinstance(status["selfplay"]["subscribed"], bool)
 
 
 class TestStatusReporting:

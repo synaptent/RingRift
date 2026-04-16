@@ -118,14 +118,11 @@ class TestHealthCheckCompliance:
         """Verify core coordinators implement health_check()."""
         import importlib
 
-        try:
-            module = importlib.import_module(module_path)
-            cls = getattr(module, coordinator_class)
-            assert hasattr(cls, "health_check"), (
-                f"{coordinator_class} in {module_path} is missing health_check() method"
-            )
-        except ImportError as e:
-            pytest.skip(f"Could not import {module_path}: {e}")
+        module = importlib.import_module(module_path)
+        cls = getattr(module, coordinator_class)
+        assert hasattr(cls, "health_check"), (
+            f"{coordinator_class} in {module_path} is missing health_check() method"
+        )
 
     def test_job_stall_detector_health_check_returns_valid_result(self):
         """Verify JobStallDetector.health_check() returns proper HealthCheckResult."""

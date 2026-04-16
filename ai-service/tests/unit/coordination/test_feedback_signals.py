@@ -552,9 +552,6 @@ class TestEventBusBridge:
         """Test intensity signals bridge to event bus."""
         from app.coordination.feedback_signals import DataEventType
 
-        if DataEventType is None:
-            pytest.skip("DataEventType not available")
-
         emit_signal(FeedbackSignal(
             signal_type=SignalType.INTENSITY,
             config_key="hex8_2p",
@@ -571,9 +568,6 @@ class TestEventBusBridge:
     def test_regression_signal_bridges_to_event_bus(self, mock_emit):
         """Test regression signals bridge to event bus."""
         from app.coordination.feedback_signals import DataEventType
-
-        if DataEventType is None:
-            pytest.skip("DataEventType not available")
 
         emit_signal(FeedbackSignal(
             signal_type=SignalType.REGRESSION,

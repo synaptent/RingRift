@@ -571,15 +571,8 @@ class TestEventBusAccess:
     """Tests for event bus access functions."""
 
     def test_get_event_bus_returns_bus(self):
-        """get_event_bus returns an EventBus.
-
-        Note: Skipped if data_events unavailable (EventBus is None).
-        """
+        """get_event_bus returns an EventBus."""
         from app.coordination.core_events import get_event_bus, EventBus
-
-        # Dec 29, 2025: Skip if EventBus is None (data_events unavailable)
-        if EventBus is None:
-            pytest.skip("EventBus unavailable (data_events failed to import)")
 
         bus = get_event_bus()
         assert bus is not None
@@ -626,19 +619,11 @@ class TestModuleExports:
 
 
 class TestDataEventTypeEnum:
-    """Tests for DataEventType enum.
-
-    Note: These tests are skipped if data_events is unavailable
-    (DataEventType is None).
-    """
+    """Tests for DataEventType enum."""
 
     def test_common_event_types_exist(self):
         """Common event types are defined."""
         from app.coordination.core_events import DataEventType
-
-        # Dec 29, 2025: Skip if DataEventType is None
-        if DataEventType is None:
-            pytest.skip("DataEventType unavailable (data_events failed to import)")
 
         # Check for common training events
         assert hasattr(DataEventType, "TRAINING_COMPLETED")
@@ -654,10 +639,6 @@ class TestDataEventTypeEnum:
     def test_event_types_have_values(self):
         """Event types have string values."""
         from app.coordination.core_events import DataEventType
-
-        # Dec 29, 2025: Skip if DataEventType is None
-        if DataEventType is None:
-            pytest.skip("DataEventType unavailable (data_events failed to import)")
 
         assert isinstance(DataEventType.TRAINING_COMPLETED.value, str)
         assert len(DataEventType.TRAINING_COMPLETED.value) > 0
