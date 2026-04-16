@@ -8,16 +8,31 @@ Tests the unified event type system including:
 - Backwards compatibility
 """
 
+import warnings
+
 import pytest
 
+import app.events.types as event_types
 from app.events.types import (
     CROSS_PROCESS_EVENT_TYPES,
     EventCategory,
     RingRiftEventType,
-    StageEvent,
     get_events_by_category,
     is_cross_process_event,
 )
+
+
+def _canonical_stage_event():
+    """Return the canonical coordination StageEvent without surfacing the module deprecation in test output."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="app.coordination.stage_events is deprecated",
+            category=DeprecationWarning,
+        )
+        from app.coordination.stage_events import StageEvent as canonical_stage_event
+
+    return canonical_stage_event
 
 
 # ============================================
@@ -261,23 +276,36 @@ class TestUtilityFunctions:
 class TestBackwardsCompatibility:
     """Tests for backwards compatibility aliases."""
 
-    def test_stage_event_alias_exists(self):
-        """Test that StageEvent alias exists."""
-        assert StageEvent is not None
+    def test_stage_event_alias_warns_and_uses_canonical_enum(self):
+        """StageEvent alias should warn and resolve to the canonical coordination enum."""
+        with pytest.deprecated_call(
+            match="app.events.types.StageEvent is deprecated"
+        ):
+            stage_event = event_types.StageEvent
+        assert stage_event is _canonical_stage_event()
 
     def test_stage_event_has_expected_values(self):
-        """Test that StageEvent has expected values."""
-        assert hasattr(StageEvent, 'SELFPLAY_COMPLETE')
-        assert hasattr(StageEvent, 'TRAINING_COMPLETE')
-        assert hasattr(StageEvent, 'EVALUATION_COMPLETE')
-        assert hasattr(StageEvent, 'PROMOTION_COMPLETE')
+        """Test that the deprecated alias exposes canonical stage event values."""
+        with pytest.deprecated_call(
+            match="app.events.types.StageEvent is deprecated"
+        ):
+            stage_event = event_types.StageEvent
+        assert hasattr(stage_event, 'SELFPLAY_COMPLETE')
+        assert hasattr(stage_event, 'TRAINING_COMPLETE')
+        assert hasattr(stage_event, 'EVALUATION_COMPLETE')
+        assert hasattr(stage_event, 'PROMOTION_COMPLETE')
 
     def test_stage_event_values_match_ringrift_event_type(self):
-        """Test that StageEvent values match RingRiftEventType values."""
-        assert StageEvent.SELFPLAY_COMPLETE.value == RingRiftEventType.STAGE_SELFPLAY_COMPLETE.value
-        assert StageEvent.TRAINING_COMPLETE.value == RingRiftEventType.STAGE_TRAINING_COMPLETE.value
-        assert StageEvent.EVALUATION_COMPLETE.value == RingRiftEventType.STAGE_EVALUATION_COMPLETE.value
-        assert StageEvent.PROMOTION_COMPLETE.value == RingRiftEventType.STAGE_PROMOTION_COMPLETE.value
+        """Test that the deprecated alias matches the canonical coordination enum values."""
+        with pytest.deprecated_call(
+            match="app.events.types.StageEvent is deprecated"
+        ):
+            stage_event = event_types.StageEvent
+        canonical_stage_event = _canonical_stage_event()
+        assert stage_event.SELFPLAY_COMPLETE.value == canonical_stage_event.SELFPLAY_COMPLETE.value
+        assert stage_event.TRAINING_COMPLETE.value == canonical_stage_event.TRAINING_COMPLETE.value
+        assert stage_event.EVALUATION_COMPLETE.value == canonical_stage_event.EVALUATION_COMPLETE.value
+        assert stage_event.PROMOTION_COMPLETE.value == canonical_stage_event.PROMOTION_COMPLETE.value
 
 
 # ============================================

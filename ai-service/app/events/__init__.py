@@ -18,12 +18,15 @@ Usage:
         log_training_event(event)
 """
 
+from __future__ import annotations
+
+import warnings
+
 from app.events.types import (
     CROSS_PROCESS_EVENT_TYPES,
     DataEventType,
     EventCategory,
     RingRiftEventType,
-    StageEvent,
     get_events_by_category,
     is_cross_process_event,
 )
@@ -47,3 +50,24 @@ def __dir__() -> list[str]:
     """Expose the intended events surface for discoverability."""
 
     return sorted(set(globals()) | set(__all__))
+
+
+def __getattr__(name: str):
+    """Lazily expose deprecated compatibility aliases."""
+    if name == "StageEvent":
+        warnings.warn(
+            "app.events.StageEvent is deprecated. "
+            "Use app.coordination.stage_events.StageEvent for runtime stage events.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="app.coordination.stage_events is deprecated",
+                category=DeprecationWarning,
+            )
+            from app.coordination.stage_events import StageEvent as CanonicalStageEvent
+
+        return CanonicalStageEvent
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

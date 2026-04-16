@@ -22,6 +22,7 @@ Usage:
 
 from __future__ import annotations
 
+import warnings
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -884,36 +885,6 @@ _EVENT_CATEGORIES: dict[RingRiftEventType, EventCategory] = {
 DataEventType = RingRiftEventType
 
 
-# Create a StageEvent alias class that maps to RingRiftEventType
-class StageEvent(Enum):
-    """Backwards compatibility alias for stage events.
-
-    .. deprecated:: December 2025
-        Use RingRiftEventType.STAGE_* instead.
-    """
-
-    SELFPLAY_COMPLETE = RingRiftEventType.STAGE_SELFPLAY_COMPLETE.value
-    CANONICAL_SELFPLAY_COMPLETE = RingRiftEventType.STAGE_CANONICAL_SELFPLAY_COMPLETE.value
-    GPU_SELFPLAY_COMPLETE = RingRiftEventType.STAGE_GPU_SELFPLAY_COMPLETE.value
-    SYNC_COMPLETE = RingRiftEventType.STAGE_SYNC_COMPLETE.value
-    PARITY_VALIDATION_COMPLETE = RingRiftEventType.STAGE_PARITY_VALIDATION_COMPLETE.value
-    NPZ_EXPORT_COMPLETE = RingRiftEventType.STAGE_NPZ_EXPORT_COMPLETE.value
-    TRAINING_COMPLETE = RingRiftEventType.STAGE_TRAINING_COMPLETE.value
-    TRAINING_STARTED = RingRiftEventType.STAGE_TRAINING_STARTED.value
-    TRAINING_FAILED = RingRiftEventType.STAGE_TRAINING_FAILED.value
-    EVALUATION_COMPLETE = RingRiftEventType.STAGE_EVALUATION_COMPLETE.value
-    SHADOW_TOURNAMENT_COMPLETE = RingRiftEventType.STAGE_SHADOW_TOURNAMENT_COMPLETE.value
-    ELO_CALIBRATION_COMPLETE = RingRiftEventType.STAGE_ELO_CALIBRATION_COMPLETE.value
-    CMAES_COMPLETE = RingRiftEventType.STAGE_CMAES_COMPLETE.value
-    PBT_COMPLETE = RingRiftEventType.STAGE_PBT_COMPLETE.value
-    NAS_COMPLETE = RingRiftEventType.STAGE_NAS_COMPLETE.value
-    PROMOTION_COMPLETE = RingRiftEventType.STAGE_PROMOTION_COMPLETE.value
-    TIER_GATING_COMPLETE = RingRiftEventType.STAGE_TIER_GATING_COMPLETE.value
-    ITERATION_COMPLETE = RingRiftEventType.STAGE_ITERATION_COMPLETE.value
-    CLUSTER_SYNC_COMPLETE = RingRiftEventType.STAGE_CLUSTER_SYNC_COMPLETE.value
-    MODEL_SYNC_COMPLETE = RingRiftEventType.STAGE_MODEL_SYNC_COMPLETE.value
-
-
 # =============================================================================
 # Utility Functions
 # =============================================================================
@@ -1007,3 +978,24 @@ __all__ = [
     "DataEventType",
     "StageEvent",
 ]
+
+
+def __getattr__(name: str):
+    """Lazily expose deprecated compatibility aliases."""
+    if name == "StageEvent":
+        warnings.warn(
+            "app.events.types.StageEvent is deprecated. "
+            "Use app.coordination.stage_events.StageEvent for runtime stage events.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="app.coordination.stage_events is deprecated",
+                category=DeprecationWarning,
+            )
+            from app.coordination.stage_events import StageEvent as CanonicalStageEvent
+
+        return CanonicalStageEvent
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -316,7 +316,8 @@ class TestBackwardsCompatibilityUsage:
 
     def test_stage_event_can_be_compared(self):
         """Test that StageEvent values can be compared."""
-        from app.events import StageEvent
+        with pytest.deprecated_call(match="app.events.StageEvent is deprecated"):
+            from app.events import StageEvent
 
         event1 = StageEvent.TRAINING_COMPLETE
         event2 = StageEvent.TRAINING_COMPLETE
@@ -325,10 +326,11 @@ class TestBackwardsCompatibilityUsage:
 
     def test_stage_event_value_matches_ringrift_type(self):
         """Test that StageEvent values match RingRiftEventType."""
-        from app.events import StageEvent
+        with pytest.deprecated_call(match="app.events.StageEvent is deprecated"):
+            from app.events import StageEvent
 
         assert StageEvent.SELFPLAY_COMPLETE.value == "selfplay_complete"
-        assert StageEvent.TRAINING_COMPLETE.value == "stage_training_complete"
+        assert StageEvent.TRAINING_COMPLETE.value == "training_complete"
 
 
 # ============================================
