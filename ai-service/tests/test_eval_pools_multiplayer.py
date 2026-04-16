@@ -1,5 +1,7 @@
-"""Tests for loading 3-player and 4-player evaluation pools."""
-import os
+"""Tests for multiplayer evaluation pool loading."""
+
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -7,24 +9,27 @@ from app.models import BoardType
 from app.training.eval_pools import POOL_PATHS, load_state_pool
 
 
-def test_load_square19_3p_pool():
-    """Verify that the 3-player Square19 pool can be loaded and has correct player counts."""
+def test_load_square19_3p_pool_from_fixture(tmp_path: Path):
+    """Verify that a configured 3-player Square19 pool loads with the expected player count."""
     pool_id = "3p_v1"
     board_type = BoardType.SQUARE19
+    pool_path = tmp_path / "square19_3p_pool.jsonl"
+    pool_path.write_text('{"fixture": 1}\n{"fixture": 2}\n', encoding="utf-8")
 
-    # Ensure the file exists (skip test if pool hasn't been generated yet)
-    path = POOL_PATHS.get((board_type, pool_id))
-    if not path or not os.path.exists(path):
-        pytest.skip(f"Pool file not found: {path}. Run generation command in data/eval_pools/square19_3p/README.md")
+    states = []
+    for _ in range(2):
+        state = MagicMock()
+        state.board_type = board_type
+        state.players = [object(), object(), object()]
+        states.append(state)
 
-    states = load_state_pool(board_type, pool_id=pool_id, num_players=3)
-    assert len(states) > 0, "Pool should contain at least one state"
+    patched_paths = {(board_type, pool_id): str(pool_path)}
+    with patch.dict(POOL_PATHS, patched_paths, clear=False):
+        with patch("app.training.eval_pools.GameState") as mock_game_state:
+            mock_game_state.model_validate_json.side_effect = states
+            loaded_states = load_state_pool(board_type, pool_id=pool_id, num_players=3)
 
-    for state in states:
+    assert len(loaded_states) == 2
+    for state in loaded_states:
         assert state.board_type == board_type, f"Expected {board_type}, got {state.board_type}"
         assert len(state.players) == 3, f"Expected 3 players, got {len(state.players)}"
-
-
-def test_load_hex_4p_pool():
-    """Hex 4p eval pool was removed (old geometry); regenerate before enabling."""
-    pytest.skip("Hex 4p eval pool deleted (old radius-10 geometry). Regenerate for radius-12 hex before enabling this test.")
