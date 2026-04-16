@@ -405,10 +405,10 @@ class TestHealthCheckReturnTypes:
             ),
             (
                 lambda: __import__(
-                    "app.coordination.unified_health",
-                    fromlist=["UnifiedHealthMonitor"],
-                ).UnifiedHealthMonitor(),
-                "unified_health",
+                    "app.coordination.unified_health_manager",
+                    fromlist=["UnifiedHealthManager"],
+                ).UnifiedHealthManager(),
+                "unified_health_manager",
             ),
             (
                 lambda: __import__(
