@@ -1,0 +1,66 @@
+# RingRift systemd node environment example.
+#
+# Deploy location on a node:
+#   /etc/ringrift/node.conf
+#
+# This file is read by:
+#   config/systemd/ringrift-training.service
+#   config/systemd/ringrift-selfplay-worker.service
+#   config/systemd/ringrift-evaluator.service
+#   config/systemd/ringrift-p2p.service
+#
+# Role-specific files are generated separately by deploy_training_service.sh:
+#   /etc/ringrift/training.conf
+#   /etc/ringrift/selfplay.conf
+#   /etc/ringrift/evaluator.conf
+
+# Stable node name from config/node_roles.yaml.
+NODE_ID=gh200-9
+
+# Address advertised to other P2P peers. Prefer the node's Tailscale IPv4 from
+# `tailscale ip -4`; use a public provider IP only when that is the intended
+# reachable address.
+ADVERTISE_HOST=100.127.168.116
+
+# Comma-separated peer list consumed by ringrift-p2p.service. Leave empty for a
+# single-node smoke test. In production, include stable peer advertise hosts.
+PEER_LIST=100.121.230.110:8770,100.86.51.4:8770
+
+# Trainer role example (/etc/ringrift/training.conf):
+# TRAINING_MODEL=models/canonical_square8_2p.pth
+# TRAINING_WORK_DIR=data/minimal_loop_square8_2p
+# TRAINING_SUPPLEMENTAL_DATA_DIR=data/minimal_loop_square8_2p/supplemental
+# TRAINING_BOARD_TYPE=square8
+# TRAINING_NUM_PLAYERS=2
+# TRAINING_ITERATIONS=50
+# TRAINING_GAMES_PER_ITER=100
+# TRAINING_SELFPLAY_BUDGET=128
+# TRAINING_EVAL_BUDGET=128
+# TRAINING_LR=5e-5
+# TRAINING_LR_SCHEDULE=fixed
+# TRAINING_TRAIN_LR_SCHEDULER=none
+# TRAINING_TRAIN_WINDOW=3
+
+# Selfplay-worker role example (/etc/ringrift/selfplay.conf):
+# SELFPLAY_CONFIG_KEY=square8_2p
+# SELFPLAY_MODEL=models/canonical_square8_2p.pth
+# SELFPLAY_BOARD_TYPE=square8
+# SELFPLAY_NUM_PLAYERS=2
+# SELFPLAY_BATCH_GAMES=50
+# SELFPLAY_SIMULATION_BUDGET=128
+# SELFPLAY_RAW_OUTPUT_DIR=data/selfplay/policy_gumbel/square8_2p/raw
+# SELFPLAY_SUPPLEMENTAL_OUTPUT_DIR=data/selfplay/policy_gumbel/square8_2p/supplemental
+# SELFPLAY_STATE_DIR=data/selfplay/policy_gumbel/square8_2p/state
+# SELFPLAY_SLEEP_SECONDS=60
+# SELFPLAY_REMOTE_HOST=100.127.168.116
+# SELFPLAY_REMOTE_DIR=/home/ubuntu/ringrift/ai-service/data/minimal_loop_square8_2p/supplemental
+# SELFPLAY_REMOTE_USER=ubuntu
+# SELFPLAY_REMOTE_SSH_KEY=/home/ubuntu/.ssh/id_cluster
+# SELFPLAY_REMOTE_PORT=22
+# SELFPLAY_OPPONENT_TYPE=selfplay
+
+# Evaluator role example (/etc/ringrift/evaluator.conf):
+# EVALUATOR_INTERVAL_SECONDS=3600
+# EVALUATOR_WORKERS=64
+# EVALUATOR_BOARD_FILTER=
+# EVALUATOR_ASSIGNED_CONFIGS=hex8_2p,square8_2p,square8_3p,square19_2p

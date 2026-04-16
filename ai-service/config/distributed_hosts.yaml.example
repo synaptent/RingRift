@@ -3,7 +3,35 @@
 # Copy this file to distributed_hosts.yaml and fill in your actual node details.
 # This file should NOT be committed to version control.
 #
-# See CLAUDE.md for cluster infrastructure documentation.
+# Field guide:
+# - hosts.<name>: Stable node identifier. Use the same name as
+#   config/node_roles.yaml when a node participates in role-aware deployment.
+# - ssh_host: Address used by SSH/scp. Prefer the Tailscale IPv4 address for
+#   private cluster nodes; use a public provider host only when Tailscale is not
+#   available.
+# - tailscale_ip: Node's Tailscale IPv4, usually found with `tailscale ip -4`
+#   on the node or `tailscale status` from an authenticated operator machine.
+#   Example: 100.127.168.116.
+# - ssh_port: SSH port. Omit for the default 22; required for providers like
+#   Vast.ai that expose SSH through a forwarded high port.
+# - ssh_user: Remote OS user used by deploy scripts. The supported GH200 path
+#   expects `ubuntu`; some CPU/provider nodes use `root`.
+# - ssh_key: Private key path on the operator machine. The current supported
+#   training fleet uses ~/.ssh/id_cluster.
+# - ringrift_path: Absolute or home-relative path to the ai-service directory
+#   on the remote node, commonly ~/ringrift/ai-service.
+# - venv_activate: Shell snippet that activates or enters the Python
+#   environment. Use `source ~/ringrift/ai-service/venv/bin/activate` when a
+#   venv exists, or `cd ~/ringrift/ai-service` for service-managed venv paths.
+# - role: Legacy/provider role used by older orchestration. Workload roles for
+#   current role-aware deployment live in config/node_roles.yaml.
+# - selfplay_enabled/training_enabled/p2p_enabled: Legacy capability flags used
+#   by health/sync tooling. Keep them aligned with the intended workload role.
+# - nat_blocked/force_relay_mode/relay_primary/relay_secondary: P2P routing
+#   hints for providers that block inbound traffic.
+#
+# Do not put provider API tokens or cloud credentials in this file. Keep those
+# in operator-local environment files or secret stores.
 
 sync_routing:
   max_disk_usage_percent: 70

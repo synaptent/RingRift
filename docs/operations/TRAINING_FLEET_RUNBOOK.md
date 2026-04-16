@@ -93,6 +93,55 @@ bash scripts/deploy_training_service.sh --only square8_2p --restart
 Systemd units include `Restart=always` and `[Install] WantedBy=multi-user.target`.
 They are boot-persistent when installed and enabled by the deployment flow.
 
+## Current Deployment Path Map
+
+Use `docs/data/training_fleet_manifest.json` as the checked-in orientation map.
+As of April 16, 2026:
+
+| Node              | Config / Role   | Current path        | Notes                                |
+| ----------------- | --------------- | ------------------- | ------------------------------------ |
+| `gh200-8`         | `hex8_2p`       | minimal-loop canary | v4 plateau-break experiment target   |
+| `gh200-9`         | `square8_2p`    | minimal-loop canary | current strongest square8_2p trainer |
+| `gh200-12`        | `square8_3p`    | minimal-loop canary | seat-fair multiplayer revalidation   |
+| `gh200-10`        | `hex8_3p`       | role-aware systemd  | private inventory resolves the host  |
+| `gh200-11`        | selfplay worker | role-aware systemd  | feeds `gh200-8`                      |
+| `gh200-13`        | selfplay worker | role-aware systemd  | feeds `gh200-9`                      |
+| `gh200-14`        | `square19_2p`   | role-aware systemd  | large-board trainer                  |
+| `vultr-a100-20gb` | evaluator       | role-aware systemd  | evaluation/calibration node          |
+
+## Canary-To-Systemd Migration
+
+Use this path when a canary trainer has proven stable enough that reboot
+persistence matters more than manual control.
+
+1. Confirm the node appears in both `config/node_roles.yaml` and the private
+   `config/distributed_hosts.yaml`.
+2. Fill the host entry with `ssh_host` or `tailscale_ip`, `ssh_user`, `ssh_key`,
+   `ringrift_path`, and `venv_activate`. See
+   `config/distributed_hosts.yaml.example` for field meanings.
+3. Run the local read-only checks:
+
+   ```bash
+   cd ai-service
+   PYTHONPATH=. python3 scripts/validate_training_fleet_docs.py
+   bash scripts/deploy_training_service.sh --dry-run --only <node-or-config>
+   ```
+
+4. Stop only the matching minimal-loop canary process for that config using the
+   safe-stop command below. Do not delete the work directory or checkpoints.
+5. Deploy the role-aware service:
+
+   ```bash
+   cd ai-service
+   bash scripts/deploy_training_service.sh --only <node-or-config> --restart
+   ```
+
+6. Verify `systemctl status ringrift-training` and confirm the node resumes
+   writing `<work-dir>/progress.json` and `<work-dir>/metrics.jsonl`.
+7. Record the path change in `docs/data/training_fleet_manifest.json` in the
+   same commit as any docs update. Do not change the manifest based only on an
+   intended migration.
+
 ## Health Checks
 
 Use read-only checks first:
