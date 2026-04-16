@@ -300,7 +300,7 @@ def test_training_fleet_ops_docs_are_linked_and_explicit_about_reboot_limits() -
 def test_todo_routes_readers_to_current_sources() -> None:
     text = (REPO_ROOT / "TODO.md").read_text(encoding="utf-8")
 
-    assert "**Last Updated:** 2026-04-13" in text
+    assert "**Last Updated:** 2026-04-16" in text
     assert "Current Research And Runtime Sources" in text
     assert "RESULTS.md" in text
     assert "RESEARCH_SNAPSHOT.md" in text
