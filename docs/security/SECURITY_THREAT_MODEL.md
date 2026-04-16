@@ -12,7 +12,8 @@
 
 This document summarizes the security threat model and hardening plan for RingRift. It aligns with:
 
-- [`FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md)
+- [`ARCHITECTURE_OVERVIEW.md`](../ARCHITECTURE_OVERVIEW.md)
+- [`PRODUCTION_READINESS_CHECKLIST.md`](../production/PRODUCTION_READINESS_CHECKLIST.md)
 - [`CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)
 - [`STRATEGIC_ROADMAP.md`](../planning/STRATEGIC_ROADMAP.md)
 
@@ -50,7 +51,7 @@ This document summarizes the security threat model and hardening plan for RingRi
 - **Backend ↔ Postgres / Redis**
   - Prisma access in [`connection`](../../src/server/database/connection.ts) and Redis access in [`redis`](../../src/server/cache/redis.ts) used for caching, locks, and rate limiting.
 - **CI/CD and deployment ↔ production stack**
-  - GitHub Actions workflows (see [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) build, test, and deploy Node and Python services using Docker, as referenced in [`FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md).
+  - GitHub Actions workflows (see [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) build, test, and deploy Node and Python services using Docker, as referenced in [`SUPPLY_CHAIN_AND_CI_SECURITY.md`](SUPPLY_CHAIN_AND_CI_SECURITY.md).
 
 ```mermaid
 flowchart LR
@@ -82,7 +83,7 @@ flowchart LR
 
 ## 2. Threat surfaces, controls, and gaps
 
-This section focuses on concrete threat surfaces and maps each to existing controls and known gaps. It is consistent with the production-readiness analysis in [`FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md) and [`CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
+This section focuses on concrete threat surfaces and maps each to existing controls and known gaps. It is consistent with the production-readiness analysis in [`PRODUCTION_READINESS_CHECKLIST.md`](../production/PRODUCTION_READINESS_CHECKLIST.md) and [`CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md).
 
 ### 2.1 Authentication & session management
 
@@ -208,7 +209,7 @@ This section focuses on concrete threat surfaces and maps each to existing contr
 
 **Existing controls**
 
-- Dependency audits and security scanning (for example, `npm audit` and Snyk) are part of CI as summarized in [`FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md).
+- Dependency audits and security scanning (for example, `npm audit` and Snyk) are part of CI as summarized in [`SUPPLY_CHAIN_AND_CI_SECURITY.md`](SUPPLY_CHAIN_AND_CI_SECURITY.md).
 - Python dependencies are pinned in [`ai-service/requirements.txt`](../../ai-service/requirements.txt), reducing the risk of surprise upstream changes.
 - CI workflows under [`.github/workflows`](../../.github/workflows/ci.yml) build and test both Node and Python components before deployment.
 - Docker-based deployment model and a small number of images simplify provenance and rollback.
@@ -243,7 +244,7 @@ Key directions:
 - **Goal:** Make game access rules explicit and verifiable for all HTTP endpoints and WebSocket events, including future spectator and rating features.
 - **Scope:** Backend and tests around [`game`](../../src/server/routes/game.ts), [`WebSocketServer`](../../src/server/websocket/server.ts), [`GameSession`](../../src/server/game/GameSession.ts), and related services such as [`RatingService`](../../src/server/services/RatingService.ts).
 - **Risk level:** High – Authorization errors can expose hidden information or allow manipulation of other players’ games and ratings.
-- **Dependencies:** Builds on the current multiplayer lifecycle and session-management design in [`archive/FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md).
+- **Dependencies:** Builds on the current multiplayer lifecycle and session-management design in [`ARCHITECTURE_OVERVIEW.md`](../ARCHITECTURE_OVERVIEW.md).
 
 Key directions:
 
@@ -282,7 +283,7 @@ Key directions:
 - **Goal:** Establish pragmatic policies for how long user and game data are retained and how user data can be deleted or exported if needed.
 - **Scope:** Backend, DB schema and migrations, and operator documentation such as [`docs/operations/OPERATIONS_DB.md`](../operations/OPERATIONS_DB.md).
 - **Risk level:** Medium – Important for future regulatory alignment and for limiting the impact of potential data leaks.
-- **Dependencies:** Builds on current backup/restore and migration guidance in [`archive/FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md).
+- **Dependencies:** Builds on current backup/restore and migration guidance in [`OPERATIONS_DB.md`](../operations/OPERATIONS_DB.md).
 - **Design details:** The concrete data inventory, retention/anonymisation rules, and user data workflows for S‑05.E are defined in [`docs/security/DATA_LIFECYCLE_AND_PRIVACY.md`](DATA_LIFECYCLE_AND_PRIVACY.md).
 
 Key directions:
@@ -296,7 +297,7 @@ Key directions:
 - **Goal:** Reduce supply-chain risk and make CI/CD guarantees about what code and images reach production explicit.
 - **Scope:** CI workflows under [`.github/workflows`](../../.github/workflows/ci.yml), Docker build pipeline, and contributor documentation.
 - **Risk level:** Medium – Becomes more important as the player base and contributor count grow.
-- **Dependencies:** Builds on existing CI practices and security scanning noted in [`archive/FINAL_ARCHITECT_REPORT.md`](../../archive/FINAL_ARCHITECT_REPORT.md).
+- **Dependencies:** Builds on existing CI practices and security scanning noted in [`SUPPLY_CHAIN_AND_CI_SECURITY.md`](SUPPLY_CHAIN_AND_CI_SECURITY.md).
 - **Design details:** The supply-chain & CI/CD threat overview, current controls/gaps, and S‑05.F.x implementation tracks are defined in [`docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md`](SUPPLY_CHAIN_AND_CI_SECURITY.md).
 
 Key directions:

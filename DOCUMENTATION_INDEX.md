@@ -40,13 +40,13 @@ This index catalogs all project documentation organized by topic and location. F
 
 These are the docs most likely to be shared externally. Only the first three should be treated as part of the supported path.
 
-| Document                                               | Purpose                        | Status |
-| ------------------------------------------------------ | ------------------------------ | ------ |
-| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)         | Short external-facing brief    | Active |
-| [docs/RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md) | Shareable research summary     | Active |
-| [docs/RESULTS.md](docs/RESULTS.md)                     | Full current research evidence | Active |
-| [docs/CASE_STUDY_DRAFT.md](docs/CASE_STUDY_DRAFT.md)   | Long-form case-study draft     | Draft  |
-| [docs/BLOG_POST_OUTLINE.md](docs/BLOG_POST_OUTLINE.md) | Blog/story outline             | Draft  |
+| Document                                                                                   | Purpose                        | Status |
+| ------------------------------------------------------------------------------------------ | ------------------------------ | ------ |
+| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)                                             | Short external-facing brief    | Active |
+| [docs/RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md)                                     | Shareable research summary     | Active |
+| [docs/RESULTS.md](docs/RESULTS.md)                                                         | Full current research evidence | Active |
+| [docs/archive/editorial/CASE_STUDY_DRAFT.md](docs/archive/editorial/CASE_STUDY_DRAFT.md)   | Long-form case-study draft     | Draft  |
+| [docs/archive/editorial/BLOG_POST_OUTLINE.md](docs/archive/editorial/BLOG_POST_OUTLINE.md) | Blog/story outline             | Draft  |
 
 ---
 
@@ -127,7 +127,7 @@ Engine and system architecture documentation.
 | [SYNC_ARCHITECTURE.md](docs/architecture/SYNC_ARCHITECTURE.md)                                             | Data/model sync architecture             |
 | [WEBSOCKET_API.md](docs/architecture/WEBSOCKET_API.md)                                                     | WebSocket event contract reference       |
 | [ORCHESTRATOR_ROLLOUT_PLAN.md](docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md)                             | Orchestrator migration plan              |
-| [FSM_MIGRATION_STATUS_2025_12.md](docs/architecture/FSM_MIGRATION_STATUS_2025_12.md)                       | Migration status snapshot                |
+| [FSM_MIGRATION_STATUS_2025_12.md](docs/archive/historical/FSM_MIGRATION_STATUS_2025_12.md)                 | Archived migration status snapshot       |
 | [SHARED_ENGINE_CONSOLIDATION_PLAN.md](docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md)               | Engine consolidation design              |
 | [CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md](docs/architecture/CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md) | Deferred refactor proposal (not started) |
 | [NEURAL_NET_INTEGRATION_DESIGN.md](docs/architecture/NEURAL_NET_INTEGRATION_DESIGN.md)                     | Neural network integration design        |
@@ -290,7 +290,7 @@ Active planning and roadmap documents.
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [DEPLOYMENT_REQUIREMENTS.md](docs/planning/DEPLOYMENT_REQUIREMENTS.md)                         | Production requirements                     |
 | [ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md](docs/planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md) | Parity research roadmap                     |
-| [WAVE_2025_12.md](docs/planning/WAVE_2025_12.md)                                               | December 2025 wave plan                     |
+| [WAVE_2025_12.md](docs/archive/planning/WAVE_2025_12.md)                                       | Archived December 2025 wave plan            |
 | [NN_SELFPLAY_TRAINING_LOOP_PLAN.md](docs/planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md)           | NN self-play throughput + loop-closure plan |
 | [SELFPLAY_LOOP_CLOSURE_PLAN.md](docs/planning/SELFPLAY_LOOP_CLOSURE_PLAN.md)                   | Bottleneck analysis + loop-closure plan     |
 
@@ -348,9 +348,9 @@ Extended analysis and edge case documentation.
 
 Current codebase assessments and improvement plans.
 
-| Document                                                                    | Purpose                                |
-| --------------------------------------------------------------------------- | -------------------------------------- |
-| [ARCHITECTURAL_IMPROVEMENT_PLAN.md](docs/ARCHITECTURAL_IMPROVEMENT_PLAN.md) | Refactoring opportunities and progress |
+| Document                                                                                  | Purpose                                         |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| [ARCHITECTURAL_IMPROVEMENT_PLAN.md](docs/archive/plans/ARCHITECTURAL_IMPROVEMENT_PLAN.md) | Archived refactoring opportunities and progress |
 
 ### Archived Assessments (Historical)
 

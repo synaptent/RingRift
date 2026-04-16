@@ -365,7 +365,7 @@ This goals document sits at the top of the planning stack for **project directio
 - [`PROJECT_GOALS.md`](PROJECT_GOALS.md) (this file) defines the high-level product and technical goals, success criteria, and scope boundaries for the current phase.
 - [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md) translates those goals into a phased implementation and SLO roadmap; when direction or success criteria change, update this file first and then adjust the roadmap.
 - [`docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) reports factual, code-verified implementation status relative to these goals and the roadmap; it does not define new goals.
-- [`archive/FINAL_ARCHITECT_REPORT.md`](archive/FINAL_ARCHITECT_REPORT.md) and other archived reports provide historical context; where they disagree with this document or the current roadmap/state assessment on direction, treat them as superseded.
+- Historical reports under [`docs/archive/`](docs/archive/) provide context; where they disagree with this document or the current roadmap/state assessment on direction, treat them as superseded.
 
 The tables below group key related documents by role so readers can quickly jump between **goals**, **plan**, and **current reality**.
 
