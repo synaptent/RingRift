@@ -1,2 +1,0 @@
-ARCHIVED: This report has moved to ai-service/docs/archive/status_reports/CLUSTER_STATUS_CRITICAL.txt
-This stub remains for legacy links.

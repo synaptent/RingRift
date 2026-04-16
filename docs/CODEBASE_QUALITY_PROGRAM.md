@@ -65,6 +65,13 @@ April 16, 2026 credibility pass:
   `ai-service/QUICK_WINS_CONSOLIDATION_REPORT.md`,
   `ai-service/cluster_update_report.md`, and
   `ai-service/COMPREHENSIVE_ACTION_PLAN_2025_12_25.md`.
+- Removed root-level fresh-clone clutter whose maintained copies are elsewhere
+  or whose contents were transient logs/work notes:
+  `CLIENT_TEST_PLAN.md`, `CLUSTER_STATUS_CRITICAL.txt`,
+  `P2P_INVESTIGATION_SUMMARY.md`, `P2P_STATUS_SUMMARY.txt`,
+  `P2P_STATUS_TABLE.md`, `PLAN_selfplay_loop_closure.md`,
+  `ROADMAP_2025Q1.md`, `nohup_master.out`, `nohup_p2p.out`,
+  `nohup_p2p_fresh.out`, and `progress.md`.
 - Archived unreferenced active-tree audit doc:
   `docs/architecture/TEST_INFRASTRUCTURE_AUDIT.md` moved to
   `docs/archive/assessments/TEST_INFRASTRUCTURE_AUDIT.md`.
