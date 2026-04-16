@@ -1,6 +1,6 @@
 # RingRift Research Snapshot
 
-This is the shortest shareable summary of the RingRift training project as of April 15, 2026.
+This is the shortest shareable summary of the RingRift training project as of April 16, 2026.
 
 ## What RingRift Is
 
@@ -18,7 +18,7 @@ The project now has credible evidence of iterative neural-network improvement on
 | Config       | Best Reported Elo | Promotions | Interpretation                                                                |
 | ------------ | ----------------: | ---------: | ----------------------------------------------------------------------------- |
 | `hex8_2p`    |          `1979.8` |        `7` | Strongest result; current v3 line now looks plateaued at the edge of 2000 Elo |
-| `square8_2p` |          `1697.3` |        `4` | Second clean 2-player proof is now materially stronger after a `62%` promote  |
+| `square8_2p` |          `1782.0` |        `5` | Second clean 2-player proof now has two consecutive `62%` promotions          |
 | `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                            |
 
 The core research claim is no longer "can the pipeline run at all?" It is now: the RingRift self-play training loop can produce stronger models over time on at least two supported configurations, with one weaker multiplayer signal that is not yet strong enough to generalize from.

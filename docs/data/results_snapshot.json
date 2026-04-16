@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-04-15",
+  "as_of": "2026-04-16",
   "headline": [
     {
       "config": "hex8_2p",
@@ -10,8 +10,8 @@
     {
       "config": "square8_2p",
       "start_elo": 1500.0,
-      "best_elo": 1697.3,
-      "promotions": 4
+      "best_elo": 1782.0,
+      "promotions": 5
     },
     {
       "config": "square8_3p",
@@ -23,11 +23,6 @@
   "square8_2p_progression": {
     "config": "square8_2p",
     "points": [
-      {
-        "iteration": 29,
-        "elo": 1531.4,
-        "promoted": true
-      },
       {
         "iteration": 30,
         "elo": 1601.8,
@@ -47,10 +42,24 @@
         "iteration": 34,
         "elo": 1697.3,
         "promoted": true
+      },
+      {
+        "iteration": 35,
+        "elo": 1782.0,
+        "promoted": true
       }
     ]
   },
   "recent_updates": [
+    {
+      "config": "square8_2p",
+      "iteration": 35,
+      "win_rate": 0.62,
+      "games_played": 50,
+      "decision": "promote",
+      "estimated_elo": 1782.0,
+      "note": "Second consecutive 62% promotion; evidence source is gh200-9 metrics.jsonl plus S3 archive."
+    },
     {
       "config": "square8_2p",
       "iteration": 34,
@@ -58,7 +67,7 @@
       "games_played": 50,
       "decision": "promote",
       "estimated_elo": 1697.3,
-      "note": "Largest recent jump in the published 2-player line."
+      "note": "First of two back-to-back 62% promotions in the published 2-player line."
     },
     {
       "config": "hex8_2p",

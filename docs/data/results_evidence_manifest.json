@@ -23,14 +23,15 @@
       "public_docs": ["README.md", "docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
     },
     {
-      "claim_id": "square8_2p_headline_1697_3",
-      "statement": "square8_2p improved from 1500.0 to 1697.3 Elo with 4 promotions in the checked-in snapshot.",
+      "claim_id": "square8_2p_headline_1782_0",
+      "statement": "square8_2p improved from 1500.0 to 1782.0 Elo with 5 promotions in the checked-in snapshot.",
       "primary_source": "docs/data/results_snapshot.json",
+      "evidence_source": "Operator-verified gh200-9 data/minimal_loop_square8_2p/metrics.jsonl and s3://ringrift-models-20251214/archive/gh200-9/metrics.jsonl.",
       "fields": {
         "config": "square8_2p",
         "start_elo": 1500.0,
-        "best_elo": 1697.3,
-        "promotions": 4
+        "best_elo": 1782.0,
+        "promotions": 5
       },
       "public_docs": ["README.md", "docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
     },
@@ -45,6 +46,21 @@
         "games_played": 50,
         "decision": "promote",
         "estimated_elo": 1697.3
+      },
+      "public_docs": ["docs/RESULTS.md"]
+    },
+    {
+      "claim_id": "square8_2p_iter35_promote",
+      "statement": "square8_2p iteration 35 promoted at 62.0% over 50 games to an estimated 1782.0 Elo.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "evidence_source": "Operator-verified gh200-9 data/minimal_loop_square8_2p/metrics.jsonl and s3://ringrift-models-20251214/archive/gh200-9/metrics.jsonl.",
+      "fields": {
+        "config": "square8_2p",
+        "iteration": 35,
+        "win_rate": 0.62,
+        "games_played": 50,
+        "decision": "promote",
+        "estimated_elo": 1782.0
       },
       "public_docs": ["docs/RESULTS.md"]
     },
@@ -102,11 +118,6 @@
     }
   ],
   "operator_reported_not_yet_checked_in": [
-    {
-      "claim_id": "square8_2p_iter35_1782",
-      "statement": "Operator reported square8_2p later promoted again to about 1782 Elo at iteration 35.",
-      "publication_policy": "Do not promote this into README.md or docs/RESULTS.md until a durable metrics/log artifact is checked in or referenced."
-    },
     {
       "claim_id": "hex8_2p_v4_runtime",
       "statement": "Operator reported the hex8_2p v4 architecture experiment is live.",

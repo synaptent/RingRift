@@ -186,6 +186,7 @@ def main() -> None:
             progression_records = records
 
     refreshed = {
+        **snapshot,
         "as_of": args.as_of or (max(observed_dates) if observed_dates else snapshot.get("as_of")),
         "headline": headline_items,
         "square8_2p_progression": _summarize_progression(

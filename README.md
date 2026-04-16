@@ -16,7 +16,7 @@ RingRift is not just another minimax toy. Moving stacks leaves markers behind, m
 The strongest evidence so far is narrow but real:
 
 - `hex8_2p`: `1500 -> 1979.8` Elo, `7` promotions
-- `square8_2p`: `1500 -> 1697.3` Elo, `4` promotions
+- `square8_2p`: `1500 -> 1782.0` Elo, `5` promotions
 
 The honest caveat is that the proof is still concentrated in 2-player runs. Multiplayer and larger boards are interesting, but not yet convincingly solved.
 
