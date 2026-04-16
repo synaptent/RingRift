@@ -40,12 +40,24 @@ def _minimal_loop_source() -> str:
     return (AI_SERVICE_ROOT / "scripts" / "minimal_alphazero_loop.py").read_text()
 
 
-def test_canonical_model_files_exist_for_all_configs() -> None:
-    """Every supported board/player config has a canonical checkpoint."""
+def test_canonical_model_artifacts_are_present_or_declared_external() -> None:
+    """Every supported config has either a local checkpoint or a manifest entry."""
+    manifest_path = AI_SERVICE_ROOT / "models" / "README.md"
+    manifest = manifest_path.read_text()
+    missing_models: list[Path] = []
+
     for board_type, num_players in BOARD_CONFIGS:
         model_path = AI_SERVICE_ROOT / "models" / f"canonical_{board_type}_{num_players}p.pth"
-        assert model_path.exists(), f"Missing canonical model: {model_path}"
+        if not model_path.exists():
+            missing_models.append(model_path)
+            continue
         assert model_path.stat().st_size > 0, f"Empty canonical model: {model_path}"
+
+    for model_path in missing_models:
+        assert model_path.name in manifest, f"Missing canonical model manifest entry: {model_path.name}"
+    if missing_models:
+        assert "intentionally not tracked in git" in manifest
+        assert "docs/REPRODUCIBILITY.md" in manifest
 
 
 def test_npz_export_produces_expected_schema(tmp_path: Path, monkeypatch) -> None:

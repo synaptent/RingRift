@@ -101,6 +101,11 @@ April 16, 2026 credibility pass:
   exists before a new developer starts the server. The exact
   `npm install && npm run dev` path still requires the documented `.env`,
   Postgres, and Redis setup before the backend can connect.
+- Fresh-clone Python contracts exposed an artifact-boundary defect: the test
+  suite assumed large `ai-service/models/canonical_*.pth` checkpoints were
+  present even though git intentionally does not track them. `ai-service/models`
+  now has a tracked README manifest, and the contract accepts either synced
+  non-empty checkpoint files or explicit external-artifact manifest entries.
 
 ## Surface Cleanup Log
 
