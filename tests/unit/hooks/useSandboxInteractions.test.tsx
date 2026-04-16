@@ -146,6 +146,14 @@ function TestHarness({ engine, contextOverrides }: HarnessProps) {
       <button data-testid="run-ai" onClick={() => maybeRunSandboxAiIfNeeded()}>
         Run AI
       </button>
+      {engine && (
+        <button
+          data-testid="run-ai-override"
+          onClick={() => maybeRunSandboxAiIfNeeded(engine as any)}
+        >
+          Run AI Override
+        </button>
+      )}
       <button data-testid="clear-selection" onClick={() => hookClearSelection()}>
         Clear Selection
       </button>
@@ -996,6 +1004,54 @@ describe('useSandboxInteractions', () => {
       // AI turn is async, so wait for it to be called
       await waitFor(() => {
         expect(mockEngine.maybeRunAITurn).toHaveBeenCalled();
+      });
+    });
+
+    it('can start AI loop with a freshly-created engine before context updates', async () => {
+      jest.useRealTimers();
+
+      const aiState = createTestGameState({
+        currentPhase: 'movement',
+        currentPlayer: 1,
+        gameStatus: 'active',
+        players: [
+          {
+            id: '1',
+            username: 'AI',
+            type: 'ai',
+            playerNumber: 1,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 18,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: '2',
+            username: 'Human',
+            type: 'human',
+            playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 18,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+        ],
+      });
+
+      const freshEngine = createMockEngine({ gameState: aiState });
+      mockContext = createMockSandboxContext(null);
+      (SandboxContextModule.useSandbox as jest.Mock).mockReturnValue(mockContext);
+
+      render(<TestHarness engine={freshEngine} />);
+
+      await act(async () => {
+        screen.getByTestId('run-ai-override').click();
+      });
+
+      await waitFor(() => {
+        expect(freshEngine.maybeRunAITurn).toHaveBeenCalled();
       });
     });
 

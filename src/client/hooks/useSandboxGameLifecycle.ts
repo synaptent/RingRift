@@ -72,7 +72,7 @@ export interface GameLifecycleDeps {
   /** Factory to create interaction handlers for a given set of player types */
   createSandboxInteractionHandler: (playerTypes: LocalPlayerType[]) => SandboxInteractionHandler;
   /** Trigger AI turn execution if needed */
-  maybeRunSandboxAiIfNeeded: () => void;
+  maybeRunSandboxAiIfNeeded: (engineOverride?: ClientSandboxEngine) => void;
   /** Clear scenario context (for non-scenario games) */
   clearScenarioContext: () => void;
   /** Reset game UI state (selection, pending choices, etc.) */
@@ -230,7 +230,7 @@ export function useSandboxGameLifecycle(deps: GameLifecycleDeps): UseSandboxGame
         const state = engine.getGameState();
         const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
         if (current && current.type === 'ai') {
-          maybeRunSandboxAiIfNeeded();
+          maybeRunSandboxAiIfNeeded(engine);
         }
       }
     },
@@ -410,7 +410,7 @@ export function useSandboxGameLifecycle(deps: GameLifecycleDeps): UseSandboxGame
       const state = engine.getGameState();
       const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
       if (current && current.type === 'ai') {
-        maybeRunSandboxAiIfNeeded();
+        maybeRunSandboxAiIfNeeded(engine);
       }
     }
 
