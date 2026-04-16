@@ -203,10 +203,20 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
         fsum = float(d["features"].sum())
         logger.info(f"  exported {n_samples} samples, {n_channels}ch (checksum={fsum:.1f})")
         # Contract validation: catch encoding mismatches immediately
+        # v4/v5-heavy use v3 encoder (64ch for hex); v2 uses default (40ch)
         try:
             from app.training.board_encoding_contract import get_expected_channels
             expected = get_expected_channels(BOARD_ENUM)
-            if n_channels != expected:
+            if MODEL_VERSION in ("v4", "v5-heavy"):
+                # v3 encoder produces 64ch for hex boards
+                expected_v3 = 64 if "hex" in BOARD_TYPE else expected
+                if n_channels != expected_v3:
+                    logger.error(
+                        f"  ENCODING MISMATCH: NPZ has {n_channels}ch but "
+                        f"{MODEL_VERSION} expects {expected_v3}ch for {BOARD_TYPE}."
+                    )
+                    return False
+            elif n_channels != expected:
                 logger.error(
                     f"  ENCODING MISMATCH: NPZ has {n_channels}ch but contract "
                     f"expects {expected}ch for {BOARD_TYPE}. Training will fail!"
