@@ -95,4 +95,7 @@ Most remaining scripts fall into one of these categories:
 - historical experiments
 - provider-specific migration/deployment helpers
 
+Archived scripts that are no longer part of the supported operational surface
+now live under [`scripts/archive`](/Users/armand/Development/RingRift/ai-service/scripts/archive). If a command or helper only exists there, treat it as historical reference material unless a current runbook explicitly says otherwise.
+
 Do not assume those scripts are part of the supported path unless they are listed above or referenced by current docs under [`docs/architecture`](/Users/armand/Development/RingRift/ai-service/docs/architecture) or [`docs/runbooks`](/Users/armand/Development/RingRift/ai-service/docs/runbooks).

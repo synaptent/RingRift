@@ -121,7 +121,7 @@ Core code directories:
 - [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine): canonical game rules
 - [`src/client`](/Users/armand/Development/RingRift/src/client): React frontend
 - [`src/server`](/Users/armand/Development/RingRift/src/server): backend host using the shared engine
-- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI, parity, and replay logic
+- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI, parity, and replay logic; start with [ai-service/app/README.md](/Users/armand/Development/RingRift/ai-service/app/README.md)
 - [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts): training and validation entrypoints
 
 ## Trust-Building Checks

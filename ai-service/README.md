@@ -57,6 +57,7 @@ This is the main trust boundary for training data quality.
 ## Key Files
 
 - [`app/main.py`](/Users/armand/Development/RingRift/ai-service/app/main.py): FastAPI app
+- [`app/README.md`](/Users/armand/Development/RingRift/ai-service/app/README.md): package map for the Python application tree
 - [`app/game_engine`](/Users/armand/Development/RingRift/ai-service/app/game_engine): Python rules mirror
 - [`app/training`](/Users/armand/Development/RingRift/ai-service/app/training): training stack
 - [`scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py): supported minimal training loop
