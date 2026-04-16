@@ -8,6 +8,12 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 
 ### Fleet runtime
 
+- [`docs/operations/TRAINING_FLEET_RUNBOOK.md`](/Users/armand/Development/RingRift/docs/operations/TRAINING_FLEET_RUNBOOK.md)
+  - Operator runbook for preflight, canary rollout, role-aware systemd deployment, health checks, reboot behavior, and rollback.
+
+- [`docs/data/training_fleet_manifest.json`](/Users/armand/Development/RingRift/docs/data/training_fleet_manifest.json)
+  - Checked-in role/config orientation manifest for the training fleet. Host inventory still comes from private runtime config.
+
 - [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
   - Canonical trainer loop for self-play, train, and evaluate on a single config.
 
@@ -82,9 +88,10 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 2. That script preflights [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py) locally before it restarts remote trainers.
 3. Trainers write live state to `<work-dir>/progress.json` and durable history to `<work-dir>/metrics.jsonl`.
 4. For the broader role-based fleet, use [`deploy_training_service.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_training_service.sh).
-5. Selfplay workers run [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py).
-6. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/ingest_policy_selfplay.py).
-7. Fleet state is checked with [`autonomy_fleet_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/autonomy_fleet_check.py).
+5. Use [`docs/operations/TRAINING_FLEET_RUNBOOK.md`](/Users/armand/Development/RingRift/docs/operations/TRAINING_FLEET_RUNBOOK.md) and [`docs/data/training_fleet_manifest.json`](/Users/armand/Development/RingRift/docs/data/training_fleet_manifest.json) to distinguish boot-persistent systemd services from the `nohup` minimal-loop canary supervisor.
+6. Selfplay workers run [`policy_selfplay_worker.py`](/Users/armand/Development/RingRift/ai-service/scripts/policy_selfplay_worker.py).
+7. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/ingest_policy_selfplay.py).
+8. Fleet state is checked with [`autonomy_fleet_check.py`](/Users/armand/Development/RingRift/ai-service/scripts/autonomy_fleet_check.py).
 
 ## Everything Else
 

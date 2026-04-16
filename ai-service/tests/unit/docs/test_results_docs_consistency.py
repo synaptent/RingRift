@@ -13,6 +13,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DOCS_ROOT = REPO_ROOT / "docs"
 
+DOCS_INDEX = DOCS_ROOT / "INDEX.md"
+TRAINING_FLEET_RUNBOOK = DOCS_ROOT / "operations" / "TRAINING_FLEET_RUNBOOK.md"
+TRAINING_FLEET_MANIFEST = DOCS_ROOT / "data" / "training_fleet_manifest.json"
+SCRIPTS_README = REPO_ROOT / "ai-service" / "scripts" / "README.md"
 TARGET_CONFIGS = ("hex8_2p", "square8_2p", "square8_3p")
 OPERATOR_ENTRYPOINT_DOCS = (
     REPO_ROOT / "ai-service" / "README.md",
@@ -210,6 +214,43 @@ def test_supported_operator_docs_share_minimal_loop_entrypoints() -> None:
         assert "deploy_minimal_loops.sh" in text, f"{path} should mention the supported canary rollout entrypoint"
         assert "progress.json" in text, f"{path} should mention the live trainer status file"
         assert "metrics.jsonl" in text, f"{path} should mention the durable trainer history log"
+
+
+def test_training_fleet_ops_docs_are_linked_and_explicit_about_reboot_limits() -> None:
+    runbook = TRAINING_FLEET_RUNBOOK.read_text(encoding="utf-8")
+    manifest = json.loads(TRAINING_FLEET_MANIFEST.read_text(encoding="utf-8"))
+    index_text = DOCS_INDEX.read_text(encoding="utf-8")
+    scripts_text = SCRIPTS_README.read_text(encoding="utf-8")
+
+    assert "deploy_minimal_loops.sh" in runbook
+    assert "deploy_training_service.sh" in runbook
+    assert "not boot-persistent" in runbook
+    assert "config/distributed_hosts.yaml" in runbook
+    assert "private, untracked" in runbook
+    assert "private runtime inventory" in runbook
+
+    assert manifest["as_of"] == "2026-04-16"
+    node_names = {node["name"] for node in manifest["nodes"]}
+    assert node_names >= {
+        "gh200-8",
+        "gh200-9",
+        "gh200-10",
+        "gh200-11",
+        "gh200-12",
+        "gh200-13",
+        "gh200-14",
+        "vultr-a100-20gb",
+    }
+    assert manifest["deployment_paths"]["minimal_loop_canary"]["boot_persistence"].startswith(
+        "not boot-persistent"
+    )
+    assert "ai-service/config/distributed_hosts.yaml" == manifest["runtime_inventory"]["private_file"]
+
+    assert "TRAINING_FLEET_RUNBOOK.md" in index_text
+    assert "training_fleet_manifest.json" in index_text
+    assert "TRAINING_FLEET_RUNBOOK.md" in scripts_text
+    assert "training_fleet_manifest.json" in scripts_text
+    assert "CLUSTER_OPERATIONS.md" not in index_text
 
 
 def test_todo_routes_readers_to_current_sources() -> None:

@@ -45,8 +45,8 @@ training infrastructure.
    minimal-loop canary deployment, role-aware systemd deployment, status checks,
    reboot behavior, rollback, and known gaps.
 3. Add a docs ratchet that keeps the runbook and manifest discoverable from
-   `docs/INDEX.md`, `ai-service/scripts/README.md`, and the cluster operations
-   guide, with explicit coverage for the `nohup` non-boot-persistent caveat.
+   `docs/INDEX.md`, `ai-service/scripts/README.md`, and tracked operations
+   guidance, with explicit coverage for the `nohup` non-boot-persistent caveat.
 
 ## Recent Quality Baseline
 

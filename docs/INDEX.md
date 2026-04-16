@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> Last updated: 2026-04-15
+> Last updated: 2026-04-16
 > Scope: living documentation only
 
 This index is the curated front door for the project docs. It points to the
@@ -43,13 +43,14 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 
 ## Operations And Product
 
-| Document                                                             | Why it matters                      |
-| -------------------------------------------------------------------- | ----------------------------------- |
-| [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)                   | Deployment guardrail checklist      |
-| [production/PRODUCTION_RUNBOOK.md](production/PRODUCTION_RUNBOOK.md) | Production operating guide          |
-| [operations/CLUSTER_OPERATIONS.md](operations/CLUSTER_OPERATIONS.md) | Cluster/node operations             |
-| [incidents/INDEX.md](incidents/INDEX.md)                             | Incident response entrypoint        |
-| [ACCESSIBILITY.md](ACCESSIBILITY.md)                                 | Accessibility behavior and controls |
+| Document                                                                     | Why it matters                       |
+| ---------------------------------------------------------------------------- | ------------------------------------ |
+| [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)                           | Deployment guardrail checklist       |
+| [production/PRODUCTION_RUNBOOK.md](production/PRODUCTION_RUNBOOK.md)         | Production operating guide           |
+| [operations/TRAINING_FLEET_RUNBOOK.md](operations/TRAINING_FLEET_RUNBOOK.md) | Training fleet deploy/reboot runbook |
+| [data/training_fleet_manifest.json](data/training_fleet_manifest.json)       | Checked-in training fleet manifest   |
+| [incidents/INDEX.md](incidents/INDEX.md)                                     | Incident response entrypoint         |
+| [ACCESSIBILITY.md](ACCESSIBILITY.md)                                         | Accessibility behavior and controls  |
 
 ## Maintainer Notes
 
