@@ -5,36 +5,18 @@ from __future__ import annotations
 import importlib
 
 __all__ = [
-    "DEFAULT_INTEGRITY_CHECK_TIMEOUT",
-    "GameRecorder",
     "GameReplayDB",
     "GameWriter",
-    "ParityDivergence",
-    "ParityMode",
     "ParityValidationError",
     "RecordSource",
-    "RecordingConfig",
-    # Unified recording (RECOMMENDED)
-    "UnifiedGameRecorder",
-    "cache_nnue_features_batch",
-    "cache_nnue_features_for_game",
-    "check_and_repair_databases",
-    # Database integrity (with timeout support)
-    "check_database_integrity",
-    "get_database_stats",
     "get_or_create_db",
-    "get_parity_mode",
-    "get_unified_db",
-    "is_parity_validation_enabled",
     "record_completed_game",
-    "record_completed_game_with_nnue_cache",
     "record_completed_game_with_parity_check",
-    "record_game_unified",
-    "recover_corrupted_database",
-    # Parity validation
     "validate_game_parity",
 ]
 
+# Compatibility map for historical root-level imports. Keep the advertised
+# package surface small; advanced callers should import from owning submodules.
 _EXPORTS = {
     "GameReplayDB": "app.db.game_replay",
     "GameWriter": "app.db.game_replay",

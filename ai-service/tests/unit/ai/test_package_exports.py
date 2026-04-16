@@ -12,21 +12,9 @@ def test_package_dir_lists_declared_ai_surface() -> None:
     expected = [
         "CANONICAL_DIFFICULTY_PROFILES",
         "DIFFICULTY_DESCRIPTIONS",
-        "EBMOAI",
-        "GMOAI",
-        "IGGMO",
-        "MCTSAI",
         "AIFactory",
         "AIType",
-        "BaseAI",
-        "DescentAI",
         "DifficultyProfile",
-        "GumbelMCTSAI",
-        "HeuristicAI",
-        "MaxNAI",
-        "MinimaxAI",
-        "PolicyOnlyAI",
-        "RandomAI",
         "create_ai",
         "create_ai_from_difficulty",
         "create_tournament_ai",
@@ -47,3 +35,17 @@ def test_package_dir_lists_declared_ai_surface() -> None:
         for name in expected:
             assert hasattr(module, name)
             assert name in dir(module)
+
+
+def test_implementation_classes_remain_lazy_compatibility_aliases() -> None:
+    module = importlib.import_module("app.ai")
+
+    assert "HeuristicAI" not in module.__all__
+    assert "HeuristicAI" not in dir(module)
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", category=DeprecationWarning)
+        heuristic_cls = module.HeuristicAI
+
+    assert heuristic_cls.__name__ == "HeuristicAI"
+    assert any("compatibility alias" in str(warning.message) for warning in captured)

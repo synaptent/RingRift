@@ -13,7 +13,10 @@ approach is to use the factory module for creating AI instances:
 
 For direct access to AI classes (advanced usage):
 
-    from app.ai import BaseAI, HeuristicAI, MCTSAI, DescentAI
+    from app.ai.base import BaseAI
+    from app.ai.heuristic_ai import HeuristicAI
+    from app.ai.mcts_ai import MCTSAI
+    from app.ai.descent_ai import DescentAI
 
 Architecture (December 2025):
 - base.py: BaseAI abstract base class
@@ -49,7 +52,9 @@ from app.ai.factory import (
     uses_neural_net,
 )
 
-# Lazy-load AI implementations to avoid circular imports
+# Lazy-load historical root-level AI implementation aliases to avoid circular
+# imports. New code should import implementation classes from their owning
+# modules rather than adding them back to this package's public __all__ surface.
 # NOTE (Dec 2025): BaseAI is now lazy to avoid triggering app.training imports
 _AI_CLASSES = {
     "BaseAI": "app.ai.base",  # LAZY to avoid training.seed_utils -> training/__init__ -> torch
@@ -68,7 +73,7 @@ _AI_CLASSES = {
 
 
 def __getattr__(name: str) -> type:
-    """Lazy loading for AI implementation classes.
+    """Lazy loading for deprecated root-level AI implementation aliases.
 
     Returns:
         The requested AI class type.
@@ -78,6 +83,15 @@ def __getattr__(name: str) -> type:
     """
     if name in _AI_CLASSES:
         import importlib
+        import warnings
+
+        warnings.warn(
+            f"app.ai.{name} is a compatibility alias. Import {name} from its "
+            "owning app.ai submodule instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         module = importlib.import_module(_AI_CLASSES[name])
         if name == "EBMOAI":
             return getattr(module, "EBMOAI", getattr(module, "EBMO_AI"))
@@ -89,27 +103,13 @@ __all__ = [
     # Profile data
     "CANONICAL_DIFFICULTY_PROFILES",
     "DIFFICULTY_DESCRIPTIONS",
-    "EBMOAI",
-    "GMOAI",
-    "IGGMO",
-    "MCTSAI",
     # Factory class
     "AIFactory",
     # AI Type enum
     "AIType",
-    # Base class
-    "BaseAI",
-    "DescentAI",
     # Type definitions
     "DifficultyProfile",
-    "GumbelMCTSAI",
-    # AI implementation classes (lazy-loaded)
-    "HeuristicAI",
-    "MaxNAI",
-    "MinimaxAI",
-    "PolicyOnlyAI",
-    "RandomAI",
-    # Convenience aliases
+    # Public factory helpers
     "create_ai",
     "create_ai_from_difficulty",
     "create_tournament_ai",
