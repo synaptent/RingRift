@@ -21,6 +21,7 @@ Development pass assessment reports documenting work completed during iterative 
 | PASS22_COMPLETION_SUMMARY.md                                   | Final pass completion summary           |
 | P18.\* reports                                                 | Detailed Pass 18 sub-task documentation |
 | P9_SWAP_RULE_AI_INTEGRATION.md                                 | Swap rule AI integration details        |
+| TEST_INFRASTRUCTURE_AUDIT.md                                   | Historical test-infrastructure audit    |
 
 ---
 

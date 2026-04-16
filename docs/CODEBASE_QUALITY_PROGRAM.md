@@ -56,6 +56,38 @@ training infrastructure.
 - Live product check: `ringrift.ai` serves the public landing page, anonymous sandbox loads, Neural AI labeling is visible, and mobile width does not overflow.
 - Surface-area check: root training facade is contracted to `23` exports; coordination and distributed remain the main compatibility surfaces to continue draining.
 
+## Credibility Cleanup Log
+
+April 16, 2026 credibility pass:
+
+- Removed redundant tracked redirect stubs whose archived copies already exist:
+  `cluster_status_report.md`, `ai-service/P2P_DEPLOYMENT_REPORT.md`,
+  `ai-service/QUICK_WINS_CONSOLIDATION_REPORT.md`,
+  `ai-service/cluster_update_report.md`, and
+  `ai-service/COMPREHENSIVE_ACTION_PLAN_2025_12_25.md`.
+- Archived unreferenced active-tree audit doc:
+  `docs/architecture/TEST_INFRASTRUCTURE_AUDIT.md` moved to
+  `docs/archive/assessments/TEST_INFRASTRUCTURE_AUDIT.md`.
+- Kept referenced high-volume docs in place even when their names are not ideal:
+  `docs/ai/AI_TRAINING_ASSESSMENT_FINAL.md`,
+  `docs/testing/WEAK_ASSERTION_AUDIT.md`,
+  `docs/architecture/APP_IMPORT_AUDIT.md`,
+  `docs/architecture/RULES_ENGINE_AUDIT.md`, and
+  `docs/planning/SLO_THRESHOLD_ALIGNMENT_AUDIT.md` still have active
+  references from docs, runbooks, or SSOT checks.
+- Secret-history check command used:
+  `git log --all --diff-filter=A -- '*.env' '*.pem' '*.key' '*secret*' '*credential*' '*password*' '*token*'`.
+  The tracked additions surfaced secret-handling utilities, placeholder env
+  examples, and archived `cluster_nodes.env`, but no tracked private key or real
+  provider token was found in the checked output. Local untracked `.env*` files
+  contain deployment values and should remain untracked.
+- Claims audit boundary: README, `docs/RESULTS.md`, and
+  `docs/REPRODUCIBILITY.md` match `docs/data/results_snapshot.json` for the
+  checked-in April 15 headline numbers. Detailed per-iteration histories,
+  training duration estimates, and checkpoint artifacts require the S3 archive
+  named in `docs/REPRODUCIBILITY.md`; they are not fully reproducible from the
+  repository alone.
+
 ## Active Batch Order
 
 1. Continue draining `app.coordination`, `app.distributed`, `app.metrics`, and `app.tournament` lazy compatibility exports toward explicit submodule imports.
