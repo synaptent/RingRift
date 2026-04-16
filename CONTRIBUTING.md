@@ -6,28 +6,28 @@ Work from the supported path first.
 
 If you are new to the project, start here:
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-3. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-6. [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
+1. [README.md](/README.md)
+2. [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md)
+3. [QUICKSTART.md](/QUICKSTART.md)
+4. [docs/RESULTS.md](/docs/RESULTS.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+6. [docs/REPOSITORY_MAP.md](/docs/REPOSITORY_MAP.md)
 
 ## What Is Canonical
 
 The project has clear sources of truth.
 
 - Rules semantics:
-  - [RULES_CANONICAL_SPEC.md](/Users/armand/Development/RingRift/RULES_CANONICAL_SPEC.md)
-  - [docs/rules/COMPLETE_RULES.md](/Users/armand/Development/RingRift/docs/rules/COMPLETE_RULES.md)
-  - [docs/rules/COMPACT_RULES.md](/Users/armand/Development/RingRift/docs/rules/COMPACT_RULES.md)
+  - [RULES_CANONICAL_SPEC.md](/RULES_CANONICAL_SPEC.md)
+  - [docs/rules/COMPLETE_RULES.md](/docs/rules/COMPLETE_RULES.md)
+  - [docs/rules/COMPACT_RULES.md](/docs/rules/COMPACT_RULES.md)
 - Executable rules engine:
-  - [src/shared/engine](/Users/armand/Development/RingRift/src/shared/engine)
-  - [src/shared/types](/Users/armand/Development/RingRift/src/shared/types)
+  - [src/shared/engine](/src/shared/engine)
+  - [src/shared/types](/src/shared/types)
 - Python parity mirror:
-  - [ai-service/app](/Users/armand/Development/RingRift/ai-service/app)
+  - [ai-service/app](/ai-service/app)
 - Supported training engine:
-  - [ai-service/scripts/minimal_alphazero_loop.py](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
+  - [ai-service/scripts/minimal_alphazero_loop.py](/ai-service/scripts/minimal_alphazero_loop.py)
 
 If TypeScript and Python disagree on rules behavior, TypeScript is authoritative and Python must be fixed to match.
 
@@ -35,10 +35,10 @@ If TypeScript and Python disagree on rules behavior, TypeScript is authoritative
 
 These are the best contribution targets for most engineers:
 
-- web product improvements under [src/client](/Users/armand/Development/RingRift/src/client) and [src/server](/Users/armand/Development/RingRift/src/server)
-- canonical rules-engine changes under [src/shared/engine](/Users/armand/Development/RingRift/src/shared/engine)
-- Python AI/parity improvements under [ai-service/app](/Users/armand/Development/RingRift/ai-service/app)
-- training-loop and experiment-harness work under [ai-service/scripts](/Users/armand/Development/RingRift/ai-service/scripts)
+- web product improvements under [src/client](/src/client) and [src/server](/src/server)
+- canonical rules-engine changes under [src/shared/engine](/src/shared/engine)
+- Python AI/parity improvements under [ai-service/app](/ai-service/app)
+- training-loop and experiment-harness work under [ai-service/scripts](/ai-service/scripts)
 - documentation improvements along the supported path
 
 These areas exist but are not the best first stop:
@@ -160,12 +160,12 @@ Good PRs in this repo are narrow and explicit.
 
 If you improve the repo for external readers, prioritize:
 
-- [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-- [README.md](/Users/armand/Development/RingRift/README.md)
-- [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-- [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-- [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-- [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
+- [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md)
+- [README.md](/README.md)
+- [QUICKSTART.md](/QUICKSTART.md)
+- [docs/RESULTS.md](/docs/RESULTS.md)
+- [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+- [docs/REPOSITORY_MAP.md](/docs/REPOSITORY_MAP.md)
 
 The goal is not to make every historical subsystem look equally current. The goal is to make the proven path understandable and reproducible.
 
@@ -175,6 +175,6 @@ Human contributors can stop here.
 
 If you are using an automation agent, also read:
 
-- [AGENTS.md](/Users/armand/Development/RingRift/AGENTS.md)
-- [src/AGENTS.md](/Users/armand/Development/RingRift/src/AGENTS.md)
-- [ai-service/AGENTS.md](/Users/armand/Development/RingRift/ai-service/AGENTS.md)
+- [AGENTS.md](/AGENTS.md)
+- [src/AGENTS.md](/src/AGENTS.md)
+- [ai-service/AGENTS.md](/ai-service/AGENTS.md)

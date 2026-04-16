@@ -20,7 +20,7 @@ The strongest evidence so far is narrow but real:
 
 The honest caveat is that the proof is still concentrated in 2-player runs. Multiplayer and larger boards are interesting, but not yet convincingly solved.
 
-For the full evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md). For the exact commands, hyperparameters, and archived artifacts, see [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md). For the engineering retrospective on what broke and what actually worked, see [docs/LESSONS_LEARNED.md](/Users/armand/Development/RingRift/docs/LESSONS_LEARNED.md).
+For the full evidence and caveats, see [docs/RESULTS.md](/docs/RESULTS.md). For the exact commands, hyperparameters, and archived artifacts, see [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md). For the engineering retrospective on what broke and what actually worked, see [docs/LESSONS_LEARNED.md](/docs/LESSONS_LEARNED.md).
 
 ## What The Game Looks Like
 
@@ -54,11 +54,11 @@ cd ai-service
 ./run.sh
 ```
 
-More setup detail is in [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md).
+More setup detail is in [QUICKSTART.md](/QUICKSTART.md).
 
 ## Quick Start: Train An AI
 
-The supported training path is the minimal loop in [ai-service/scripts/minimal_alphazero_loop.py](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
+The supported training path is the minimal loop in [ai-service/scripts/minimal_alphazero_loop.py](/ai-service/scripts/minimal_alphazero_loop.py).
 
 Example `square8_2p` run:
 
@@ -108,21 +108,21 @@ What is not proven yet:
 
 If you want the shortest path to understanding the project, use this order:
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [docs/REPRODUCIBILITY.md](/Users/armand/Development/RingRift/docs/REPRODUCIBILITY.md)
-5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-6. [docs/GAME_RULES.md](/Users/armand/Development/RingRift/docs/GAME_RULES.md)
-7. [docs/rules/HUMAN_RULES.md](/Users/armand/Development/RingRift/docs/rules/HUMAN_RULES.md)
+1. [README.md](/README.md)
+2. [QUICKSTART.md](/QUICKSTART.md)
+3. [docs/RESULTS.md](/docs/RESULTS.md)
+4. [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+6. [docs/GAME_RULES.md](/docs/GAME_RULES.md)
+7. [docs/rules/HUMAN_RULES.md](/docs/rules/HUMAN_RULES.md)
 
 Core code directories:
 
-- [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine): canonical game rules
-- [`src/client`](/Users/armand/Development/RingRift/src/client): React frontend
-- [`src/server`](/Users/armand/Development/RingRift/src/server): backend host using the shared engine
-- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI, parity, and replay logic; start with [ai-service/app/README.md](/Users/armand/Development/RingRift/ai-service/app/README.md)
-- [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts): training and validation entrypoints
+- [`src/shared/engine`](/src/shared/engine): canonical game rules
+- [`src/client`](/src/client): React frontend
+- [`src/server`](/src/server): backend host using the shared engine
+- [`ai-service/app`](/ai-service/app): Python AI, parity, and replay logic; start with [ai-service/app/README.md](/ai-service/app/README.md)
+- [`ai-service/scripts`](/ai-service/scripts): training and validation entrypoints
 
 ## Trust-Building Checks
 

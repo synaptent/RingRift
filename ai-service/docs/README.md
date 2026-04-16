@@ -4,12 +4,12 @@ This directory contains deeper technical documentation for the Python side of Ri
 
 If you are new to the project, do not start here. Start with:
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-3. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-6. [ai-service/README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+1. [README.md](/README.md)
+2. [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md)
+3. [QUICKSTART.md](/QUICKSTART.md)
+4. [docs/RESULTS.md](/docs/RESULTS.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+6. [ai-service/README.md](/ai-service/README.md)
 
 This doc hub is for readers who already know they need the AI-service internals.
 
@@ -17,23 +17,23 @@ This doc hub is for readers who already know they need the AI-service internals.
 
 ### Inference service
 
-- [../README.md](/Users/armand/Development/RingRift/ai-service/README.md)
-- [API_REFERENCE.md](/Users/armand/Development/RingRift/ai-service/docs/API_REFERENCE.md)
-- [CONFIG_REFERENCE.md](/Users/armand/Development/RingRift/ai-service/docs/CONFIG_REFERENCE.md)
+- [../README.md](/ai-service/README.md)
+- [API_REFERENCE.md](/ai-service/docs/API_REFERENCE.md)
+- [CONFIG_REFERENCE.md](/ai-service/docs/CONFIG_REFERENCE.md)
 
 ### Training and reproducible experiments
 
-- [../README.md](/Users/armand/Development/RingRift/ai-service/README.md)
-- [../scripts/README.md](/Users/armand/Development/RingRift/ai-service/scripts/README.md)
-- [training/TRAINING_FEATURES.md](/Users/armand/Development/RingRift/ai-service/docs/training/TRAINING_FEATURES.md)
-- [roadmaps/GPU_PIPELINE_ROADMAP.md](/Users/armand/Development/RingRift/ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)
-- [../TRAINING_DATA_REGISTRY.md](/Users/armand/Development/RingRift/ai-service/TRAINING_DATA_REGISTRY.md)
+- [../README.md](/ai-service/README.md)
+- [../scripts/README.md](/ai-service/scripts/README.md)
+- [training/TRAINING_FEATURES.md](/ai-service/docs/training/TRAINING_FEATURES.md)
+- [roadmaps/GPU_PIPELINE_ROADMAP.md](/ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)
+- [../TRAINING_DATA_REGISTRY.md](/ai-service/TRAINING_DATA_REGISTRY.md)
 
 ### Parity and canonical data trust
 
-- [../../docs/PARITY_RUNBOOK.md](/Users/armand/Development/RingRift/docs/PARITY_RUNBOOK.md)
-- [../../docs/rules/PYTHON_PARITY_REQUIREMENTS.md](/Users/armand/Development/RingRift/docs/rules/PYTHON_PARITY_REQUIREMENTS.md)
-- [../../docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md](/Users/armand/Development/RingRift/docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md)
+- [../../docs/PARITY_RUNBOOK.md](/docs/PARITY_RUNBOOK.md)
+- [../../docs/rules/PYTHON_PARITY_REQUIREMENTS.md](/docs/rules/PYTHON_PARITY_REQUIREMENTS.md)
+- [../../docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md](/docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md)
 
 ## Directory Guide
 
@@ -79,16 +79,16 @@ Within the AI service, the main rules are:
 
 If you need the actual rules source of truth, go back to:
 
-- [RULES_CANONICAL_SPEC.md](/Users/armand/Development/RingRift/RULES_CANONICAL_SPEC.md)
-- [docs/rules/COMPLETE_RULES.md](/Users/armand/Development/RingRift/docs/rules/COMPLETE_RULES.md)
-- [src/shared/engine](/Users/armand/Development/RingRift/src/shared/engine)
+- [RULES_CANONICAL_SPEC.md](/RULES_CANONICAL_SPEC.md)
+- [docs/rules/COMPLETE_RULES.md](/docs/rules/COMPLETE_RULES.md)
+- [src/shared/engine](/src/shared/engine)
 
 ## Bottom Line
 
 The shortest trustworthy AI-service path is:
 
 1. top-level project docs
-2. [ai-service/README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+2. [ai-service/README.md](/ai-service/README.md)
 3. parity docs
 4. training docs
 5. deeper architecture and infrastructure references only as needed

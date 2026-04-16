@@ -4,12 +4,12 @@ This is the quickest practical path for a developer who wants to run RingRift lo
 
 ## What To Read First
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-4. [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-5. [REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
-6. [INDEX.md](/Users/armand/Development/RingRift/docs/INDEX.md)
+1. [README.md](/README.md)
+2. [QUICKSTART.md](/QUICKSTART.md)
+3. [ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+4. [RESULTS.md](/docs/RESULTS.md)
+5. [REPOSITORY_MAP.md](/docs/REPOSITORY_MAP.md)
+6. [INDEX.md](/docs/INDEX.md)
 
 ## Start The Product
 
@@ -44,10 +44,10 @@ cd ai-service && PYTHONPATH=. uvicorn app.main:app --reload --port 8001
 
 Treat these as the main trust chain:
 
-- [`RULES_CANONICAL_SPEC.md`](/Users/armand/Development/RingRift/RULES_CANONICAL_SPEC.md)
-- [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine)
-- [`src/shared/types`](/Users/armand/Development/RingRift/src/shared/types)
-- [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
+- [`RULES_CANONICAL_SPEC.md`](/RULES_CANONICAL_SPEC.md)
+- [`src/shared/engine`](/src/shared/engine)
+- [`src/shared/types`](/src/shared/types)
+- [`ai-service/scripts/check_ts_python_replay_parity.py`](/ai-service/scripts/check_ts_python_replay_parity.py)
 
 TypeScript is the executable rules source of truth. Python must match it.
 
@@ -55,9 +55,9 @@ TypeScript is the executable rules source of truth. Python must match it.
 
 The supported research path is the minimal loop:
 
-- [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
-- [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
-- [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
+- [`scripts/run_proven_experiment.sh`](/scripts/run_proven_experiment.sh)
+- [`ai-service/scripts/minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py)
+- [`ai-service/scripts/deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh)
 
 For supported trainer canaries:
 
@@ -132,8 +132,8 @@ npm run test:e2e
 
 If you are changing rules:
 
-- update TS first under [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine)
-- then update Python mirrors under [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app)
+- update TS first under [`src/shared/engine`](/src/shared/engine)
+- then update Python mirrors under [`ai-service/app`](/ai-service/app)
 - then rerun parity/contract checks
 
 If you are changing training or replay logic:
@@ -150,14 +150,14 @@ If you are changing operational tooling:
 
 ## Docs That Matter
 
-- [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-- [RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
-- [ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-- [REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
-- [PART3_INFRASTRUCTURE_ROADMAP.md](/Users/armand/Development/RingRift/docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
-- [TRAINING_INFRASTRUCTURE_STRATEGY.md](/Users/armand/Development/RingRift/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)
+- [RESULTS.md](/docs/RESULTS.md)
+- [RESEARCH_SNAPSHOT.md](/docs/RESEARCH_SNAPSHOT.md)
+- [ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+- [REPOSITORY_MAP.md](/docs/REPOSITORY_MAP.md)
+- [PART3_INFRASTRUCTURE_ROADMAP.md](/docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
+- [TRAINING_INFRASTRUCTURE_STRATEGY.md](/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)
 
-Use [CURRENT_STATUS.md](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md) only if you specifically need the preserved April 10 owner memo rather than the current supported state.
+Use [CURRENT_STATUS.md](/docs/CURRENT_STATUS.md) only if you specifically need the preserved April 10 owner memo rather than the current supported state.
 
 ## Practical Rule
 

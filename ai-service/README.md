@@ -2,9 +2,9 @@
 
 The AI service is the Python side of RingRift. It serves inference endpoints, mirrors the canonical TypeScript rules for parity-sensitive workflows, and contains the training and replay-validation tooling used for the project’s published results.
 
-For a project-level overview, start with [README.md](/Users/armand/Development/RingRift/README.md). For the current evidence, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md).
+For a project-level overview, start with [README.md](/README.md). For the current evidence, see [docs/RESULTS.md](/docs/RESULTS.md).
 
-If you want the shortest project summary first, read [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md).
+If you want the shortest project summary first, read [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md).
 
 ## Supported Paths
 
@@ -33,7 +33,7 @@ From the repo root:
 ./scripts/run_proven_experiment.sh square8_2p
 ```
 
-Those wrappers call [`scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py), which is the supported training engine for the published results.
+Those wrappers call [`scripts/minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py), which is the supported training engine for the published results.
 
 For supported trainer canaries on the GH200 fleet, deploy with:
 
@@ -56,14 +56,14 @@ This is the main trust boundary for training data quality.
 
 ## Key Files
 
-- [`app/main.py`](/Users/armand/Development/RingRift/ai-service/app/main.py): FastAPI app
-- [`app/README.md`](/Users/armand/Development/RingRift/ai-service/app/README.md): package map for the Python application tree
-- [`app/game_engine`](/Users/armand/Development/RingRift/ai-service/app/game_engine): Python rules mirror
-- [`app/training`](/Users/armand/Development/RingRift/ai-service/app/training): training stack
-- [`scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py): supported minimal training loop
-- [`scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py): replay parity harness
-- [`scripts/README.md`](/Users/armand/Development/RingRift/ai-service/scripts/README.md): curated scripts index for supported vs ops-only paths
-- [`TRAINING_DATA_REGISTRY.md`](/Users/armand/Development/RingRift/ai-service/TRAINING_DATA_REGISTRY.md): data provenance and status
+- [`app/main.py`](/ai-service/app/main.py): FastAPI app
+- [`app/README.md`](/ai-service/app/README.md): package map for the Python application tree
+- [`app/game_engine`](/ai-service/app/game_engine): Python rules mirror
+- [`app/training`](/ai-service/app/training): training stack
+- [`scripts/minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py): supported minimal training loop
+- [`scripts/check_ts_python_replay_parity.py`](/ai-service/scripts/check_ts_python_replay_parity.py): replay parity harness
+- [`scripts/README.md`](/ai-service/scripts/README.md): curated scripts index for supported vs ops-only paths
+- [`TRAINING_DATA_REGISTRY.md`](/ai-service/TRAINING_DATA_REGISTRY.md): data provenance and status
 
 ## Supported vs Secondary
 

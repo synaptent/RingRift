@@ -24,18 +24,18 @@ The supported claim is therefore narrow and defensible: RingRift has shown itera
 
 If you are evaluating the project as an engineer, follow this path:
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-5. [scripts/run_proven_experiment.sh](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
+1. [README.md](/README.md)
+2. [QUICKSTART.md](/QUICKSTART.md)
+3. [docs/RESULTS.md](/docs/RESULTS.md)
+4. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+5. [scripts/run_proven_experiment.sh](/scripts/run_proven_experiment.sh)
 
 The most important code behind that path is:
 
-- [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine): canonical TypeScript rules engine
-- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI and parity mirror
-- [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py): supported experiment harness
-- [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py): trust boundary for replay parity
+- [`src/shared/engine`](/src/shared/engine): canonical TypeScript rules engine
+- [`ai-service/app`](/ai-service/app): Python AI and parity mirror
+- [`ai-service/scripts/minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py): supported experiment harness
+- [`ai-service/scripts/check_ts_python_replay_parity.py`](/ai-service/scripts/check_ts_python_replay_parity.py): trust boundary for replay parity
 
 ## What To Ignore At First
 
@@ -45,7 +45,7 @@ Do not start with:
 
 - `archive/`
 - `docs/archive/`
-- the full cluster automation surface under [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts)
+- the full cluster automation surface under [`ai-service/scripts`](/ai-service/scripts)
 - internal assistant memory files such as `CLAUDE.md`
 
 Those areas are real and often useful operationally, but they are not the shortest path to understanding the project’s main claims.
@@ -65,4 +65,4 @@ Everything else is support infrastructure, operations, or historical context unt
 
 RingRift is presentable if you judge it by its supported path rather than by every historical script in the tree. The current codebase has a clear rules source of truth, a reproducible experiment entrypoint, and documented evidence for real iterative improvement on multiple configurations.
 
-If you need a version of this story that is more results-focused and easier to share externally, see [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md).
+If you need a version of this story that is more results-focused and easier to share externally, see [docs/RESEARCH_SNAPSHOT.md](/docs/RESEARCH_SNAPSHOT.md).

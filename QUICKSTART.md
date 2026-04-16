@@ -7,7 +7,7 @@ This guide gets the supported RingRift path running locally:
 3. Launch one of the proven training configurations.
 4. Inspect the resulting artifacts.
 
-For the current research evidence, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md).
+For the current research evidence, see [docs/RESULTS.md](/docs/RESULTS.md).
 
 ## Prerequisites
 
@@ -96,8 +96,8 @@ npm run results:refresh
 
 ## Next reads
 
-- [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-- [README.md](/Users/armand/Development/RingRift/README.md)
-- [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-- [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-- [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
+- [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md)
+- [README.md](/README.md)
+- [docs/RESULTS.md](/docs/RESULTS.md)
+- [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+- [docs/REPOSITORY_MAP.md](/docs/REPOSITORY_MAP.md)

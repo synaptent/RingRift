@@ -124,6 +124,7 @@
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "db:seed": "ts-node src/server/database/seed.ts",
+    "postinstall": "prisma generate",
     "prepare": "husky install",
     "validate:deployment": "npx ts-node scripts/validate-deployment-config.ts",
     "validate:monitoring": "scripts/validate-monitoring-configs.sh",

@@ -13,8 +13,8 @@ Use the minimal loop for reproducible proof runs and live canaries.
 
 In practice that means:
 
-- use [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh) for local reproducibility
-- use [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh) for supported canary rollouts
+- use [`scripts/run_proven_experiment.sh`](/scripts/run_proven_experiment.sh) for local reproducibility
+- use [`ai-service/scripts/deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh) for supported canary rollouts
 - treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log
 - keep the deploy preflight in place so trainer rollouts prove the minimal-loop path locally before they restart nodes
 

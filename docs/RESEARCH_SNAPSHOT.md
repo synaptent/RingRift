@@ -51,11 +51,11 @@ The project is not finished.
 
 If you want to evaluate the project quickly, use this order:
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-5. [scripts/run_proven_experiment.sh](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
+1. [README.md](/README.md)
+2. [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md)
+3. [docs/RESULTS.md](/docs/RESULTS.md)
+4. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+5. [scripts/run_proven_experiment.sh](/scripts/run_proven_experiment.sh)
 
 ## Bottom Line
 

@@ -6,16 +6,16 @@ This file is preserved as an owner-facing operational memo from that date. It is
 
 For the current supported public claims and April 13 research state, use:
 
-- [RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-- [RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
-- [docs/data/training_status.json](/Users/armand/Development/RingRift/docs/data/training_status.json)
+- [RESULTS.md](/docs/RESULTS.md)
+- [RESEARCH_SNAPSHOT.md](/docs/RESEARCH_SNAPSHOT.md)
+- [docs/data/training_status.json](/docs/data/training_status.json)
 
 For the current supported operator and trainer path, use:
 
-- [DEVELOPER_GUIDE.md](/Users/armand/Development/RingRift/docs/DEVELOPER_GUIDE.md)
-- [MINIMAL_LOOP_CONTRACT.md](/Users/armand/Development/RingRift/docs/architecture/MINIMAL_LOOP_CONTRACT.md)
-- [deploy_minimal_loops.sh](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
-- [SCRIPT_INVENTORY.md](/Users/armand/Development/RingRift/docs/SCRIPT_INVENTORY.md)
+- [DEVELOPER_GUIDE.md](/docs/DEVELOPER_GUIDE.md)
+- [MINIMAL_LOOP_CONTRACT.md](/docs/architecture/MINIMAL_LOOP_CONTRACT.md)
+- [deploy_minimal_loops.sh](/ai-service/scripts/deploy_minimal_loops.sh)
+- [SCRIPT_INVENTORY.md](/docs/SCRIPT_INVENTORY.md)
 
 For current trainer work directories, treat `progress.json` as the live stage-status file and `metrics.jsonl` as the durable iteration log.
 
@@ -28,7 +28,7 @@ This is an owner-facing snapshot for Armand. It is not a marketing document.
 - Local infrastructure gate: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120`
 - Remote CI state: `gh run list -L 5`
 
-The machine-readable training snapshot is checked in at [`docs/data/training_status.json`](/Users/armand/Development/RingRift/docs/data/training_status.json).
+The machine-readable training snapshot is checked in at [`docs/data/training_status.json`](/docs/data/training_status.json).
 
 ## April 10 Training Results
 

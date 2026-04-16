@@ -20,7 +20,7 @@ React client ──> Node/Express server ──> shared TypeScript rules engine
 
 ### 1. TypeScript is the rules source of truth
 
-The canonical game rules live under [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine) and the related shared types under [`src/shared/types`](/Users/armand/Development/RingRift/src/shared/types).
+The canonical game rules live under [`src/shared/engine`](/src/shared/engine) and the related shared types under [`src/shared/types`](/src/shared/types).
 
 That engine is used in two places:
 
@@ -31,17 +31,17 @@ When the TypeScript engine and Python diverge, the TypeScript engine wins and Py
 
 ### 2. Python mirrors the rules for AI and training
 
-The Python AI service lives under [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app). Its responsibilities are:
+The Python AI service lives under [`ai-service/app`](/ai-service/app). Its responsibilities are:
 
 - serve AI moves and evaluations
 - reconstruct and validate replay data
 - mirror the canonical rules closely enough for training to be valid
 
-The key guardrail is TS↔Python replay parity, checked with tools such as [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py).
+The key guardrail is TS↔Python replay parity, checked with tools such as [`ai-service/scripts/check_ts_python_replay_parity.py`](/ai-service/scripts/check_ts_python_replay_parity.py).
 
 ### 3. The supported training engine is the minimal loop
 
-The supported training path is [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
+The supported training path is [`ai-service/scripts/minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py).
 
 That script owns the end-to-end self-improvement cycle on a single worker:
 
@@ -51,13 +51,13 @@ That script owns the end-to-end self-improvement cycle on a single worker:
 4. evaluate candidate vs best
 5. promote or reject
 
-The minimal loop is the training engine used for the current reported results. It is also the path wrapped by [`scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh).
+The minimal loop is the training engine used for the current reported results. It is also the path wrapped by [`scripts/run_proven_experiment.sh`](/scripts/run_proven_experiment.sh).
 
-For supported live canaries, the operator entrypoint is [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh). That rollout path preflights `tests/unit/scripts/test_minimal_alphazero_loop.py` locally before it restarts trainer nodes unless an operator explicitly bypasses the guard. During a run, treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log.
+For supported live canaries, the operator entrypoint is [`ai-service/scripts/deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh). That rollout path preflights `tests/unit/scripts/test_minimal_alphazero_loop.py` locally before it restarts trainer nodes unless an operator explicitly bypasses the guard. During a run, treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log.
 
 ### 4. The broader coordinator is support infrastructure
 
-The repository also contains a large amount of orchestration, cluster, daemon, and P2P machinery, especially under [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts) and [`ai-service/app/coordination`](/Users/armand/Development/RingRift/ai-service/app/coordination).
+The repository also contains a large amount of orchestration, cluster, daemon, and P2P machinery, especially under [`ai-service/scripts`](/ai-service/scripts) and [`ai-service/app/coordination`](/ai-service/app/coordination).
 
 That infrastructure exists for:
 
@@ -68,7 +68,7 @@ That infrastructure exists for:
 
 It is not required to understand the core system or reproduce the main training results.
 
-It should also not be treated as disposable. The current infrastructure strategy is to keep the minimal loop as the reproducible proof harness while reusing audited pieces of the broader coordinator/P2P stack where they satisfy the current rules, data, and evaluation contracts. See [docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md](/Users/armand/Development/RingRift/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md).
+It should also not be treated as disposable. The current infrastructure strategy is to keep the minimal loop as the reproducible proof harness while reusing audited pieces of the broader coordinator/P2P stack where they satisfy the current rules, data, and evaluation contracts. See [docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md](/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md).
 
 As of April 13, 2026:
 
@@ -81,16 +81,16 @@ As of April 13, 2026:
 
 If you are approaching RingRift as an engineer or researcher, the most useful path through the repo is:
 
-1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine)
-5. [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
-6. [`ai-service/scripts/deploy_minimal_loops.sh`](/Users/armand/Development/RingRift/ai-service/scripts/deploy_minimal_loops.sh)
-7. [`docs/architecture/MINIMAL_LOOP_CONTRACT.md`](/Users/armand/Development/RingRift/docs/architecture/MINIMAL_LOOP_CONTRACT.md)
-8. [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
-9. [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
-10. [`docs/RESEARCH_SNAPSHOT.md`](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
+1. [README.md](/README.md)
+2. [QUICKSTART.md](/QUICKSTART.md)
+3. [docs/RESULTS.md](/docs/RESULTS.md)
+4. [`src/shared/engine`](/src/shared/engine)
+5. [`ai-service/scripts/minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py)
+6. [`ai-service/scripts/deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh)
+7. [`docs/architecture/MINIMAL_LOOP_CONTRACT.md`](/docs/architecture/MINIMAL_LOOP_CONTRACT.md)
+8. [`ai-service/scripts/check_ts_python_replay_parity.py`](/ai-service/scripts/check_ts_python_replay_parity.py)
+9. [`ai-service/scripts/training_status.py`](/ai-service/scripts/training_status.py)
+10. [`docs/RESEARCH_SNAPSHOT.md`](/docs/RESEARCH_SNAPSHOT.md)
 
 ## Current Training Shape
 

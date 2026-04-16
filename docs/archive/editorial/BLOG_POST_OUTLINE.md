@@ -4,10 +4,10 @@
 >
 > For the current supported external-facing path, start with:
 >
-> - [README.md](/Users/armand/Development/RingRift/README.md)
-> - [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
-> - [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
-> - [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+> - [README.md](/README.md)
+> - [docs/PROJECT_BRIEF.md](/docs/PROJECT_BRIEF.md)
+> - [docs/RESEARCH_SNAPSHOT.md](/docs/RESEARCH_SNAPSHOT.md)
+> - [docs/RESULTS.md](/docs/RESULTS.md)
 
 ## The Hook
 

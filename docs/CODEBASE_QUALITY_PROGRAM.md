@@ -95,6 +95,12 @@ April 16, 2026 credibility pass:
   training duration estimates, and checkpoint artifacts require the S3 archive
   named in `docs/REPRODUCIBILITY.md`; they are not fully reproducible from the
   repository alone.
+- Fresh-clone audit found two credibility defects and fixed both where safe:
+  active Markdown docs no longer contain `/Users/armand/Development/RingRift`
+  links, and `npm install` now runs `prisma generate` so `@prisma/client`
+  exists before a new developer starts the server. The exact
+  `npm install && npm run dev` path still requires the documented `.env`,
+  Postgres, and Redis setup before the backend can connect.
 
 ## Active Batch Order
 
