@@ -4,6 +4,11 @@ import { requestContext } from '../../src/server/middleware/requestContext';
 import { HealthCheckService } from '../../src/server/services/HealthCheckService';
 import internalRoutes from '../../src/server/routes/internal';
 
+jest.mock('../../src/server/middleware/rateLimiter', () => ({
+  internalHealthRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  alertWebhookRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 function createTestApp() {
   const app = express();
   app.use(express.json());
