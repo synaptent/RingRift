@@ -1,0 +1,154 @@
+{
+  "as_of": "2026-04-16",
+  "purpose": "Checked-in orientation manifest for the RingRift training fleet. It is not a secret host inventory and does not replace the private runtime config used for role-aware deployment.",
+  "source_files": [
+    "ai-service/config/node_roles.yaml",
+    "ai-service/scripts/deploy_minimal_loops.sh",
+    "ai-service/scripts/deploy_training_service.sh",
+    "ai-service/config/systemd/ringrift-training.service",
+    "ai-service/config/systemd/ringrift-selfplay-worker.service",
+    "ai-service/config/systemd/ringrift-evaluator.service",
+    "ai-service/config/systemd/ringrift-p2p.service"
+  ],
+  "runtime_inventory": {
+    "private_file": "ai-service/config/distributed_hosts.yaml",
+    "tracked_templates": [
+      "ai-service/config/distributed_hosts.yaml.example",
+      "ai-service/config/distributed_hosts.template.yaml"
+    ],
+    "status": "required for deploy_training_service.sh, intentionally not checked in",
+    "reason": "Contains the live host inventory and SSH/Tailscale routing details needed for role-aware deployment."
+  },
+  "deployment_paths": {
+    "minimal_loop_canary": {
+      "script": "ai-service/scripts/deploy_minimal_loops.sh",
+      "supervision": "remote nohup wrapper running scripts/minimal_loop_supervisor.sh",
+      "boot_persistence": "not boot-persistent; rerun the deploy script after node reboot or migrate the node to the role-aware systemd service",
+      "preflight": "PYTHONPATH=. python3 -m pytest -q tests/unit/scripts/test_minimal_alphazero_loop.py"
+    },
+    "role_aware_systemd": {
+      "script": "ai-service/scripts/deploy_training_service.sh",
+      "supervision": "systemd services with Restart=always",
+      "boot_persistence": "boot-persistent when units are installed and enabled",
+      "requires": "ai-service/config/distributed_hosts.yaml"
+    }
+  },
+  "nodes": [
+    {
+      "name": "gh200-8",
+      "role": "trainer",
+      "target_config": "hex8_2p",
+      "board_type": "hex8",
+      "num_players": 2,
+      "known_host": "100.121.230.110",
+      "known_host_source": "deploy_minimal_loops.sh",
+      "work_dir": "data/minimal_loop_gh200-8",
+      "current_supported_supervision": "minimal_loop_canary",
+      "systemd_capable": true,
+      "notes": "Hex two-player plateau canary and v4 architecture experiment target."
+    },
+    {
+      "name": "gh200-9",
+      "role": "trainer",
+      "target_config": "square8_2p",
+      "board_type": "square8",
+      "num_players": 2,
+      "known_host": "100.127.168.116",
+      "known_host_source": "deploy_minimal_loops.sh",
+      "work_dir": "data/minimal_loop_square8_2p",
+      "current_supported_supervision": "minimal_loop_canary",
+      "systemd_capable": true,
+      "notes": "Best current improvement signal; fixed-LR square8_2p trainer."
+    },
+    {
+      "name": "gh200-10",
+      "role": "trainer",
+      "target_config": "hex8_3p",
+      "board_type": "hex8",
+      "num_players": 3,
+      "known_host": null,
+      "known_host_source": "private distributed_hosts.yaml",
+      "work_dir": "data/minimal_loop_hex8_3p",
+      "current_supported_supervision": "role_aware_systemd",
+      "systemd_capable": true,
+      "notes": "Three-player hex trainer from node_roles.yaml; host is resolved by private runtime inventory."
+    },
+    {
+      "name": "gh200-11",
+      "role": "selfplay-worker",
+      "target_config": "hex8_2p",
+      "feeds_trainer": "gh200-8",
+      "selfplay_profile": "policy-gumbel",
+      "known_host": null,
+      "known_host_source": "private distributed_hosts.yaml",
+      "work_dir": null,
+      "current_supported_supervision": "role_aware_systemd",
+      "systemd_capable": true,
+      "notes": "Policy-bearing self-play worker for the hex8_2p trainer."
+    },
+    {
+      "name": "gh200-12",
+      "role": "trainer",
+      "target_config": "square8_3p",
+      "board_type": "square8",
+      "num_players": 3,
+      "known_host": "100.86.51.4",
+      "known_host_source": "deploy_minimal_loops.sh",
+      "work_dir": "data/minimal_loop_square8_3p",
+      "current_supported_supervision": "minimal_loop_canary",
+      "systemd_capable": true,
+      "notes": "Seat-fair multiplayer revalidation trainer."
+    },
+    {
+      "name": "gh200-13",
+      "role": "selfplay-worker",
+      "target_config": "square8_2p",
+      "feeds_trainer": "gh200-9",
+      "selfplay_profile": "policy-gumbel",
+      "known_host": null,
+      "known_host_source": "private distributed_hosts.yaml",
+      "work_dir": null,
+      "current_supported_supervision": "role_aware_systemd",
+      "systemd_capable": true,
+      "notes": "Policy-bearing self-play worker for the square8_2p trainer."
+    },
+    {
+      "name": "gh200-14",
+      "role": "trainer",
+      "target_config": "square19_2p",
+      "board_type": "square19",
+      "num_players": 2,
+      "known_host": null,
+      "known_host_source": "private distributed_hosts.yaml",
+      "work_dir": "data/minimal_loop_square19_2p",
+      "current_supported_supervision": "role_aware_systemd",
+      "systemd_capable": true,
+      "notes": "Large-board two-player trainer; expected to progress much more slowly than 8-board configs."
+    },
+    {
+      "name": "vultr-a100-20gb",
+      "role": "evaluator",
+      "assigned_configs": [
+        "hex8_2p",
+        "square8_2p",
+        "square8_3p",
+        "square19_2p"
+      ],
+      "known_host": null,
+      "known_host_source": "private distributed_hosts.yaml",
+      "work_dir": null,
+      "current_supported_supervision": "role_aware_systemd",
+      "systemd_capable": true,
+      "notes": "Evaluation/calibration node from node_roles.yaml."
+    }
+  ],
+  "script_only_canaries": [
+    {
+      "target_config": "square8_4p",
+      "known_host": "100.100.19.96",
+      "work_dir": "data/minimal_loop_square8_4p",
+      "source": "deploy_minimal_loops.sh",
+      "notes": "Supported by the minimal-loop deploy script but not currently assigned in node_roles.yaml."
+    }
+  ]
+}
