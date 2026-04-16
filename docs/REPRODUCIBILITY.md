@@ -2,6 +2,11 @@
 
 This document records the exact commands, hyperparameters, and hardware used to produce the reported results.
 
+The checked-in claim map is
+[`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json).
+Use it to distinguish result numbers that are verifiable from repository files
+from claims that require the S3 archive or live operator logs.
+
 ## Headline Result
 
 **hex8_2p**: 1500 → 1979.8 Elo in 33 iterations using fixed learning rate self-play.

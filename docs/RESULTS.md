@@ -4,6 +4,11 @@ This document summarizes the current research evidence from the RingRift self-pl
 
 Status is current as of April 15, 2026.
 
+For claim provenance, see
+[`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json).
+It separates checked-in claims from S3-backed artifacts and newer
+operator-reported results that are not yet published here.
+
 ## Headline Results
 
 | Config       | Start Elo | Best Reported Elo | Promotions | Status                                                                               |
@@ -194,6 +199,11 @@ npm run results:refresh
 ```
 
 That command updates [`docs/data/results_snapshot.json`](/docs/data/results_snapshot.json) and regenerates the SVGs under `docs/assets/results/`. By default it searches the standard metrics locations under `ai-service/data/` and leaves existing snapshot values in place for any config that is missing local metrics.
+
+When a headline number changes, update
+[`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json)
+in the same patch so readers can see whether the claim is repo-verifiable,
+S3-backed, or still operator-reported.
 
 ## Bottom Line
 

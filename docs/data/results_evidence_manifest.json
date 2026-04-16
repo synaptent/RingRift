@@ -1,0 +1,121 @@
+{
+  "as_of": "2026-04-16",
+  "purpose": "Audit map for public RingRift training claims. It distinguishes claims verifiable from checked-in files from claims that require external artifacts or live operator logs.",
+  "checked_in_sources": [
+    "docs/data/results_snapshot.json",
+    "docs/RESULTS.md",
+    "docs/REPRODUCIBILITY.md",
+    "README.md",
+    "docs/assets/results/headline_results.svg",
+    "docs/assets/results/square8_2p_progression.svg"
+  ],
+  "repo_verifiable_claims": [
+    {
+      "claim_id": "hex8_2p_headline_1979_8",
+      "statement": "hex8_2p improved from 1500.0 to 1979.8 Elo with 7 promotions.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "fields": {
+        "config": "hex8_2p",
+        "start_elo": 1500.0,
+        "best_elo": 1979.8,
+        "promotions": 7
+      },
+      "public_docs": ["README.md", "docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
+    },
+    {
+      "claim_id": "square8_2p_headline_1697_3",
+      "statement": "square8_2p improved from 1500.0 to 1697.3 Elo with 4 promotions in the checked-in snapshot.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "fields": {
+        "config": "square8_2p",
+        "start_elo": 1500.0,
+        "best_elo": 1697.3,
+        "promotions": 4
+      },
+      "public_docs": ["README.md", "docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
+    },
+    {
+      "claim_id": "square8_2p_iter34_promote",
+      "statement": "square8_2p iteration 34 promoted at 62.0% over 50 games to an estimated 1697.3 Elo.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "fields": {
+        "config": "square8_2p",
+        "iteration": 34,
+        "win_rate": 0.62,
+        "games_played": 50,
+        "decision": "promote",
+        "estimated_elo": 1697.3
+      },
+      "public_docs": ["docs/RESULTS.md"]
+    },
+    {
+      "claim_id": "hex8_2p_iter36_plateau",
+      "statement": "hex8_2p v3 iteration 36 rejected at 50.0% over 400 staged eval games, supporting the plateau interpretation.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "fields": {
+        "config": "hex8_2p",
+        "iteration": 36,
+        "win_rate": 0.5,
+        "games_played": 400,
+        "decision": "reject",
+        "estimated_elo": 1979.8
+      },
+      "public_docs": ["docs/RESULTS.md"]
+    },
+    {
+      "claim_id": "multiplayer_recent_rejects",
+      "statement": "hex8_3p iteration 1 rejected at 35.0%, and square8_3p iteration 21 rejected at 30.0%.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "fields": {
+        "hex8_3p": {
+          "iteration": 1,
+          "win_rate": 0.35,
+          "decision": "reject"
+        },
+        "square8_3p": {
+          "iteration": 21,
+          "win_rate": 0.3,
+          "decision": "reject"
+        }
+      },
+      "public_docs": ["docs/RESULTS.md"]
+    }
+  ],
+  "external_artifact_claims": [
+    {
+      "claim_id": "full_metrics_jsonl_history",
+      "statement": "Detailed per-iteration metrics, promotion logs, and timing history require archived metrics.jsonl files.",
+      "artifact_location": "s3://ringrift-models-20251214/archive/",
+      "documented_in": "docs/REPRODUCIBILITY.md"
+    },
+    {
+      "claim_id": "checkpoint_replayability",
+      "statement": "Exact checkpoint replay/resume requires best.pth model files and training_data/iter_*.npz artifacts.",
+      "artifact_location": "s3://ringrift-models-20251214/archive/",
+      "documented_in": "docs/REPRODUCIBILITY.md"
+    },
+    {
+      "claim_id": "wall_time_and_hardware",
+      "statement": "Training wall-time and hardware claims are operational measurements from GH200 cluster runs, not fully derivable from the checked-in repository alone.",
+      "artifact_location": "operator logs and S3 metrics archives",
+      "documented_in": "docs/REPRODUCIBILITY.md"
+    }
+  ],
+  "operator_reported_not_yet_checked_in": [
+    {
+      "claim_id": "square8_2p_iter35_1782",
+      "statement": "Operator reported square8_2p later promoted again to about 1782 Elo at iteration 35.",
+      "publication_policy": "Do not promote this into README.md or docs/RESULTS.md until a durable metrics/log artifact is checked in or referenced."
+    },
+    {
+      "claim_id": "hex8_2p_v4_runtime",
+      "statement": "Operator reported the hex8_2p v4 architecture experiment is live.",
+      "publication_policy": "Keep this marked as an active experiment until the first completed result has durable evidence."
+    }
+  ],
+  "maintenance_policy": [
+    "Update docs/data/results_snapshot.json before changing headline result numbers in README.md or docs/RESULTS.md.",
+    "Update this evidence manifest whenever a public result moves from operator-reported to repo-verifiable or external-artifact-backed.",
+    "Do not add new headline Elo claims from chat logs alone."
+  ]
+}
