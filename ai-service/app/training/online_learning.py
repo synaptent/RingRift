@@ -17,7 +17,7 @@ Available Components:
 
 Usage:
     # Basic EBMO online learning
-    from app.training import EBMOOnlineLearner, OnlineLearningConfig
+    from app.ai.ebmo_online_learner import EBMOOnlineLearner, OnlineLearningConfig
 
     config = OnlineLearningConfig(
         buffer_size=20,
@@ -34,7 +34,7 @@ Usage:
     metrics = learner.update_from_game(winner)
 
     # Full AI wrapper
-    from app.training import EBMOOnlineAI
+    from app.ai.ebmo_online_learner import EBMOOnlineAI
 
     ai = EBMOOnlineAI(player_number=1, config=ai_config, model_path="model.pt")
     move = ai.select_move(state)  # Records transitions automatically
@@ -47,9 +47,9 @@ Integration with Training Pipeline:
 
     from app.training import (
         UnifiedTrainingOrchestrator,
-        EBMOOnlineLearner,
-        HotDataBuffer,
     )
+    from app.ai.ebmo_online_learner import EBMOOnlineLearner
+    from app.training.hot_data_buffer import HotDataBuffer
 
     # Online learner feeds hot buffer
     hot_buffer.add_game(game_record)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -217,9 +218,8 @@ def _is_pid_alive(pid: int) -> bool:
 def _get_hostname() -> str:
     """Get hostname for identifying which host holds a lock."""
     try:
-        import socket
         return socket.gethostname()
-    except Exception:
+    except OSError:
         return ""
 
 

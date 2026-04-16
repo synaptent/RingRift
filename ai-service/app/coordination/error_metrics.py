@@ -69,6 +69,7 @@ def record_error(daemon_name: str, exc: BaseException) -> None:
         )
         conn.commit()
     except Exception:
+        # Fail open: auxiliary metrics must never interrupt daemon error paths.
         logger.debug("error_metrics: failed to record error", exc_info=True)
 
 
@@ -83,6 +84,7 @@ def get_error_rates(hours: float = 1) -> dict[str, int]:
         ).fetchall()
         return {daemon: count for daemon, count in rows}
     except Exception:
+        # Fail open: watchdog callers can tolerate missing metrics.
         logger.debug("error_metrics: failed to query error rates", exc_info=True)
         return {}
 
@@ -105,5 +107,6 @@ def get_top_errors(hours: float = 1, limit: int = 10) -> list[dict[str, Any]]:
             for r in rows
         ]
     except Exception:
+        # Fail open: dashboards should degrade rather than crash daemons.
         logger.debug("error_metrics: failed to query top errors", exc_info=True)
         return []

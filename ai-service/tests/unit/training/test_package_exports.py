@@ -29,32 +29,6 @@ EXPECTED_PUBLIC_TRAINING_EXPORTS = [
     "RegressionDetector",
     "RegressionSeverity",
     "get_regression_detector",
-    "SelfplayConfig",
-    "EngineMode",
-    "OutputFormat",
-    "create_argument_parser",
-    "get_default_config",
-    "get_production_config",
-    "parse_selfplay_args",
-    "RingRiftDataset",
-    "WeightedRingRiftDataset",
-    "StreamingDataLoader",
-    "WeightedStreamingDataLoader",
-    "HotDataBuffer",
-    "create_hot_buffer",
-    "DistributedConfig",
-    "setup_distributed",
-    "cleanup_distributed",
-    "is_main_process",
-    "EBMOOnlineAI",
-    "EBMOOnlineConfig",
-    "EBMOOnlineLearner",
-    "OnlineLearningConfig",
-    "create_online_learner",
-    "TemperatureScheduler",
-    "TemperatureConfig",
-    "create_temperature_scheduler",
-    "wilson_score_interval",
 ]
 
 
@@ -62,8 +36,8 @@ def test_package_dir_lists_declared_public_training_surface() -> None:
     module = importlib.import_module("app.training")
 
     assert module.__all__ == EXPECTED_PUBLIC_TRAINING_EXPORTS
-    assert len(module.__all__) == 49
-    assert len(module.__all__) < 50
+    assert len(module.__all__) == 23
+    assert len(module.__all__) < 25
     assert len(module.__all__) == len(set(module.__all__))
 
     for name in EXPECTED_PUBLIC_TRAINING_EXPORTS:
@@ -104,6 +78,32 @@ def test_stale_training_facade_exports_are_removed() -> None:
         "get_effective_architecture",
         "resolve_training_params",
         "validate_model_id_for_board",
+        "SelfplayConfig",
+        "EngineMode",
+        "OutputFormat",
+        "create_argument_parser",
+        "get_default_config",
+        "get_production_config",
+        "parse_selfplay_args",
+        "RingRiftDataset",
+        "WeightedRingRiftDataset",
+        "StreamingDataLoader",
+        "WeightedStreamingDataLoader",
+        "HotDataBuffer",
+        "create_hot_buffer",
+        "DistributedConfig",
+        "setup_distributed",
+        "cleanup_distributed",
+        "is_main_process",
+        "EBMOOnlineAI",
+        "EBMOOnlineConfig",
+        "EBMOOnlineLearner",
+        "OnlineLearningConfig",
+        "create_online_learner",
+        "TemperatureScheduler",
+        "TemperatureConfig",
+        "create_temperature_scheduler",
+        "wilson_score_interval",
     }
 
     assert stale_exports.isdisjoint(set(module.__all__))

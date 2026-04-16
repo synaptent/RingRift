@@ -100,7 +100,10 @@ def _handle_task_error(task: asyncio.Task, context: str = "") -> None:
                         "last_error": str(exc),
                     })
                 except Exception:
-                    pass  # Event emission is best-effort
+                    logger.debug(
+                        "[FeedbackLoopController] Failed to emit degraded-state event",
+                        exc_info=True,
+                    )
         else:
             # Task succeeded, reset error count
             _task_error_count = 0

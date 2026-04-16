@@ -74,7 +74,7 @@ Quick Start
             metrics = orchestrator.train_step(batch)
 
     # Distributed training
-    from app.training import (
+    from app.training.distributed import (
         setup_distributed,
         cleanup_distributed,
         is_main_process,
@@ -946,32 +946,6 @@ __all__ = [
     "RegressionDetector",
     "RegressionSeverity",
     "get_regression_detector",
-    "SelfplayConfig",
-    "EngineMode",
-    "OutputFormat",
-    "create_argument_parser",
-    "get_default_config",
-    "get_production_config",
-    "parse_selfplay_args",
-    "RingRiftDataset",
-    "WeightedRingRiftDataset",
-    "StreamingDataLoader",
-    "WeightedStreamingDataLoader",
-    "HotDataBuffer",
-    "create_hot_buffer",
-    "DistributedConfig",
-    "setup_distributed",
-    "cleanup_distributed",
-    "is_main_process",
-    "EBMOOnlineAI",
-    "EBMOOnlineConfig",
-    "EBMOOnlineLearner",
-    "OnlineLearningConfig",
-    "create_online_learner",
-    "TemperatureScheduler",
-    "TemperatureConfig",
-    "create_temperature_scheduler",
-    "wilson_score_interval",
 ]
 
 for _name in set(_DECLARED_EXPORTS) - set(__all__):

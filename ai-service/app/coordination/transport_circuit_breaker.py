@@ -437,10 +437,13 @@ class TransportAwareCircuitBreaker:
                 continue
 
             except Exception as e:
+                # Transport callables are caller-provided; any unexpected
+                # failure counts as a failed probe so fallback can continue.
                 self.record_failure(node_id, transport)
                 errors.append((transport.value, e))
                 logger.debug(
-                    f"Transport {transport.value} failed for {node_id}: {e}"
+                    f"Transport {transport.value} failed for {node_id}: {e}",
+                    exc_info=True,
                 )
                 continue
 
