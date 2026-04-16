@@ -10,10 +10,10 @@ These are the current working scores for the overall repository:
 
 | Dimension         | Current | Target |
 | ----------------- | ------: | -----: |
-| Code quality      |   `8.0` |  `9.0` |
+| Code quality      |   `8.3` |  `9.0` |
 | Presentability    |   `8.8` |  `9.0` |
-| Understandability |   `7.7` |  `8.5` |
-| Maintainability   |   `7.3` |  `8.5` |
+| Understandability |   `8.0` |  `8.5` |
+| Maintainability   |   `8.1` |  `8.5` |
 
 The goal is not to cosmetically relabel the repo. The goal is to make the supported path, the public APIs, and the active operational surface easier to trust and easier to change safely.
 
@@ -228,6 +228,10 @@ Current objectives:
 - The published research docs are now refreshed to the April 15 state too: `docs/RESULTS.md`, `docs/data/results_snapshot.json`, `docs/RESEARCH_SNAPSHOT.md`, `docs/PROJECT_BRIEF.md`, and `docs/REPRODUCIBILITY.md` now reflect `square8_2p` at `1697.3`, the verified `hex8_2p` iteration `36` plateau reject at `50.0%`, the first `hex8_3p` result at `35%`, and the fact that the `hex8_2p` `v4` run is an active experiment rather than a finished headline result.
 - The repo now has a substantive engineering retrospective too: `docs/LESSONS_LEARNED.md` captures the watchdog failure loops, systemd/P2P process-ownership mistakes, fixed-LR breakthrough, multiplayer evaluator bias, policy-data contract discovery, and the measured explanation behind the earlier `17k` Python-file scare.
 - The public entrypoint is visually stronger too: the root `README.md` now uses a real live `hex8` sandbox screenshot from the current product instead of relying on a placeholder ASCII sketch, and its headline training numbers now match the refreshed April 15 results.
+- The Python unit/contracts gate is now a real baseline again: `PYTHONPATH=. python3 -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` passes with `33519 passed`, `8 skipped`, and `2 warnings`, after fixing the pytest collection conflict, Python 3.13 event-loop ordering issue, legacy warning-order assertion, deploy dry-run drift, and missing coverage for the private deprecated training-orchestrator shim.
+- Runtime skip debt is materially lower and now mostly platform/optional-dependency bound: stale module-availability skips were removed from core events, feedback signals, coordinator initialization, health-compliance, training feature registry, and AI evaluation-provider tests while CUDA/MPS/quantization/optional-package skips remain explicit.
+- `app.training.__init__` is now contracted down to the actual root compatibility/API surface: the package root went from `215` exports to `49`, and now to `23`; specialized selfplay, dataset, distributed, online-learning, temperature-scheduling, and statistics helpers require direct owning-submodule imports.
+- The remaining small `app.coordination` broad-catch cleanup has begun with concrete behavior changes instead of cosmetic churn: hostname lookup now catches `OSError`, transport fallback logs unexpected operation failures with traceback context, feedback-loop degraded-event emission logs best-effort failures, and error metrics have explicit fail-open comments.
 
 ## Execution Protocol
 
