@@ -71,7 +71,8 @@ April 16, 2026 credibility pass:
   `P2P_INVESTIGATION_SUMMARY.md`, `P2P_STATUS_SUMMARY.txt`,
   `P2P_STATUS_TABLE.md`, `PLAN_selfplay_loop_closure.md`,
   `ROADMAP_2025Q1.md`, `nohup_master.out`, `nohup_p2p.out`,
-  `nohup_p2p_fresh.out`, and `progress.md`.
+  `nohup_p2p_fresh.out`, `progress.md`, `playwright-report/index.html`,
+  and the accidental zero-byte root file named `;\nfi`.
 - Archived unreferenced active-tree audit doc:
   `docs/architecture/TEST_INFRASTRUCTURE_AUDIT.md` moved to
   `docs/archive/assessments/TEST_INFRASTRUCTURE_AUDIT.md`.
