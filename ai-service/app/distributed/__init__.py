@@ -70,18 +70,6 @@ from .queue import (
     get_task_queue,
 )
 
-# Deprecated: cluster_coordinator imports are now lazy to avoid warnings on every import
-# Use app.coordination.task_coordinator and app.coordination.orchestrator_registry instead
-# Removal target: Q3 2026 once all remaining callers are migrated off app.distributed.
-# These symbols are still available for backward compatibility via __getattr__.
-_CLUSTER_COORDINATOR_SYMBOLS = {
-    "ClusterCoordinator",
-    "TaskRole",
-    "ProcessLimits",
-    "TaskInfo",
-    "check_and_abort_if_role_held",
-}
-_CLUSTER_COORDINATOR_REMOVAL_TARGET = "Q3 2026"
 from .circuit_breaker import (
     CircuitBreaker,
     CircuitOpenError,
@@ -227,8 +215,6 @@ __all__ = [
     "CircuitOpenError",
     "CircuitState",
     "CircuitStatus",
-    # Deprecated cluster coordination (lazy loaded via __getattr__)
-    "ClusterCoordinator",
     "ClusterSyncStats",
     "CollectedGame",
     "ComponentHealth",
@@ -266,7 +252,6 @@ __all__ = [
     # P2P sync
     "P2PFallbackSync",
     "P2PSyncClient",
-    "ProcessLimits",
     "QueueDistributedEvaluator",
     "RedisQueue",
     "RemoteMemoryMonitor",
@@ -288,10 +273,8 @@ __all__ = [
     "SyncOrchestratorState",
     "SyncResult",
     "SyncStats",
-    "TaskInfo",
     # Cloud deployment (queue-based)
     "TaskQueue",
-    "TaskRole",
     "TransactionManager",
     "UnifiedDataSyncService",
     # Unified WAL (recommended)
@@ -309,7 +292,6 @@ __all__ = [
     "atomic_json_update",
     # Database utilities
     "atomic_write",
-    "check_and_abort_if_role_held",
     "clear_memory_cache",
     "create_deduplicator",
     "create_event",
@@ -385,51 +367,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> type:
-    """Lazy loading for deprecated cluster_coordinator symbols.
-
-    This avoids triggering deprecation warnings on every import of app.distributed.
-    The warning only fires when someone actually accesses these deprecated symbols.
-
-    Returns:
-        The requested deprecated symbol (class or function).
-
-    Raises:
-        AttributeError: If the attribute is not a known symbol.
-    """
-    import warnings
-
-    if name in _CLUSTER_COORDINATOR_SYMBOLS:
-        warnings.warn(
-            f"'{name}' is deprecated. Use the following instead:\n"
-            "  - ClusterCoordinator -> app.coordination.task_coordinator.TaskCoordinator\n"
-            "  - TaskRole -> app.coordination.orchestrator_registry.OrchestratorRole\n"
-            "  - TaskInfo -> app.coordination.orchestrator_registry.OrchestratorInfo\n"
-            "  - check_and_abort_if_role_held -> OrchestratorRegistry.acquire_role()\n"
-            f"Removal target: {_CLUSTER_COORDINATOR_REMOVAL_TARGET}.\n"
-            "See ai-service/docs/CONSOLIDATION_STATUS_2025_12_19.md for migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        from .cluster_coordinator import (
-            ClusterCoordinator,
-            ProcessLimits,
-            TaskInfo,
-            TaskRole,
-            check_and_abort_if_role_held,
-        )
-        symbols = {
-            "ClusterCoordinator": ClusterCoordinator,
-            "TaskRole": TaskRole,
-            "ProcessLimits": ProcessLimits,
-            "TaskInfo": TaskInfo,
-            "check_and_abort_if_role_held": check_and_abort_if_role_held,
-        }
-        return symbols[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 def __dir__() -> list[str]:
-    """Expose both eager exports and lazy deprecated symbols."""
+    """Expose the intended distributed package surface."""
 
-    return sorted(set(globals()) | set(__all__) | _CLUSTER_COORDINATOR_SYMBOLS)
+    return sorted(set(globals()) | set(__all__))

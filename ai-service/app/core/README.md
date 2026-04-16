@@ -151,9 +151,7 @@ register_codec(datetime, DateCodec())
 | `async_context.py` | Async context management       |
 | `event_bus.py`     | In-process event pub/sub       |
 | `health.py`        | Health check utilities         |
-| `initializable.py` | Lazy initialization pattern    |
 | `lifecycle.py`     | Component lifecycle management |
-| `locking.py`       | Distributed locking utilities  |
 
 ## Usage Patterns
 

@@ -115,7 +115,6 @@ generators:
 | `DataQualityOrchestrator` | `app/quality/data_quality_orchestrator.py`   | Centralized quality event monitoring                |
 | `NodeHealthOrchestrator`  | `app/monitoring/node_health_orchestrator.py` | Centralized health event monitoring                 |
 | `PEROrchestrator`         | `app/training/per_orchestrator.py`           | PER buffer event monitoring                         |
-| `SubscriptionRegistry`    | `app/distributed/subscription_registry.py`   | Event subscription tracking                         |
 | `EloService`              | `app/training/elo_service.py`                | Consolidates Elo tracking with training integration |
 
 ## Migration Guide

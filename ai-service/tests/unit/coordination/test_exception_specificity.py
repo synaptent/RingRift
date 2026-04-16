@@ -10,7 +10,6 @@ COORDINATION_DAEMON_FILES = (
     "app/coordination/coordinator_health_monitor_daemon.py",
     "app/coordination/maintenance_daemon.py",
     "app/coordination/memory_monitor_daemon.py",
-    "app/coordination/model_registry_daemon.py",
     "app/coordination/progress_watchdog_daemon.py",
     "app/coordination/stale_fallback.py",
 )

@@ -134,14 +134,10 @@ app.p2p.training
 
 # Core/Distributed
 app.core.async_context
-app.core.initializable
-app.core.locking
 app.core.marshalling
 app.core.registry_base
-app.core.task_spawner
 app.distributed.client
 app.distributed.cluster_coordinator
-app.distributed.subscription_registry
 app.distributed.sync_utils
 app.coordination.sync_base
 app.integration.unified_loop_extensions
@@ -151,7 +147,6 @@ app.models.multitask_heads
 app.models.transformer_model
 app.analysis.game_balance
 app.evaluation.human_eval
-app.config.schema
 app.rules.mutators.recovery
 app.rules.mutators.turn
 app.rules.validators.recovery

@@ -68,7 +68,6 @@ app/ai/
 │   ├── batched_gumbel_mcts.py  # GPU-batched Gumbel
 │   ├── gumbel_mcts_gpu.py      # GPU kernel integration
 │   ├── tensor_gumbel_tree.py   # Tensor-based tree (66KB)
-│   ├── entropy_mcts.py         # Entropy-regularized MCTS
 │   └── improved_mcts_ai.py     # Enhanced MCTS features
 │
 ├── GPU Engine (Production-Ready)
@@ -136,7 +135,6 @@ app/ai/
 │   ├── gmo_policy_provider.py  # GMO policy interface
 │   ├── cmaes_diversity.py      # CMA-ES with diversity
 │   ├── multi_opponent_fitness.py  # Multi-opponent evaluation
-│   ├── marl_framework.py       # Multi-agent RL framework
 │   └── neural_losses.py        # Custom loss functions
 │
 └── Archive

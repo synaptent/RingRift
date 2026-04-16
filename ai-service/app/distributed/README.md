@@ -761,7 +761,7 @@ The following are deprecated and will be removed in future versions:
 | Deprecated              | Replacement                         | Migration               |
 | ----------------------- | ----------------------------------- | ----------------------- |
 | `IngestionWAL`          | `UnifiedWAL`                        | Use `get_unified_wal()` |
-| `ClusterCoordinator`    | `app.coordination.task_coordinator` | See coordination module |
+| `cluster_coordinator`   | `app.coordination.task_coordinator` | Direct submodule only   |
 | `WriteAheadLog` (alias) | `UnifiedWAL`                        | Direct replacement      |
 
 ### Migration Example

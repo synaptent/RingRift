@@ -9,16 +9,16 @@ Status is current as of April 16, 2026.
 
 ## Current Scores
 
-| Category                | Score | Target | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------- | ----: | -----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Correctness             | `8.4` |  `9.0` | Full Python unit/contracts gate passes with `33519 passed, 8 skipped, 3 warnings in 1778.98s`; full TypeScript/Jest gate passes with `11742 passed, 200 skipped, 1 todo`, `582` suites passed, `50` suites skipped, and `1` snapshot passed in `282.328s`. `docs/REPRODUCIBILITY.md` points at the checked-in `ai-service/scripts/minimal_alphazero_loop.py` command surface, and its documented flags exist in the CLI.                                                                                           |
-| Navigability            | `8.5` |  `9.0` | A cold README pass reaches latest results from the first section, the minimal training loop from the quick-start block, and the engine source from the repository map. `ai-service/app/README.md` now describes the active Python package layout, archive boundary, and canonical import surfaces after the facade drains.                                                                                                                                                                                         |
-| Operational reliability | `7.1` |  `8.5` | The repo has strong pieces (`node_roles.yaml`, systemd units, `deploy_minimal_loops.sh`, health/status scripts), but a fresh clone still cannot deploy the full role-aware fleet from checked-in files alone because the runtime host inventory lives in untracked `ai-service/config/distributed_hosts.yaml`. Reboot behavior is split: systemd services are boot-persistent when installed/enabled, while the current minimal-loop canary path uses a `nohup` supervisor that must be restarted after reboot.    |
-| Surface-area discipline | `7.8` |  `8.5` | `app.training` is down to `23` root exports, `app.ai` now advertises `15` factory/profile exports, `app.db` advertises `8` root exports, and `app.rules` remains at `4`. The new surface dashboard ratchets top-level package export budgets and the `app.coordination` root file budget. Static AST import analysis now filters package/CLI/module entrypoints and reports `39` direct-unimported `app.*` files; the top candidates are retained until dynamic use is ruled out.                                  |
-| Credibility             | `8.1` |  `9.0` | The public docs are materially more honest: README, `docs/RESULTS.md`, `docs/REPRODUCIBILITY.md`, and `docs/LESSONS_LEARNED.md` use real results and caveats instead of vague claims. A secret scan found only placeholders/examples/test fixtures, not private keys or real API tokens. Current checked-in results still lag the operator-reported newest `square8_2p` promotion to about `1782` Elo, so claims remain conservative but need a refresh after evidence is checked in.                              |
-| Playability             | `8.3` |  `9.0` | Live `https://ringrift.ai/` now serves the public landing page instead of redirecting first-time visitors to login. The sandbox loads anonymously, labels the opponent as Neural AI, has rule/onboarding affordances, and fits a `375px` viewport without horizontal overflow. A live browser smoke test confirmed no console errors on landing or sandbox pages. Full end-game VictoryModal stats were verified by tests but still need a production-length human playthrough to confirm the entire visible path. |
+| Category                | Score | Target | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------- | ----: | -----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Correctness             | `8.4` |  `9.0` | Full Python unit/contracts gate passes with `33519 passed, 8 skipped, 3 warnings in 1778.98s`; full TypeScript/Jest gate passes with `11742 passed, 200 skipped, 1 todo`, `582` suites passed, `50` suites skipped, and `1` snapshot passed in `282.328s`. `docs/REPRODUCIBILITY.md` points at the checked-in `ai-service/scripts/minimal_alphazero_loop.py` command surface, and its documented flags exist in the CLI.                                                                                                                                                                                                                                         |
+| Navigability            | `8.5` |  `9.0` | A cold README pass reaches latest results from the first section, the minimal training loop from the quick-start block, and the engine source from the repository map. `ai-service/app/README.md` now describes the active Python package layout, archive boundary, and canonical import surfaces after the facade drains.                                                                                                                                                                                                                                                                                                                                       |
+| Operational reliability | `7.1` |  `8.5` | The repo has strong pieces (`node_roles.yaml`, systemd units, `deploy_minimal_loops.sh`, health/status scripts), but a fresh clone still cannot deploy the full role-aware fleet from checked-in files alone because the runtime host inventory lives in untracked `ai-service/config/distributed_hosts.yaml`. Reboot behavior is split: systemd services are boot-persistent when installed/enabled, while the current minimal-loop canary path uses a `nohup` supervisor that must be restarted after reboot.                                                                                                                                                  |
+| Surface-area discipline | `8.3` |  `8.5` | `app.training` is down to `23` root exports, `app.ai` advertises `15` factory/profile exports, `app.distributed` is down from `141` to `136` root exports, `app.db` advertises `8`, and `app.rules` remains at `4`. The surface dashboard now ratchets `app.distributed` at `140` exports and direct-unimported `app.*` files at `25`. Direct-unimported files dropped from `39` to `20` after deleting the 20 largest orphaned modules. Top-level import-cycle analysis reports `0` cycles.                                                                                                                                                                     |
+| Credibility             | `8.4` |  `9.0` | The public docs are materially more honest: README, `docs/RESULTS.md`, `docs/REPRODUCIBILITY.md`, and `docs/LESSONS_LEARNED.md` use real results and caveats instead of vague claims. Stale root clutter and generated artifacts were removed, active Markdown docs no longer contain local `/Users/armand/...` links, and `npm install` now generates Prisma before server startup. Secret scans found placeholders/examples/test fixtures, not private keys or real provider tokens. Current checked-in results still lag the operator-reported newest `square8_2p` promotion to about `1782` Elo, so claims remain conservative until evidence is checked in. |
+| Playability             | `8.3` |  `9.0` | Live `https://ringrift.ai/` now serves the public landing page instead of redirecting first-time visitors to login. The sandbox loads anonymously, labels the opponent as Neural AI, has rule/onboarding affordances, and fits a `375px` viewport without horizontal overflow. A live browser smoke test confirmed no console errors on landing or sandbox pages. Full end-game VictoryModal stats were verified by tests but still need a production-length human playthrough to confirm the entire visible path.                                                                                                                                               |
 
-Overall score: `8.0/10`. The weakest category is operational reliability, not
+Overall score: `8.2/10`. The weakest category is operational reliability, not
 game logic or presentation. The next improvements should make the checked-in
 operational story sufficient for a new operator to understand the fleet,
 deploy/restart it safely, and know which paths survive a reboot.
@@ -54,7 +54,7 @@ training infrastructure.
 - TypeScript gate: `npm test` passed with `11742 passed`, `200 skipped`, `1 todo`, `582` suites passed, `50` suites skipped, and `1` snapshot passed.
 - Reproducibility check: `docs/REPRODUCIBILITY.md` remains aligned with the `minimal_alphazero_loop.py` CLI flags used for checked-in results.
 - Live product check: `ringrift.ai` serves the public landing page, anonymous sandbox loads, Neural AI labeling is visible, and mobile width does not overflow.
-- Surface-area check: root training facade is contracted to `23` exports; coordination and distributed remain the main compatibility surfaces to continue draining.
+- Surface-area check: root training facade is contracted to `23` exports; `app.distributed` is contracted to `136/140` exports; direct-unimported `app.*` files are contracted to `20/25`; top-level `app` import-cycle count is `0`.
 
 ## Credibility Cleanup Log
 
@@ -102,10 +102,32 @@ April 16, 2026 credibility pass:
   `npm install && npm run dev` path still requires the documented `.env`,
   Postgres, and Redis setup before the backend can connect.
 
+## Surface Cleanup Log
+
+April 16, 2026 surface-area pass:
+
+- Deleted the 20 largest direct-unimported `app/` modules after checking for
+  direct imports, test-only imports, and daemon dynamic instantiation paths.
+  `UNIFIED_DATA_CATALOG` remains a deprecated daemon type, but its runner is a
+  no-op and no longer needs `app/coordination/unified_data_catalog.py`.
+- Reduced direct-unimported `app.*` files from `39` to `20`, then tightened the
+  contract budget from `60` to `25`.
+- Removed deprecated cluster-coordinator aliases from the `app.distributed`
+  package root. Active code had no `from app.distributed import
+ClusterCoordinator`-style imports; legacy callers must import
+  `app.distributed.cluster_coordinator` directly and receive that module's
+  deprecation warning.
+- Reduced `app.distributed` root exports from `141` to `136`, then tightened
+  its contract budget from `145` to `140`.
+- Ran `scripts/audit_import_graph.py --module-prefix app --report cycles
+--max-depth 8`: top-level imports report `0` cycles. Including local imports
+  reports lazy-import cycles and is tracked as intentional startup-cycle
+  mitigation rather than a top-level import failure signal.
+
 ## Active Batch Order
 
-1. Continue draining `app.coordination`, `app.distributed`, `app.metrics`, and `app.tournament` lazy compatibility exports toward explicit submodule imports.
-2. Continue reducing the `39` direct-unimported `app.*` candidates after confirming dynamic-entrypoint use.
+1. Continue draining `app.coordination`, `app.metrics`, and `app.tournament` lazy compatibility exports toward explicit submodule imports.
+2. Continue reducing the remaining `20` direct-unimported `app.*` candidates after confirming dynamic-entrypoint use.
 3. Refresh checked-in result docs after the newest training promotions have durable logs or artifacts.
 4. Verify a full production sandbox game to completion and confirm the visible VictoryModal stats path.
 

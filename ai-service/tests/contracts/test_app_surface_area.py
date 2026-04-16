@@ -19,7 +19,7 @@ TOP_LEVEL_EXPORT_BUDGETS = {
     "app.config": 65,
     "app.core": 55,
     "app.db": 10,
-    "app.distributed": 145,
+    "app.distributed": 140,
     "app.errors": 50,
     "app.evaluation": 25,
     "app.events": 10,
@@ -51,7 +51,7 @@ TOP_LEVEL_LINE_BUDGETS = {
     "app.coordination": 100,
 }
 
-DIRECT_UNIMPORTED_APP_FILE_BUDGET = 60
+DIRECT_UNIMPORTED_APP_FILE_BUDGET = 25
 
 
 @dataclass(frozen=True)

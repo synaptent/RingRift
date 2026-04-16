@@ -39,8 +39,6 @@ Backend Selection (December 2025):
 When to Use This:
 - **DistributedLock** (this module): Use for cross-node/cross-process
   coordination. Suitable for training locks, model registry, resource allocation.
-- **LockHierarchy** (app.core.locking): Use for in-process async coordination
-  with deadlock prevention through lock ordering.
 
 Usage:
     from app.coordination.distributed_lock import DistributedLock
@@ -303,7 +301,6 @@ class LockProtocol(Protocol):
     This protocol abstracts over different lock implementations:
     - DistributedLock (this module): Cross-node/cross-process coordination
     - SyncMutex (sync_mutex.py): SQLite-based mutex
-    - LockHierarchy (app.core.locking): In-process async locks with ordering
 
     Usage:
         def with_lock(lock: LockProtocol, operation: Callable):

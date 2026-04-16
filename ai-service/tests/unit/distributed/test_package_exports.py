@@ -30,7 +30,7 @@ def test_package_dir_lists_key_public_exports() -> None:
         assert name in dir(module)
 
 
-def test_package_dir_lists_lazy_deprecated_cluster_symbols() -> None:
+def test_package_dir_excludes_removed_deprecated_cluster_symbols() -> None:
     module = importlib.import_module("app.distributed")
 
     for name in (
@@ -40,18 +40,15 @@ def test_package_dir_lists_lazy_deprecated_cluster_symbols() -> None:
         "TaskInfo",
         "check_and_abort_if_role_held",
     ):
-        assert name in module.__all__
-        assert name in dir(module)
+        assert name not in module.__all__
+        assert name not in dir(module)
+        assert not hasattr(module, name)
 
 
-def test_lazy_deprecated_symbol_access_emits_warning() -> None:
-    module = importlib.import_module("app.distributed")
-
+def test_deprecated_cluster_coordinator_remains_direct_submodule_only() -> None:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        _ = module.ClusterCoordinator
+        module = importlib.import_module("app.distributed.cluster_coordinator")
 
-    warning_text = [str(item.message) for item in caught]
-    assert any("deprecated" in text.lower() for text in warning_text)
-    assert any("Q3 2026" in text for text in warning_text)
-    assert any("task_coordinator.TaskCoordinator" in text for text in warning_text)
+    assert hasattr(module, "ClusterCoordinator")
+    assert any("deprecated" in str(item.message).lower() for item in caught)
