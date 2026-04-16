@@ -19,7 +19,7 @@
  * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import type { GameState } from '../../shared/types/game';
 import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
@@ -94,10 +94,11 @@ export interface UseSandboxAITrackingReturn {
 export function useSandboxAITracking(
   engine: ClientSandboxEngine | null,
   gameState: GameState | null,
-  maybeRunSandboxAiIfNeeded: () => void
+  maybeRunSandboxAiIfNeeded: (engineOverride?: ClientSandboxEngine) => void
 ): UseSandboxAITrackingReturn {
   // AI thinking state: timestamp when AI started thinking on current turn
   const [aiThinkingStartedAt, setAiThinkingStartedAt] = useState<number | null>(null);
+  const aiThinkingTurnKeyRef = useRef<string | null>(null);
 
   // AI ladder health (AI service internal) – loaded on-demand from the devtools panel
   const [aiLadderHealth, setAiLadderHealth] = useState<Record<string, unknown> | null>(null);
@@ -110,6 +111,7 @@ export function useSandboxAITracking(
    */
   useEffect(() => {
     if (!engine || !gameState) {
+      aiThinkingTurnKeyRef.current = null;
       setAiThinkingStartedAt(null);
       return;
     }
@@ -119,12 +121,35 @@ export function useSandboxAITracking(
     const isAiTurn = gameState.gameStatus === 'active' && current && current.type === 'ai';
 
     if (isAiTurn) {
-      // Only set start time if not already set (avoid resetting mid-turn)
+      const turnKey = [
+        gameState.id,
+        gameState.currentPlayer,
+        gameState.currentPhase,
+        gameState.moveHistory.length,
+        gameState.history.length,
+      ].join(':');
+
+      if (aiThinkingTurnKeyRef.current !== turnKey) {
+        aiThinkingTurnKeyRef.current = turnKey;
+        setAiThinkingStartedAt(Date.now());
+        return;
+      }
+
       setAiThinkingStartedAt((prev) => prev ?? Date.now());
     } else {
+      aiThinkingTurnKeyRef.current = null;
       setAiThinkingStartedAt(null);
     }
-  }, [engine, gameState]);
+  }, [
+    engine,
+    gameState,
+    gameState?.id,
+    gameState?.currentPlayer,
+    gameState?.currentPhase,
+    gameState?.gameStatus,
+    gameState?.moveHistory.length,
+    gameState?.history.length,
+  ]);
 
   /**
    * Auto-trigger sandbox AI loop when the sandbox state reflects an active AI turn.
@@ -144,13 +169,23 @@ export function useSandboxAITracking(
     }
 
     const timeoutId = window.setTimeout(() => {
-      maybeRunSandboxAiIfNeeded();
+      maybeRunSandboxAiIfNeeded(engine);
     }, 60);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [engine, gameState, maybeRunSandboxAiIfNeeded]);
+  }, [
+    engine,
+    gameState,
+    gameState?.id,
+    gameState?.currentPlayer,
+    gameState?.currentPhase,
+    gameState?.gameStatus,
+    gameState?.moveHistory.length,
+    gameState?.history.length,
+    maybeRunSandboxAiIfNeeded,
+  ]);
 
   /**
    * Fetch AI ladder health from the AI service.
