@@ -28,6 +28,7 @@ Before deploying code or restarting a trainer, run the local preflight slice:
 
 ```bash
 cd ai-service
+PYTHONPATH=. python3 scripts/validate_training_fleet_docs.py
 PYTHONPATH=. python3 -m pytest -q tests/unit/scripts/test_minimal_alphazero_loop.py
 bash scripts/deploy_minimal_loops.sh --dry-run
 ```

@@ -14,6 +14,9 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 - [`docs/data/training_fleet_manifest.json`](/docs/data/training_fleet_manifest.json)
   - Checked-in role/config orientation manifest for the training fleet. Host inventory still comes from private runtime config.
 
+- [`validate_training_fleet_docs.py`](/ai-service/scripts/validate_training_fleet_docs.py)
+  - Read-only local preflight that cross-checks the fleet manifest, runbook, role file, canary deploy script, and systemd units before any SSH or deployment action.
+
 - [`minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py)
   - Canonical trainer loop for self-play, train, and evaluate on a single config.
 
@@ -84,14 +87,15 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 
 ## Current Supported Flow
 
-1. For supported trainer canaries, deploy with [`deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh).
-2. That script preflights [`minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py) locally before it restarts remote trainers.
-3. Trainers write live state to `<work-dir>/progress.json` and durable history to `<work-dir>/metrics.jsonl`.
-4. For the broader role-based fleet, use [`deploy_training_service.sh`](/ai-service/scripts/deploy_training_service.sh).
-5. Use [`docs/operations/TRAINING_FLEET_RUNBOOK.md`](/docs/operations/TRAINING_FLEET_RUNBOOK.md) and [`docs/data/training_fleet_manifest.json`](/docs/data/training_fleet_manifest.json) to distinguish boot-persistent systemd services from the `nohup` minimal-loop canary supervisor.
-6. Selfplay workers run [`policy_selfplay_worker.py`](/ai-service/scripts/policy_selfplay_worker.py).
-7. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/ai-service/scripts/ingest_policy_selfplay.py).
-8. Fleet state is checked with [`autonomy_fleet_check.py`](/ai-service/scripts/autonomy_fleet_check.py).
+1. Validate the checked-in fleet docs locally with [`validate_training_fleet_docs.py`](/ai-service/scripts/validate_training_fleet_docs.py).
+2. For supported trainer canaries, deploy with [`deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh).
+3. That script preflights [`minimal_alphazero_loop.py`](/ai-service/scripts/minimal_alphazero_loop.py) locally before it restarts remote trainers.
+4. Trainers write live state to `<work-dir>/progress.json` and durable history to `<work-dir>/metrics.jsonl`.
+5. For the broader role-based fleet, use [`deploy_training_service.sh`](/ai-service/scripts/deploy_training_service.sh).
+6. Use [`docs/operations/TRAINING_FLEET_RUNBOOK.md`](/docs/operations/TRAINING_FLEET_RUNBOOK.md) and [`docs/data/training_fleet_manifest.json`](/docs/data/training_fleet_manifest.json) to distinguish boot-persistent systemd services from the `nohup` minimal-loop canary supervisor.
+7. Selfplay workers run [`policy_selfplay_worker.py`](/ai-service/scripts/policy_selfplay_worker.py).
+8. Workers stage supplemental NPZ shards via [`ingest_policy_selfplay.py`](/ai-service/scripts/ingest_policy_selfplay.py).
+9. Fleet state is checked with [`autonomy_fleet_check.py`](/ai-service/scripts/autonomy_fleet_check.py).
 
 ## Everything Else
 
