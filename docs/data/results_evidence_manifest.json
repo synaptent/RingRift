@@ -14,6 +14,7 @@
       "claim_id": "hex8_2p_headline_1979_8",
       "statement": "hex8_2p improved from 1500.0 to 1979.8 Elo with 7 promotions.",
       "primary_source": "docs/data/results_snapshot.json",
+      "evidence_source": "s3://ringrift-models-20251214/archive/gh200-8/metrics.jsonl; promotion rows are summarized in docs/RESULTS.md.",
       "fields": {
         "config": "hex8_2p",
         "start_elo": 1500.0,
@@ -103,6 +104,12 @@
       "statement": "Detailed per-iteration metrics, promotion logs, and timing history require archived metrics.jsonl files.",
       "artifact_location": "s3://ringrift-models-20251214/archive/",
       "documented_in": "docs/REPRODUCIBILITY.md"
+    },
+    {
+      "claim_id": "baseline_elo_context",
+      "statement": "Random is approximately 400 Elo, heuristic approximately 1200 Elo, and MCTS-medium approximately 1700 Elo as calibration context.",
+      "artifact_location": "calibration/operator context; not a new training result",
+      "documented_in": "docs/RESULTS.md"
     },
     {
       "claim_id": "checkpoint_replayability",

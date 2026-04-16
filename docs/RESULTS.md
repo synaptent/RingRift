@@ -40,7 +40,33 @@ The current state is still not a universal success story, though: only `2` of `1
 - Latest verified v3 milestone: iteration `36` rejected at `50.0%` over `400` staged eval games
 - Interpretation: strong iterative improvement from the `1500` baseline to a checkpoint family that got very close to `2000`, then flattened on the current v3 line
 
+Promotion progression from the archived gh200-8 `metrics.jsonl`:
+
+| Iteration | Win Rate |         Eval Games | Result  | Estimated Elo |
+| --------- | -------: | -----------------: | ------- | ------------: |
+| `2`       |  `60.0%` |  `30` staged games | promote |      `1570.4` |
+| `7`       |  `60.0%` |  `50` staged games | promote |      `1640.8` |
+| `9`       |  `62.0%` |  `50` staged games | promote |      `1725.9` |
+| `13`      |  `60.0%` |  `50` staged games | promote |      `1796.3` |
+| `17`      |  `66.0%` |  `50` staged games | promote |      `1911.6` |
+| `21`      |  `58.0%` |  `50` staged games | promote |      `1967.6` |
+| `33`      |  `51.8%` | `400` staged games | promote |      `1979.8` |
+
 The scientific interpretation changed in one important way after the April 15 verification pass: the current supported v3 line now looks plateaued rather than merely noisy. The node is therefore doing the right next thing: keep the `1979.8` result as the supported flagship checkpoint, but spend new GPU time on a `v4` architecture experiment instead of pretending the existing line is still climbing cleanly.
+
+### `hex8_2p` v4 Experiment
+
+The active v4 run is an experiment, not a completed result.
+
+| Field            | Value                                                                        |
+| ---------------- | ---------------------------------------------------------------------------- |
+| Hypothesis       | A v4 attention-style architecture can break the current `hex8_2p` v3 plateau |
+| Baseline         | `1979.8` Elo from the supported v3/v2-family checkpoint                      |
+| Success criteria | Promote above `1979.8` within the experiment window                          |
+| Hardware         | `gh200-8`                                                                    |
+| Start date       | April 15, 2026                                                               |
+
+Until a completed v4 iteration promotes, the public claim remains the v3-family `1979.8` result.
 
 ### `square8_2p`
 
@@ -162,6 +188,21 @@ The current minimal loop uses staged evaluation with early exit for clear wins a
 | 4     |            `400` |  `> 50.1%` | otherwise reject |
 
 This replaced a weaker fixed-size eval regime that made near-threshold runs hard to interpret.
+
+## Strength Context
+
+Approximate calibration context for interpreting the headline Elo numbers:
+
+| Opponent / Baseline | Approximate Elo | Interpretation                                |
+| ------------------- | --------------: | --------------------------------------------- |
+| Random              |          `~400` | Legal-move baseline; useful only as a floor   |
+| Heuristic           |         `~1200` | Hand-built strategic baseline                 |
+| MCTS-medium         |         `~1700` | Search-heavy non-training baseline            |
+| `square8_2p` NN     |        `1782.0` | Now above the approximate MCTS-medium context |
+| `hex8_2p` NN        |        `1979.8` | Current flagship neural self-play result      |
+
+These baselines are approximate calibration anchors, not new training results.
+They are included to make the `1782.0` and `1979.8` claims easier to interpret.
 
 ## Limitations
 
