@@ -46,7 +46,7 @@ def find_host_config(name: str):
     for host_name, cfg in host_nodes.items():
         if normalize(host_name) == norm or norm in normalize(host_name) or normalize(host_name) in norm:
             return host_name, cfg
-    raise KeyError(f"Host not found for node role entry: {name}")
+    return None, None
 
 trainer_specs = {
     "hex8_2p": {
@@ -60,6 +60,19 @@ trainer_specs = {
         "train_lr_scheduler": "none",
         "train_window": 5,
         "work_dir": "data/minimal_loop_gh200-8",
+        "iterations": 50,
+    },
+    "hex8_3p": {
+        "board_type": "hex8",
+        "num_players": 3,
+        "games_per_iter": 100,
+        "selfplay_budget": 200,
+        "eval_budget": 128,
+        "lr": "5e-5",
+        "lr_schedule": "fixed",
+        "train_lr_scheduler": "none",
+        "train_window": 5,
+        "work_dir": "data/minimal_loop_hex8_3p",
         "iterations": 50,
     },
     "square8_2p": {
@@ -110,12 +123,39 @@ for node_name, role_cfg in role_nodes.items():
         continue
 
     host_name, host_cfg = find_host_config(node_name)
+    if host_cfg is None:
+        plan.append({
+            "node_name": node_name,
+            "role": role,
+            "target_config": str(role_cfg.get("target_config", "")).strip(),
+            "skip_reason": "no matching host entry in config/distributed_hosts.yaml",
+        })
+        continue
+
     ip = host_cfg.get("tailscale_ip") or host_cfg.get("ssh_host") or host_cfg.get("host")
     if not ip:
+        plan.append({
+            "node_name": node_name,
+            "host_name": host_name,
+            "role": role,
+            "target_config": str(role_cfg.get("target_config", "")).strip(),
+            "skip_reason": "host entry has no tailscale_ip, ssh_host, or host",
+        })
         continue
 
     target_config = str(role_cfg.get("target_config", "")).strip()
     trainer_spec = trainer_specs.get(target_config, {})
+    if role in {"trainer", "selfplay-worker"} and not trainer_spec:
+        plan.append({
+            "node_name": node_name,
+            "host_name": host_name,
+            "ip": ip,
+            "role": role,
+            "target_config": target_config,
+            "skip_reason": f"no trainer spec for target_config={target_config}",
+        })
+        continue
+
     entry = {
         "node_name": node_name,
         "host_name": host_name,
@@ -133,10 +173,13 @@ for node_name, role_cfg in role_nodes.items():
         feed_spec = trainer_specs.get(feed_target, {})
         if feed_name and feed_spec:
             _feed_host_name, feed_host_cfg = find_host_config(feed_name)
-            entry["trainer_ip"] = (
-                feed_host_cfg.get("tailscale_ip") or feed_host_cfg.get("ssh_host") or feed_host_cfg.get("host")
-            )
-            entry["trainer_work_dir"] = feed_spec.get("work_dir", "")
+            if feed_host_cfg is None:
+                entry["skip_reason"] = f"trainer host entry not found for feeds_trainer={feed_name}"
+            else:
+                entry["trainer_ip"] = (
+                    feed_host_cfg.get("tailscale_ip") or feed_host_cfg.get("ssh_host") or feed_host_cfg.get("host")
+                )
+                entry["trainer_work_dir"] = feed_spec.get("work_dir", "")
     plan.append(entry)
 
 print(json.dumps(plan))
@@ -172,9 +215,16 @@ while IFS= read -r row; do
   [[ -z "${row}" ]] && continue
   node_name="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["node_name"])' "${row}")"
   role="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["role"])' "${row}")"
-  ip="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["ip"])' "${row}")"
+  ip="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("ip",""))' "${row}")"
   target_config="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("target_config",""))' "${row}")"
+  skip_reason="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("skip_reason",""))' "${row}")"
   echo "=== ${node_name} (${role}${target_config:+ / ${target_config}} @ ${ip}) ==="
+
+  if [[ -n "${skip_reason}" ]]; then
+    echo "  Skipping deployment: ${skip_reason}"
+    echo ""
+    continue
+  fi
 
   if ${DRY_RUN}; then
     python3 - <<'PY' "${row}"

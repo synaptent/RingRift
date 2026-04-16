@@ -22,10 +22,12 @@ def test_dry_run_is_role_aware() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "gh200-8 (trainer / hex8_2p" in result.stdout
     assert "gh200-11 (selfplay-worker / hex8_2p" in result.stdout
-    assert "gh200-10 (evaluator" in result.stdout
+    assert "gh200-10 (trainer / hex8_3p" in result.stdout
+    assert "work_dir=data/minimal_loop_hex8_3p" in result.stdout
+    assert "vultr-a100-20gb (evaluator" in result.stdout
+    assert "Skipping deployment: no matching host entry in config/distributed_hosts.yaml" in result.stdout
     assert "ringrift-training.service" in result.stdout
     assert "ringrift-selfplay-worker.service" in result.stdout
-    assert "ringrift-evaluator.service" in result.stdout
     assert "install the current ringrift-p2p.service and keep it enabled" in result.stdout
 
 

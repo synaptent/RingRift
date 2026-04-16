@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import importlib
+import sys
 import warnings
 
 
 def test_package_dir_lists_declared_legacy_rules_surface() -> None:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        module = importlib.import_module("app.rules.legacy")
+        existing = sys.modules.get("app.rules.legacy")
+        module = (
+            importlib.import_module("app.rules.legacy")
+            if existing is None
+            else importlib.reload(existing)
+        )
 
     warning_text = [
         str(warning.message)

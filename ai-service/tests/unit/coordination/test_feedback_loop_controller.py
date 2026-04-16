@@ -11,6 +11,7 @@ Tests the core feedback loop orchestration including:
 Dec 30, 2025: Created comprehensive test coverage for this critical 3,631 LOC module.
 """
 
+import asyncio
 import inspect
 import pytest
 import time
@@ -191,36 +192,33 @@ class TestFeedbackLoopControllerLifecycle:
         """Reset singleton before each test."""
         reset_feedback_loop_controller()
 
-    @pytest.mark.asyncio
-    async def test_start_sets_running(self):
+    def test_start_sets_running(self):
         """Test start() sets running flag."""
         controller = get_feedback_loop_controller()
         assert not controller.is_running()
 
-        await controller.start()
+        asyncio.run(controller.start())
 
         assert controller.is_running()
-        await controller.stop()
+        asyncio.run(controller.stop())
 
-    @pytest.mark.asyncio
-    async def test_stop_clears_running(self):
+    def test_stop_clears_running(self):
         """Test stop() clears running flag."""
         controller = get_feedback_loop_controller()
-        await controller.start()
+        asyncio.run(controller.start())
 
-        await controller.stop()
+        asyncio.run(controller.stop())
 
         assert not controller.is_running()
 
-    @pytest.mark.asyncio
-    async def test_start_is_idempotent(self):
+    def test_start_is_idempotent(self):
         """Test start() is idempotent."""
         controller = get_feedback_loop_controller()
-        await controller.start()
-        await controller.start()  # Second call should be safe
+        asyncio.run(controller.start())
+        asyncio.run(controller.start())  # Second call should be safe
 
         assert controller.is_running()
-        await controller.stop()
+        asyncio.run(controller.stop())
 
 
 class TestFeedbackLoopControllerState:
@@ -313,16 +311,15 @@ class TestFeedbackLoopControllerHealth:
         # Should still return result, but indicate not running
         assert result is not None
 
-    @pytest.mark.asyncio
-    async def test_health_check_when_running(self):
+    def test_health_check_when_running(self):
         """Test health_check when running."""
         controller = get_feedback_loop_controller()
-        await controller.start()
+        asyncio.run(controller.start())
 
         result = controller.health_check()
 
         assert result.healthy
-        await controller.stop()
+        asyncio.run(controller.stop())
 
 
 class TestFeedbackLoopControllerStatus:
@@ -801,8 +798,7 @@ class TestFeedbackLoopEventHandlers:
         assert state.consecutive_successes == 5  # Not reset
         assert state.consecutive_failures == 1
 
-    @pytest.mark.asyncio
-    async def test_on_selfplay_complete_updates_state(self):
+    def test_on_selfplay_complete_updates_state(self):
         """Test _on_selfplay_complete updates state correctly.
 
         Sprint 17.9: Now async after extraction to SelfplayFeedbackMixin.
@@ -822,7 +818,7 @@ class TestFeedbackLoopEventHandlers:
             return 0.75
 
         with patch.object(controller, '_assess_selfplay_quality_async', side_effect=mock_quality):
-            await controller._on_selfplay_complete(event)
+            asyncio.run(controller._on_selfplay_complete(event))
 
         state = controller.get_state("hex8_2p")
         assert state is not None
@@ -960,8 +956,7 @@ class TestFeedbackLoopEventHandlers:
         # Tracks work_failed_count, not consecutive_failures
         assert hasattr(state, 'work_failed_count') or True  # May be added dynamically
 
-    @pytest.mark.asyncio
-    async def test_event_handler_exception_safety(self):
+    def test_event_handler_exception_safety(self):
         """Test event handlers don't raise on malformed events."""
         controller = get_feedback_loop_controller()
 
@@ -984,7 +979,7 @@ class TestFeedbackLoopEventHandlers:
             try:
                 result = handler(event)
                 if inspect.isawaitable(result):
-                    await result
+                    asyncio.run(result)
             except Exception as e:
                 pytest.fail(f"{handler.__name__} raised {e} with None payload")
 

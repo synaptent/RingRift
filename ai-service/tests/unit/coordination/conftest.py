@@ -19,6 +19,37 @@ import pytest
 import pytest_asyncio
 
 # =============================================================================
+# EVENT LOOP SAFETY FIXTURES
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def ensure_coordination_event_loop():
+    """Provide a current event loop for mixed sync/async coordination tests.
+
+    Coordination tests intentionally mix ``asyncio.run(...)`` in synchronous
+    tests with ``@pytest.mark.asyncio`` tests. On Python 3.13, those sync calls
+    can leave the main thread without a current loop, and ``pytest-asyncio``
+    then fails while wrapping the next async test.
+
+    Keep the fix scoped to this test tree rather than changing repo-wide
+    asyncio behavior.
+    """
+    created_loop = None
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        created_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(created_loop)
+
+    yield
+
+    if created_loop is not None:
+        created_loop.close()
+        asyncio.set_event_loop(None)
+
+
+# =============================================================================
 # TEMPORARY DATABASE FIXTURES
 # =============================================================================
 
