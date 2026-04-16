@@ -51,6 +51,7 @@ def _inference_probe(
     board_type: "BoardType",  # noqa: F821 – lazy import
     num_players: int,
     budget: int,
+    model_version: str | None = None,
 ) -> tuple[bool, list[str], dict]:
     """Load candidate, play 10 moves from start, check policy/value sanity.
 
@@ -76,6 +77,7 @@ def _inference_probe(
         nn_model_id=candidate_path,
         allow_fresh_weights=False,
         use_gpu_tree=True,
+        nn_model_version=model_version if model_version and model_version != "v2" else None,
     )
 
     try:
@@ -290,6 +292,7 @@ def run_training_probes(
     board_type: "BoardType",  # noqa: F821
     num_players: int,
     budget: int,
+    model_version: str | None = None,
 ) -> ProbeResult:
     """Run all training probes and return aggregated result.
 
@@ -326,6 +329,7 @@ def run_training_probes(
         try:
             crit, warns, details = _inference_probe(
                 candidate_path, board_type, num_players, budget,
+                model_version=model_version,
             )
             result.details["inference"] = details
             if crit:

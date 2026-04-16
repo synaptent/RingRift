@@ -934,6 +934,7 @@ def main() -> None:
         if not args.skip_probes:
             probe = run_training_probes(
                 str(cpath), str(best), ti, BOARD_ENUM, NUM_PLAYERS, eval_budget,
+                model_version=MODEL_VERSION,
             )
             if probe.critical:
                 logger.error(f"TRAINING PROBE FAILED: {probe.summary}")
