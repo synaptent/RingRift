@@ -91,6 +91,10 @@ case "$CONFIG" in
       --games-per-iter 100
       --selfplay-budget 200
       --eval-budget 128
+      --lr 5e-5
+      --lr-schedule fixed
+      --train-lr-scheduler none
+      --train-window 5
       --iterations "$ITERATIONS"
     )
     ;;
@@ -104,6 +108,7 @@ case "$CONFIG" in
       --eval-budget 128
       --lr 5e-5
       --lr-schedule fixed
+      --train-lr-scheduler none
       --train-window 3
       --iterations "$ITERATIONS"
     )

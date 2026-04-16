@@ -7,6 +7,7 @@ machine-readable snapshot aligned on the current headline numbers.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -143,6 +144,7 @@ DATA_PIPELINE_ORCHESTRATOR_MODULE = (
 TASK_COORDINATOR_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "task_coordinator.py"
 ASYNC_TRAINING_BRIDGE_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "async_training_bridge.py"
 TRAINING_PROTOCOL_MODULE = REPO_ROOT / "ai-service" / "app" / "coordination" / "training_protocol.py"
+RUN_PROVEN_EXPERIMENT = REPO_ROOT / "scripts" / "run_proven_experiment.sh"
 
 
 def _extract_table_rows(path: Path) -> dict[str, list[str]]:
@@ -190,6 +192,48 @@ def test_public_results_docs_match_results_snapshot() -> None:
 
         assert results_best_elo == research_best_elo == brief_best_elo == snapshot_best_elo
         assert results_promotions == research_promotions == brief_promotions == snapshot_promotions
+
+
+def test_hex8_proven_experiment_command_matches_reproducibility_flags() -> None:
+    result = subprocess.run(
+        [
+            str(RUN_PROVEN_EXPERIMENT),
+            "hex8_2p",
+            "--iterations",
+            "50",
+            "--work-dir",
+            "data/minimal_loop_hex8_2p",
+            "--python",
+            "python3",
+            "--print-only",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = result.stdout
+    expected_flags = (
+        "scripts/minimal_alphazero_loop.py",
+        "--model models/canonical_hex8_2p.pth",
+        "--work-dir data/minimal_loop_hex8_2p",
+        "--board-type hex8",
+        "--num-players 2",
+        "--iterations 50",
+        "--games-per-iter 100",
+        "--selfplay-budget 200",
+        "--eval-budget 128",
+        "--lr 5e-5",
+        "--lr-schedule fixed",
+        "--train-lr-scheduler none",
+        "--train-window 5",
+    )
+
+    for flag in expected_flags:
+        assert flag in output
 
 
 def test_current_status_doc_is_explicitly_historical() -> None:
