@@ -1192,6 +1192,7 @@ def main() -> None:
 
         # 4.5 MODEL QUALITY GATE — reject degenerate candidates before promotion
         quality_blocked = False
+        quality_gate_record: dict[str, Any] | None = None
         if qg_tracker is not None:
             quality = check_model_quality(qg_tracker)
             if quality.critical:
@@ -1201,6 +1202,27 @@ def main() -> None:
                 logger.warning(f"Quality gate warnings: {quality.summary}")
             else:
                 logger.info(f"  quality gate passed")
+            # Fold the full verdict into metrics so downstream consumers
+            # (refresh_experiment_status.py, plateau detector, eval evidence
+            # dashboards) can see per-seat WR and other diagnostics without
+            # having to re-derive them from logs.  Attempt JSON round-trip to
+            # guard against any non-serializable debug payload leaking in.
+            try:
+                raw_record = {
+                    "passed": bool(quality.passed),
+                    "critical": bool(quality.critical),
+                    "warnings": list(quality.warnings),
+                    "summary": str(quality.summary),
+                    "details": dict(quality.details),
+                }
+                quality_gate_record = json.loads(json.dumps(raw_record, default=str))
+            except (TypeError, ValueError) as exc:
+                logger.debug("quality gate serialization skipped: %s", exc)
+                quality_gate_record = {
+                    "passed": bool(quality.passed),
+                    "critical": bool(quality.critical),
+                    "warnings": list(quality.warnings),
+                }
 
         # 5. PROMOTE / REJECT — decision comes from staged evaluation
         wr = ev["win_rate"]
@@ -1224,6 +1246,8 @@ def main() -> None:
             "total_promotions": promos, "iteration_time_s": round(iel, 1),
             **exp_params,
         }
+        if quality_gate_record is not None:
+            metrics["quality_gate"] = quality_gate_record
 
         # Plateau detection (A2 / plan #79). Diagnostic by default; when the
         # explicit opt-in flag is set, a detected plateau arms relaxed staged
