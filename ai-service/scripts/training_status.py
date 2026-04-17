@@ -220,6 +220,25 @@ supervisor_hb = "/tmp/supervisor_%s.heartbeat" % config
 metrics_tail = tail(str(Path(work_dir) / "metrics.jsonl"), 3)
 metrics_rows = parse_json_lines(metrics_tail)
 supervisor_payload = read_json(supervisor_hb) or {{}}
+
+progress_path = Path(work_dir) / "progress.json"
+progress_payload = read_json(str(progress_path)) or None
+
+eval_checkpoint = None
+eval_checkpoint_path = None
+eval_checkpoint_iteration = None
+try:
+    eval_candidates = sorted(Path(work_dir).glob("iter_*_eval.json"))
+    if eval_candidates:
+        latest = eval_candidates[-1]
+        eval_checkpoint_path = str(latest)
+        eval_checkpoint = read_json(eval_checkpoint_path) or None
+        try:
+            eval_checkpoint_iteration = int(latest.stem.split("_")[1])
+        except (IndexError, ValueError):
+            eval_checkpoint_iteration = None
+except OSError:
+    pass
 log_paths = [
     "/tmp/minimal_alphazero_%s.log" % config,
     "/tmp/minimal_alphazero.log",
@@ -267,6 +286,10 @@ print(json.dumps({{
     "supervisor_pid_from_heartbeat": supervisor_payload.get("supervisor_pid"),
     "metrics_tail": metrics_rows,
     "latest_metrics": metrics_rows[-1] if metrics_rows else None,
+    "progress_payload": progress_payload,
+    "eval_checkpoint": eval_checkpoint,
+    "eval_checkpoint_path": eval_checkpoint_path,
+    "eval_checkpoint_iteration": eval_checkpoint_iteration,
     "log_path": log_path,
     "last_error": "\\n".join(error_lines[-6:]),
     "model_exists": Path(model).exists(),
@@ -321,6 +344,82 @@ def ssh_probe_node(
         }
 
 
+# Standard cumulative eval-stage targets (games played by end of each stage).
+# Matches staged_evaluate() in minimal_alphazero_loop.py.
+EVAL_STAGE_TARGETS: tuple[int, ...] = (50, 100, 200, 400)
+
+
+def _derive_eval_progress(
+    checkpoint: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Turn an iter_N_eval.json checkpoint into a live progress summary.
+
+    Returns None when no checkpoint is available. When a checkpoint is present
+    but malformed, returns a best-effort summary with the fields that could be
+    parsed — callers should check ``games_played`` before trusting derived
+    fields.
+    """
+    if not isinstance(checkpoint, dict):
+        return None
+    try:
+        cw = int(checkpoint.get("candidate_wins", 0) or 0)
+        bw = int(checkpoint.get("best_wins", 0) or 0)
+        draws = int(checkpoint.get("draws", 0) or 0)
+        played = int(checkpoint.get("games_played", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    seat_outcomes = checkpoint.get("seat_outcomes") or []
+    decided = cw + bw
+    running_wr = round(cw / decided, 3) if decided > 0 else None
+
+    stage_targets = list(EVAL_STAGE_TARGETS)
+    # A stage is "complete" once games_played reaches its target. The stage
+    # currently being worked through is the next one after the last completed
+    # stage, capped at the final stage.
+    stages_completed = sum(1 for target in stage_targets if played >= target)
+    current_stage = min(stages_completed + 1, len(stage_targets))
+    remaining_targets = [t for t in stage_targets if played < t]
+    next_target = remaining_targets[0] if remaining_targets else stage_targets[-1]
+
+    seat_games: dict[int, int] = {}
+    seat_wins: dict[int, int] = {}
+    for outcome in seat_outcomes:
+        if not isinstance(outcome, dict):
+            continue
+        try:
+            seat = int(outcome["candidate_player"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        seat_games[seat] = seat_games.get(seat, 0) + 1
+        if outcome.get("won"):
+            seat_wins[seat] = seat_wins.get(seat, 0) + 1
+
+    seat_wr_partial: dict[int, float] | None = None
+    seat_imbalance_ratio: float | None = None
+    if seat_games:
+        seat_wr_partial = {
+            seat: round(seat_wins.get(seat, 0) / games, 3) if games > 0 else 0.0
+            for seat, games in sorted(seat_games.items())
+        }
+        wrs = list(seat_wr_partial.values())
+        if wrs and min(wrs) > 0:
+            seat_imbalance_ratio = round(max(wrs) / min(wrs), 2)
+
+    return {
+        "games_played": played,
+        "candidate_wins": cw,
+        "best_wins": bw,
+        "draws": draws,
+        "running_wr": running_wr,
+        "current_stage": current_stage,
+        "next_stage_target": next_target,
+        "stage_targets": stage_targets,
+        "seat_games": dict(sorted(seat_games.items())) or None,
+        "seat_wr_partial": seat_wr_partial,
+        "seat_imbalance_ratio": seat_imbalance_ratio,
+    }
+
+
 def _merge_status(
     node: TrainingNode,
     heartbeat: dict[str, Any] | None,
@@ -363,6 +462,7 @@ def _merge_status(
         out.update(ssh_status)
         hb_age = ssh_status.get("supervisor_heartbeat_age_seconds")
         out["supervisor_heartbeat_age"] = format_age(hb_age) if isinstance(hb_age, (int, float)) else "unknown"
+        out["eval_progress"] = _derive_eval_progress(ssh_status.get("eval_checkpoint"))
     return out
 
 
@@ -422,6 +522,24 @@ def print_table(rows: list[dict[str, Any]]) -> None:
             f"{'y' if supervisor_alive else 'n' if supervisor_alive is False else '?':<5} "
             f"{_status_label(row)}"
         )
+        ep = row.get("eval_progress")
+        if ep:
+            parts = [
+                f"stage {ep['current_stage']}/{len(ep['stage_targets'])}",
+                f"games {ep['games_played']}/{ep['next_stage_target']}",
+            ]
+            running_wr = ep.get("running_wr")
+            if running_wr is not None:
+                parts.append(f"wr={running_wr:.1%}")
+            parts.append(f"cand {ep['candidate_wins']}-{ep['best_wins']} best")
+            seat_wr = ep.get("seat_wr_partial")
+            if seat_wr:
+                seat_str = " ".join(f"s{s}={wr:.0%}" for s, wr in seat_wr.items())
+                parts.append(f"seats[{seat_str}]")
+            imbalance = ep.get("seat_imbalance_ratio")
+            if imbalance is not None and imbalance >= 1.5:
+                parts.append(f"imbalance={imbalance}x")
+            print(f"{'':<10} eval: {' | '.join(parts)}")
         if row.get("last_error"):
             print(f"{'':<10} last_error: {str(row['last_error']).splitlines()[-1][:140]}")
         elif row.get("ssh_error"):

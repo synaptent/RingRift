@@ -223,6 +223,12 @@ def _build_experiment_from_status(
     seat_fairness = extract_seat_fairness(metric)
     if seat_fairness:
         experiment["seat_fairness"] = seat_fairness
+    # Live eval progress (only present when training_status.py --ssh probed a
+    # node mid-eval and that node was writing iter_N_eval.json checkpoints).
+    # Field is set by training_status._derive_eval_progress and may be None.
+    eval_progress = entry.get("eval_progress")
+    if isinstance(eval_progress, dict):
+        experiment["eval_progress"] = eval_progress
     if entry.get("gpu_utilization_pct") is not None:
         experiment["gpu_utilization_pct"] = _coerce_float(entry.get("gpu_utilization_pct"))
     if entry.get("gpu_memory_used_mb") is not None:
