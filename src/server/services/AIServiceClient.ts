@@ -52,14 +52,22 @@ const BREAKER_STATE_GAUGE_VALUE: Record<BreakerState, number> = {
  * Circuit breaker to prevent hammering a failing AI service.
  *
  * D5 (issue #82) instruments every state transition with Prometheus
- * metrics so alerting / dashboards can distinguish a flapping breaker
- * from a stably-open one.
+ * metrics. #85 collapsed the dual `isOpen`/`state` representation to a
+ * single state machine — `isOpen` is now a derived getter. #83 fixed
+ * the half-open concurrency hole: only one in-flight trial request is
+ * allowed through during the probe window; all others short-circuit
+ * to the "breaker is open" error until the trial resolves.
  */
-class CircuitBreaker {
+export class CircuitBreaker {
   private failureCount = 0;
   private lastFailureTime = 0;
-  private isOpen = false;
   private state: BreakerState = 'closed';
+  /**
+   * Set while a half-open trial request is in flight. Guarantees only one
+   * request reaches the service during the probe window regardless of how
+   * many concurrent callers arrive at the same time.
+   */
+  private trialInFlight = false;
   private readonly threshold = 5; // failures before opening
   private readonly timeout = 60000; // 1 minute cooldown
 
@@ -69,20 +77,30 @@ class CircuitBreaker {
     this.emitState();
   }
 
+  /** True when the breaker is tripped and not currently probing. */
+  private get isOpen(): boolean {
+    return this.state === 'open';
+  }
+
   async execute<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.isOpen) {
+    if (this.state === 'open') {
       const now = Date.now();
       if (now - this.lastFailureTime > this.timeout) {
-        // Enter half-open: one trial request allowed through. reset()
-        // below will update state to "closed" on success or "open" on
-        // failure via recordFailure().
+        // Cooldown elapsed — move to half-open and let THIS caller be
+        // the one trial request. Subsequent concurrent callers will see
+        // state='half_open' + trialInFlight=true and short-circuit.
         this.transitionTo('half_open');
+        this.trialInFlight = true;
         logger.info('Circuit breaker transitioning from open to half-open');
       } else {
         throw new Error('Circuit breaker is open - AI service temporarily unavailable');
       }
+    } else if (this.state === 'half_open' && this.trialInFlight) {
+      // Another caller is currently proving recovery; do not add load.
+      throw new Error('Circuit breaker is open - AI service temporarily unavailable');
     }
 
+    const wasTrial = this.state === 'half_open' && this.trialInFlight;
     try {
       const result = await fn();
       this.reset();
@@ -90,33 +108,34 @@ class CircuitBreaker {
     } catch (error) {
       this.recordFailure();
       throw error;
+    } finally {
+      if (wasTrial) {
+        this.trialInFlight = false;
+      }
     }
   }
 
   private recordFailure(): void {
     this.failureCount++;
     this.lastFailureTime = Date.now();
-    if (this.failureCount >= this.threshold) {
-      if (this.state !== 'open') {
-        this.transitionTo('open');
-        logger.warn('Circuit breaker opened after repeated failures', {
-          failureCount: this.failureCount,
-          threshold: this.threshold,
-        });
-      }
-      this.isOpen = true;
+    if (this.failureCount >= this.threshold && this.state !== 'open') {
+      this.transitionTo('open');
+      logger.warn('Circuit breaker opened after repeated failures', {
+        failureCount: this.failureCount,
+        threshold: this.threshold,
+      });
     }
   }
 
   private reset(): void {
-    if (this.failureCount > 0 || this.isOpen) {
+    if (this.failureCount > 0 || this.state !== 'closed') {
       logger.info('Circuit breaker reset', {
         previousFailures: this.failureCount,
         wasOpen: this.isOpen,
+        fromState: this.state,
       });
     }
     this.failureCount = 0;
-    this.isOpen = false;
     if (this.state !== 'closed') {
       this.transitionTo('closed');
     }
@@ -154,13 +173,20 @@ class CircuitBreaker {
 
   /**
    * Check if the circuit breaker is currently open.
+   *
+   * Returns true when no request should be dispatched to the real service:
+   * either the breaker is fully open, or a trial request is already in
+   * flight during the half-open probe window.
    */
   isCircuitOpen(): boolean {
-    if (this.isOpen) {
+    if (this.state === 'open') {
       const now = Date.now();
       if (now - this.lastFailureTime > this.timeout) {
-        return false; // Would transition to half-open
+        return false; // Would transition to half-open on next execute()
       }
+      return true;
+    }
+    if (this.state === 'half_open' && this.trialInFlight) {
       return true;
     }
     return false;
