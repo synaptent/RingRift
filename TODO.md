@@ -30,6 +30,7 @@ Do not treat this tracker as a duplicate status dashboard. Use the canonical sou
 3. Continue the in-repo cleanup program in [docs/CODEBASE_QUALITY_PROGRAM.md](docs/CODEBASE_QUALITY_PROGRAM.md), especially surface-area discipline and operational reliability.
 4. Continue reducing source-of-truth drift across docs, snapshots, public entrypoints, and runbooks.
 5. Continue contracting `ai-service/app/coordination` and other large package facades toward explicit submodule imports.
+6. Execute [docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md](docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md) — quality, strength, diversity, and production-experience plan; Week 1 tasks tracked as GitHub issues.
 
 ## What Remains Unproven Or Weak
 
@@ -52,3 +53,4 @@ When a doc and a snapshot disagree, fix the source-of-truth boundary first inste
 - [CURRENT_STATUS.md](docs/CURRENT_STATUS.md)
 - [PART3_INFRASTRUCTURE_ROADMAP.md](docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
 - [TRAINING_INFRASTRUCTURE_STRATEGY.md](docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)
+- [AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md](docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md)
