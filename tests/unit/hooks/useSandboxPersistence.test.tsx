@@ -486,6 +486,67 @@ describe('useSandboxPersistence', () => {
       expect(mockStoreGameLocally).toHaveBeenCalled();
     });
 
+    it('saves anonymous sandbox autosaves locally without calling the replay service', async () => {
+      const gameStateMock = {
+        gameId: 'anonymous-game-id',
+        id: 'anonymous-game-id',
+        board: { type: 'square8', cells: {} },
+        players: [
+          { number: 1, rings: [], markers: [], victoryCondition: null },
+          { number: 2, rings: [], markers: [], victoryCondition: null },
+        ],
+        currentPlayer: 1,
+        currentPhase: 'placement',
+        moveHistory: [] as unknown[],
+        placedRingCount: 0,
+      } as GameState;
+
+      const mockEngine = {
+        getGameState: jest.fn().mockReturnValue(gameStateMock),
+        getVictoryResult: jest.fn().mockReturnValue(null),
+      } as unknown as ClientSandboxEngine;
+
+      mockStoreGameLocally.mockResolvedValue({ success: true });
+      mockGetPendingCount.mockResolvedValue(0);
+
+      const { result, rerender } = renderHook(
+        ({ stateVersion }) =>
+          useSandboxPersistence({
+            engine: mockEngine,
+            playerTypes: ['human', 'ai'],
+            numPlayers: 2,
+            stateVersion,
+            serverPersistenceEnabled: false,
+          }),
+        { initialProps: { stateVersion: 0 } }
+      );
+
+      gameStateMock.moveHistory = [{ type: 'place_ring' }];
+      (mockEngine.getVictoryResult as jest.Mock).mockReturnValue({
+        winner: 1,
+        reason: 'ring_elimination',
+      });
+
+      rerender({ stateVersion: 1 });
+
+      await waitFor(() => {
+        expect(result.current.gameSaveStatus).toBe('saved-local');
+      });
+
+      expect(mockStoreGame).not.toHaveBeenCalled();
+      expect(mockStoreGameLocally).toHaveBeenCalledWith(
+        expect.anything(),
+        gameStateMock,
+        gameStateMock.moveHistory,
+        expect.objectContaining({
+          localOnly: true,
+          skipServerSync: true,
+          syncPolicy: 'local_only',
+        })
+      );
+      expect(result.current.pendingLocalGames).toBe(0);
+    });
+
     it('sets error status when both server and local save fail', async () => {
       const gameStateMock = {
         gameId: 'test-game-id',

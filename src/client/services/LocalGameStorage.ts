@@ -25,6 +25,9 @@ export interface LocalGameRecord {
     winnerPlayerNumber?: number | null;
     gameId?: string;
     submittedForTraining?: boolean;
+    localOnly?: boolean;
+    skipServerSync?: boolean;
+    syncPolicy?: 'sync_when_available' | 'local_only';
     [key: string]: unknown;
   };
   createdAt: string;
@@ -77,6 +80,8 @@ export async function storeGameLocally(
 ): Promise<{ success: boolean; id: string }> {
   try {
     const db = await openDatabase();
+    const shouldQueueForSync =
+      metadata.skipServerSync !== true && metadata.syncPolicy !== 'local_only';
     const record: LocalGameRecord = {
       id: generateId(),
       initialState,
@@ -84,7 +89,7 @@ export async function storeGameLocally(
       moves,
       metadata,
       createdAt: new Date().toISOString(),
-      synced: false,
+      synced: !shouldQueueForSync,
     };
 
     return new Promise((resolve, reject) => {
@@ -124,7 +129,14 @@ export async function getUnsyncedGames(): Promise<LocalGameRecord[]> {
 
       request.onsuccess = () => {
         const allRecords = request.result as LocalGameRecord[];
-        resolve(allRecords.filter((record) => record.synced === false));
+        resolve(
+          allRecords.filter(
+            (record) =>
+              record.synced === false &&
+              record.metadata?.skipServerSync !== true &&
+              record.metadata?.syncPolicy !== 'local_only'
+          )
+        );
       };
 
       request.onerror = () => {
@@ -223,7 +235,12 @@ export async function getPendingCount(): Promise<number> {
 
       request.onsuccess = () => {
         const allRecords = request.result as LocalGameRecord[];
-        const pendingCount = allRecords.filter((record) => record.synced === false).length;
+        const pendingCount = allRecords.filter(
+          (record) =>
+            record.synced === false &&
+            record.metadata?.skipServerSync !== true &&
+            record.metadata?.syncPolicy !== 'local_only'
+        ).length;
         resolve(pendingCount);
       };
 

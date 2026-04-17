@@ -62,6 +62,8 @@ export interface SandboxPersistenceOptions {
   defaultAutoSave?: boolean;
   /** Sandbox state version (to trigger re-evaluation when state changes) */
   stateVersion?: number;
+  /** Whether autosave should write to the replay service instead of local-only storage. */
+  serverPersistenceEnabled?: boolean;
 }
 
 /**
@@ -94,7 +96,14 @@ export interface SandboxPersistenceState {
  * Hook for managing sandbox game persistence and sync.
  */
 export function useSandboxPersistence(options: SandboxPersistenceOptions): SandboxPersistenceState {
-  const { engine, playerTypes, numPlayers, defaultAutoSave = true, stateVersion = 0 } = options;
+  const {
+    engine,
+    playerTypes,
+    numPlayers,
+    defaultAutoSave = true,
+    stateVersion = 0,
+    serverPersistenceEnabled = true,
+  } = options;
 
   // Derive victory result from engine
   const victoryResult = engine?.getVictoryResult() ?? null;
@@ -138,6 +147,12 @@ export function useSandboxPersistence(options: SandboxPersistenceOptions): Sandb
 
   // Start game sync service and subscribe to state updates
   useEffect(() => {
+    if (!serverPersistenceEnabled) {
+      setSyncState(null);
+      setPendingLocalGames(0);
+      return;
+    }
+
     GameSyncService.start();
     const unsubscribe = GameSyncService.subscribe((state) => {
       setSyncState(state);
@@ -183,8 +198,55 @@ export function useSandboxPersistence(options: SandboxPersistenceOptions): Sandb
         winnerPlayerNumber: victoryResult.winner,
       };
 
+      const saveLocally = async (localOnly: boolean): Promise<void> => {
+        // Fallback to IndexedDB local storage
+        try {
+          const localResult = await storeGameLocally(
+            initialState,
+            finalState,
+            finalState.moveHistory as unknown[],
+            !localOnly
+              ? metadata
+              : {
+                  ...metadata,
+                  localOnly: true,
+                  skipServerSync: true,
+                  syncPolicy: 'local_only',
+                }
+          );
+
+          if (localResult.success) {
+            gameSavedRef.current = true;
+            setGameSaveStatus('saved-local');
+            const newCount = await getPendingCount();
+            setPendingLocalGames(newCount);
+            toast.success(
+              !localOnly
+                ? 'Game saved locally (will sync when server available)'
+                : 'Game saved locally',
+              {
+                icon: '💾',
+              }
+            );
+          } else {
+            setGameSaveStatus('error');
+            toast.error('Failed to save game');
+          }
+        } catch (localError) {
+          console.error('[useSandboxPersistence] Local storage also failed:', localError);
+          setGameSaveStatus('error');
+          toast.error('Failed to save game (storage unavailable)');
+        }
+      };
+
+      setGameSaveStatus('saving');
+
+      if (!serverPersistenceEnabled) {
+        await saveLocally(true);
+        return;
+      }
+
       try {
-        setGameSaveStatus('saving');
         const replayService = getReplayService();
         const result = await replayService.storeGame({
           gameId: finalState.id,
@@ -211,37 +273,20 @@ export function useSandboxPersistence(options: SandboxPersistenceOptions): Sandb
           error
         );
 
-        // Fallback to IndexedDB local storage
-        try {
-          const localResult = await storeGameLocally(
-            initialState,
-            finalState,
-            finalState.moveHistory as unknown[],
-            metadata
-          );
-
-          if (localResult.success) {
-            gameSavedRef.current = true;
-            setGameSaveStatus('saved-local');
-            const newCount = await getPendingCount();
-            setPendingLocalGames(newCount);
-            toast.success('Game saved locally (will sync when server available)', {
-              icon: '💾',
-            });
-          } else {
-            setGameSaveStatus('error');
-            toast.error('Failed to save game');
-          }
-        } catch (localError) {
-          console.error('[useSandboxPersistence] Local storage also failed:', localError);
-          setGameSaveStatus('error');
-          toast.error('Failed to save game (storage unavailable)');
-        }
+        await saveLocally(false);
       }
     };
 
     saveCompletedGame();
-  }, [autoSaveGames, victoryResult, engine, playerTypes, numPlayers, stateVersion]);
+  }, [
+    autoSaveGames,
+    victoryResult,
+    engine,
+    playerTypes,
+    numPlayers,
+    stateVersion,
+    serverPersistenceEnabled,
+  ]);
 
   return {
     autoSaveGames,

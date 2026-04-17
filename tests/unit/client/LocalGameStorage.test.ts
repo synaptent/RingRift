@@ -294,6 +294,29 @@ describe('LocalGameStorage with in-memory IndexedDB stub', () => {
     expect(pendingCount).toBe(1);
   });
 
+  it('stores local-only games without queueing them for sync', async () => {
+    const initialState: any = { id: 'game-local-only', moveHistory: [] };
+    const finalState: any = { id: 'game-local-only', moveHistory: [] };
+    const metadata: LocalGameRecord['metadata'] = {
+      source: 'human_vs_ai',
+      boardType: 'square8',
+      numPlayers: 2,
+      playerTypes: ['human', 'ai'],
+      localOnly: true,
+      skipServerSync: true,
+      syncPolicy: 'local_only',
+    };
+
+    const result = await storeGameLocally(initialState, finalState, [], metadata);
+    expect(result.success).toBe(true);
+
+    const unsynced = await getUnsyncedGames();
+    expect(unsynced).toHaveLength(0);
+
+    const pendingCount = await getPendingCount();
+    expect(pendingCount).toBe(0);
+  });
+
   it('marks a game as synced and removes it from unsynced queries', async () => {
     const initialState: any = { id: 'game-2', moveHistory: [] };
     const finalState: any = { id: 'game-2', moveHistory: [] };

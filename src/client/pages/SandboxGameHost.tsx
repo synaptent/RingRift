@@ -787,6 +787,7 @@ export const SandboxGameHost: React.FC = () => {
     playerTypes: config.playerTypes as LocalPlayerType[],
     numPlayers: config.numPlayers,
     stateVersion: _sandboxStateVersion,
+    serverPersistenceEnabled: Boolean(user),
   });
 
   // Screen reader announcements for accessibility - using priority queue (mirrors BackendGameHost)
