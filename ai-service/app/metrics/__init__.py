@@ -48,6 +48,7 @@ from app.metrics_base import (
     AI_INSTANCE_CACHE_SIZE,
     AI_MOVE_LATENCY,
     AI_MOVE_REQUESTS,
+    AI_MOVES_BY_MODEL_VERSION,
     PYTHON_INVARIANT_VIOLATIONS,
     # Helper functions
     observe_ai_move_start,
@@ -242,6 +243,7 @@ __all__ = [
     "AI_MOVE_LATENCY",
     # App-level metrics (from metrics.py)
     "AI_MOVE_REQUESTS",
+    "AI_MOVES_BY_MODEL_VERSION",
     "BANDWIDTH_ALLOCATIONS_ACTIVE",
     "BANDWIDTH_BYTES_TOTAL",
     "BANDWIDTH_TRANSFERS_TOTAL",

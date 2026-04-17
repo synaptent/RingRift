@@ -43,6 +43,7 @@ from .metrics import (
     AI_INSTANCE_CACHE_SIZE,
     AI_MOVE_LATENCY,
     AI_MOVE_REQUESTS,
+    AI_MOVES_BY_MODEL_VERSION,
     observe_ai_move_start,
 )
 
@@ -545,6 +546,11 @@ class MoveResponse(BaseModel):
     simulation_budget: int | None = None
     device: str | None = None
     search_stats_summary: dict[str, Any] | None = None
+    # Architecture version of the neural network that actually served the
+    # move (e.g. "v2.0.0", "v4.0.0", "v5-heavy"). "none" when no NN was
+    # active (random/heuristic/minimax-without-NNUE or silent fallback).
+    # Mirrored as X-RingRift-Model-Version response header.
+    nn_model_version: str | None = None
 
 
 def _summarize_search_stats(stats: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -573,6 +579,46 @@ def _summarize_search_stats(stats: dict[str, Any] | None) -> dict[str, Any] | No
             summary["visited_actions"] = len(values)
 
     return summary or None
+
+
+def _extract_model_version(ai: Any) -> str | None:
+    """Best-effort extraction of the served model's architecture version.
+
+    Walks ``ai.neural_net.model`` looking for the ``ARCHITECTURE_VERSION``
+    class attribute (set on every registered RingRiftCNN_vN). Falls back to
+    ``app.training.model_versioning.get_model_version`` which handles the
+    full registry. Returns ``None`` when no neural net is active for this
+    AI (random/heuristic/minimax-without-NNUE).
+
+    Designed to be robust: never raises, never slows down move selection.
+    """
+    try:
+        neural_net = getattr(ai, "neural_net", None)
+        if neural_net is None:
+            return None
+        model = getattr(neural_net, "model", None)
+        if model is None:
+            return None
+        try:
+            version = getattr(model, "ARCHITECTURE_VERSION", None)
+        except Exception:  # noqa: BLE001 — never raise from telemetry
+            version = None
+        if isinstance(version, str) and version:
+            return version
+        # Fall back to the versioning registry for classes that did not
+        # declare ARCHITECTURE_VERSION directly.  The registry call itself
+        # can raise for exotic model shapes; swallow everything so telemetry
+        # never breaks move selection.
+        try:
+            from app.training.model_versioning import get_model_version
+            registry_version = get_model_version(model)
+            if isinstance(registry_version, str) and registry_version:
+                return registry_version
+            return None
+        except Exception:  # noqa: BLE001 — never raise from telemetry
+            return None
+    except Exception:  # noqa: BLE001 — outermost guard, same contract
+        return None
 
 
 def _infer_ai_device(ai: Any) -> str | None:
@@ -1186,7 +1232,7 @@ async def admin_velocity_dashboard(
 
 
 @app.post("/ai/move", response_model=MoveResponse)
-async def get_ai_move(request: MoveRequest):
+async def get_ai_move(request: MoveRequest, response: Response):
     """
     Get AI-selected move for current game state.
 
@@ -1451,17 +1497,44 @@ async def get_ai_move(request: MoveRequest):
         elif model_id and not effective_use_neural_net:
             fallback_reason = "configured_model_not_active"
 
+        # Extract the served model's architecture version for telemetry.
+        # "none" is used when no NN is active so the Prometheus label cardinality
+        # stays bounded even for random/heuristic/minimax traffic.
+        nn_model_version = _extract_model_version(ai) if effective_use_neural_net else None
+        version_label = nn_model_version or "none"
+
+        # Record per-version counter.  Already-observed latency/request metrics
+        # stay unchanged so existing dashboards are not disturbed.
+        try:
+            AI_MOVES_BY_MODEL_VERSION.labels(
+                version_label,
+                labels_ai_type,
+                labels_difficulty,
+            ).inc()
+        except (ValueError, TypeError):
+            # Never let a metrics emit failure break move selection.
+            pass
+
+        # Surface the served version as a response header so gateways,
+        # reverse proxies, and TS-side logs can correlate moves to models
+        # without parsing the JSON body.
+        response.headers["X-RingRift-Model-Version"] = version_label
+        if nn_checkpoint:
+            response.headers["X-RingRift-Model-Checkpoint"] = nn_checkpoint
+
         logger.info(
             (
                 "AI move: type=%s, difficulty=%d, time=%dms, eval=%.2f, "
-                "model_id=%s, eval_mode=%s, simulation_budget=%s, "
-                "actual_simulations=%s, device=%s, fallback_reason=%s"
+                "model_id=%s, model_version=%s, eval_mode=%s, "
+                "simulation_budget=%s, actual_simulations=%s, device=%s, "
+                "fallback_reason=%s"
             ),
             ai_type.value,
             request.difficulty,
             thinking_time,
             evaluation,
             model_id,
+            version_label,
             eval_mode if ai_type == AIType.GUMBEL_MCTS else None,
             simulation_budget,
             actual_simulations,
@@ -1485,6 +1558,7 @@ async def get_ai_move(request: MoveRequest):
             simulation_budget=simulation_budget,
             device=device,
             search_stats_summary=search_stats_summary,
+            nn_model_version=nn_model_version,
         )
 
     except Exception as e:

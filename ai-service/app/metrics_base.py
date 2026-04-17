@@ -22,6 +22,16 @@ AI_MOVE_REQUESTS: Final[Counter] = Counter(
     labelnames=("ai_type", "difficulty", "outcome"),
 )
 
+AI_MOVES_BY_MODEL_VERSION: Final[Counter] = Counter(
+    "ai_moves_by_model_version_total",
+    (
+        "Total /ai/move responses broken down by served neural-network "
+        "architecture version. Label 'none' is used when no NN model was "
+        "active for a move (e.g. random/heuristic tiers or silent fallback)."
+    ),
+    labelnames=("model_version", "ai_type", "difficulty"),
+)
+
 AI_MOVE_LATENCY: Final[Histogram] = Histogram(
     "ai_move_latency_seconds",
     (
@@ -323,6 +333,7 @@ ROLLBACK_AT_RISK: Final[Gauge] = Gauge(
 # labeled child is sufficient to emit zero-valued samples.
 AI_MOVE_REQUESTS.labels("init", "0", "init")  # type: ignore[arg-type]
 AI_MOVE_LATENCY.labels("init", "0")  # type: ignore[arg-type]
+AI_MOVES_BY_MODEL_VERSION.labels("none", "init", "0")  # type: ignore[arg-type]
 AI_ERRORS.labels("init", "0", "init")  # type: ignore[arg-type]
 AI_FALLBACKS.labels("init", "init", "init")  # type: ignore[arg-type]
 
@@ -573,6 +584,7 @@ __all__ = [
     "AI_FALLBACKS",
     "AI_INSTANCE_CACHE_LOOKUPS",
     "AI_INSTANCE_CACHE_SIZE",
+    "AI_MOVES_BY_MODEL_VERSION",
     "AI_MOVE_LATENCY",
     "AI_MOVE_REQUESTS",
     "AUTO_ROLLBACKS",
