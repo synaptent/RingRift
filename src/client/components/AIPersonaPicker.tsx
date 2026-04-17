@@ -17,6 +17,10 @@ import { useId } from 'react';
 
 import { ALL_PERSONAS, PERSONA_COPY, type PersonaId } from '../config/aiQuickPlay';
 
+interface ViteEnvGlobal {
+  __VITE_ENV__?: Record<string, string | undefined>;
+}
+
 export interface AIPersonaPickerProps {
   /** Currently-selected persona, or undefined for "use ladder default". */
   value: PersonaId | undefined;
@@ -41,7 +45,7 @@ export interface AIPersonaPickerProps {
  * on for a selected persona to actually affect gameplay.
  */
 export function personasFeatureEnabled(): boolean {
-  const raw = import.meta.env?.VITE_RINGRIFT_PERSONAS_ENABLED;
+  const raw = (globalThis as unknown as ViteEnvGlobal).__VITE_ENV__?.VITE_RINGRIFT_PERSONAS_ENABLED;
   if (typeof raw !== 'string') return false;
   return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }

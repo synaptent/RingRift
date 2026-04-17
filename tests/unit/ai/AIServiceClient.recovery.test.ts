@@ -362,7 +362,7 @@ describe('AIServiceClient - Recovery Scenarios', () => {
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Circuit breaker reset'),
         expect.objectContaining({
-          wasOpen: true,
+          fromState: 'half_open',
         })
       );
     });
