@@ -176,3 +176,75 @@ class TestEnsembleBudgetReduction:
         else:
             reduced = None
         assert reduced is None
+
+
+class TestAICacheKeyIncludesBudget:
+    """Regression guard for the HIGH-severity bug droid caught on
+    7d692717d: `_ai_cache_key` did not include
+    `gumbel_simulation_budget`, so the ensemble's reduced-budget primary
+    silently collapsed onto the cached full-budget primary. These tests
+    lock the key in so a future edit can't drop it again."""
+
+    def _build_game_state(self):
+        """Minimal stub with the attributes _ai_cache_key reads."""
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            id="test-game",
+            board_type=SimpleNamespace(value="square8"),
+            players=[SimpleNamespace(), SimpleNamespace()],
+        )
+
+    def _build_config(self, **overrides):
+        from app.models import AIConfig
+        defaults = {
+            "difficulty": 10,
+            "think_time": 16000,
+            "randomness": 0.0,
+            "use_neural_net": True,
+            "nn_model_id": "models/canonical_hex8_2p.pth",
+            "use_gpu_tree": True,
+            "gumbel_simulation_budget": 400,
+        }
+        defaults.update(overrides)
+        return AIConfig(**defaults)
+
+    def test_different_budgets_produce_different_cache_keys(self):
+        """Reduced-budget primary (200) and full-budget primary (400)
+        must NOT share a cache key — otherwise the ensemble branch's
+        budget-halving is silently defeated."""
+        from app.main import _ai_cache_key
+        from app.models import AIType
+        gs = self._build_game_state()
+        full_cfg = self._build_config(gumbel_simulation_budget=400)
+        reduced_cfg = self._build_config(gumbel_simulation_budget=200)
+        full_key = _ai_cache_key(gs, 1, AIType.GUMBEL_MCTS, full_cfg)
+        reduced_key = _ai_cache_key(gs, 1, AIType.GUMBEL_MCTS, reduced_cfg)
+        assert full_key != reduced_key, (
+            "cache keys collapsed across different gumbel_simulation_budget "
+            "values; the ensemble's reduced-budget primary will silently "
+            "reuse the full-budget cached instance"
+        )
+
+    def test_same_budget_same_key(self):
+        """Sanity: matching budgets still produce matching keys."""
+        from app.main import _ai_cache_key
+        from app.models import AIType
+        gs = self._build_game_state()
+        cfg_a = self._build_config(gumbel_simulation_budget=200)
+        cfg_b = self._build_config(gumbel_simulation_budget=200)
+        assert _ai_cache_key(gs, 1, AIType.GUMBEL_MCTS, cfg_a) == (
+            _ai_cache_key(gs, 1, AIType.GUMBEL_MCTS, cfg_b)
+        )
+
+    def test_none_budget_serializes_to_empty(self):
+        """Non-Gumbel tiers leave gumbel_simulation_budget unset. Make
+        sure that path still produces a stable key (doesn't crash on the
+        "budget or ''" null-coalesce)."""
+        from app.main import _ai_cache_key
+        from app.models import AIType
+        gs = self._build_game_state()
+        cfg_none = self._build_config(gumbel_simulation_budget=None)
+        key = _ai_cache_key(gs, 1, AIType.MINIMAX, cfg_none)
+        assert key.endswith("|"), (
+            "empty budget should serialize to trailing empty string"
+        )

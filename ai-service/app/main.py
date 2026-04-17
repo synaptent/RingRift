@@ -439,6 +439,13 @@ def _ai_cache_key(
 ) -> str:
     # Key includes config so callers can safely A/B compare profiles
     # without cross-contaminating tree state.
+    #
+    # gumbel_simulation_budget is intentionally part of the key: C1
+    # ensemble (7d692717d) builds a reduced-budget primary alongside the
+    # full-budget cached primary and both must coexist. Without this
+    # field the reduced-budget primary silently collapses onto the
+    # full-budget one and the ensemble runs at full per-model work,
+    # defeating the whole point of the budget-halving fix.
     return "|".join(
         [
             str(game_state.id),
@@ -454,6 +461,7 @@ def _ai_cache_key(
             str(config.nn_model_id or ""),
             str(bool(config.use_neural_net) if config.use_neural_net is not None else ""),
             str(bool(config.use_incremental_search)),
+            str(config.gumbel_simulation_budget or ""),
         ]
     )
 

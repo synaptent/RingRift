@@ -58,12 +58,15 @@ export function AIPersonaPicker({
   forceVisible = false,
   featureEnabled,
 }: AIPersonaPickerProps): JSX.Element | null {
+  // All hooks must be called unconditionally before any early return
+  // (Rules of Hooks). Caller-driven flag flips cause the same mount
+  // to switch between returning JSX and returning null; calling
+  // useId() AFTER the conditional return would break that scenario.
+  const labelId = useId();
   const enabled = featureEnabled ?? personasFeatureEnabled();
   if (!enabled && !forceVisible) {
     return null;
   }
-
-  const labelId = useId();
 
   return (
     <fieldset
