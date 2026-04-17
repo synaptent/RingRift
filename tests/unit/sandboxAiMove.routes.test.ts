@@ -74,6 +74,8 @@ describe('POST /api/games/sandbox/ai/move (contract)', () => {
           use_neural_net: true,
           nn_model_id: 'ringrift_best_sq8_2p',
           nn_checkpoint: 'ckpt_123',
+          nn_model_path: 'models/canonical_square8_2p.pth',
+          nn_model_version: 'v2.0.0',
           nnue_checkpoint: null,
         };
       }
@@ -107,6 +109,11 @@ describe('POST /api/games/sandbox/ai/move (contract)', () => {
       nnModelId: 'ringrift_best_sq8_2p',
       nnCheckpoint: 'ckpt_123',
       nnueCheckpoint: null,
+      modelVersion: 'v2.0.0',
+      modelPath: 'models/canonical_square8_2p.pth',
+      aiTier: 10,
+      latencyMs: expect.any(Number),
+      fallbackUsed: false,
     });
   });
 });

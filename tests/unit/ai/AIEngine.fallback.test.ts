@@ -437,6 +437,46 @@ describe('AIEngine Fallback Handling', () => {
       );
     });
 
+    it('returns fallback telemetry and emits a structured fallback log line', async () => {
+      const timeoutError = Object.assign(new Error('Connection timeout'), {
+        aiErrorType: 'timeout',
+      });
+      mockAIServiceClient.getAIMove.mockRejectedValue(timeoutError);
+
+      const profile: AIProfile = { difficulty: 7, mode: 'service', aiType: 'minimax' };
+      aiEngine.createAIFromProfile(2, profile);
+
+      const result = await aiEngine.getAIMoveWithTelemetry(2, mockGameState);
+
+      expect(result.move).not.toBeNull();
+      expect(result.telemetry).toMatchObject({
+        modelVersion: null,
+        modelPath: null,
+        aiTier: 7,
+        fallbackUsed: true,
+        fallbackReason: 'timeout',
+        aiType: 'minimax',
+        source: 'local_heuristic',
+      });
+      expect(result.telemetry.latencyMs).toEqual(expect.any(Number));
+      expect(logger.warn).toHaveBeenCalledWith(
+        'AI move fallback used',
+        expect.objectContaining({
+          event: 'ai_move_fallback',
+          gameId: mockGameState.id,
+          playerNumber: 2,
+          modelVersion: null,
+          modelPath: null,
+          aiTier: 7,
+          latencyMs: expect.any(Number),
+          fallbackUsed: true,
+          fallbackReason: 'timeout',
+          aiType: 'minimax',
+          source: 'local_heuristic',
+        })
+      );
+    });
+
     it('should log when using random fallback as last resort', async () => {
       mockAIServiceClient.getAIMove.mockRejectedValue(new Error('Service failed'));
 

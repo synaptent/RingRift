@@ -61,6 +61,8 @@ describe('AIEngine service integration (profile-driven)', () => {
       thinking_time_ms: 1234,
       ai_type: 'minimax',
       difficulty: 7,
+      nn_model_version: 'v2.0.0',
+      nn_model_path: 'models/canonical_square8_2p.pth',
     };
 
     const fakeClient = {
@@ -149,6 +151,116 @@ describe('AIEngine service integration (profile-driven)', () => {
     // The move instance may not be the exact same reference, but it should be
     // structurally equal to the move returned by the service.
     expect(move).toEqual(fakeMove);
+  });
+
+  it('getAIMoveWithTelemetry returns model identity and fallback status for service-backed moves', async () => {
+    const mockedGetClient = getAIServiceClient as jest.MockedFunction<typeof getAIServiceClient>;
+
+    const fakeMove: Move = {
+      id: 'svc-move-telemetry',
+      type: 'move_stack',
+      player: 1,
+      from: { x: 0, y: 0 },
+      to: { x: 1, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const fakeResponse: MoveResponse = {
+      move: fakeMove,
+      evaluation: 0.42,
+      thinking_time_ms: 321,
+      ai_type: 'gumbel_mcts',
+      difficulty: 9,
+      nn_model_version: 'v2.0.0',
+      nn_checkpoint: 'canonical_square8_2p.pth',
+      model_id: 'ringrift_best_sq8_2p',
+    };
+
+    const fakeClient = {
+      getAIMove: jest.fn().mockResolvedValue(fakeResponse),
+    } as any;
+
+    mockedGetClient.mockReturnValue(fakeClient);
+
+    const engine = new AIEngine();
+    const profile: AIProfile = {
+      difficulty: 9,
+      mode: 'service',
+      aiType: 'gumbel_mcts',
+    };
+    engine.createAIFromProfile(1, profile);
+
+    const gameState: GameState = {
+      id: 'test-game-telemetry',
+      boardType: 'square8',
+      board: {
+        type: 'square8',
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+        formedLines: [],
+        eliminatedRings: new Map(),
+        size: 8,
+      } as any,
+      players: [
+        {
+          id: 'ai-player-1',
+          username: 'AI Player 1',
+          playerNumber: 1,
+          type: 'ai',
+          isReady: true,
+          timeRemaining: 600000,
+          ringsInHand: 10,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+          aiDifficulty: 9,
+          aiProfile: profile,
+        },
+      ] as any,
+      currentPhase: 'movement',
+      currentPlayer: 1,
+      moveHistory: [],
+      history: [],
+      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      spectators: [],
+      gameStatus: 'active',
+      createdAt: new Date(),
+      lastMoveAt: new Date(),
+      isRated: false,
+      maxPlayers: 2,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
+      totalRingsEliminated: 0,
+      victoryThreshold: 0,
+      territoryVictoryThreshold: 0,
+      rngSeed: 123,
+    };
+
+    mockRuleEngineMoves = [
+      fakeMove,
+      {
+        ...fakeMove,
+        id: 'svc-move-telemetry-2',
+        to: { x: 2, y: 0 },
+        moveNumber: 2,
+      },
+    ];
+
+    const result = await engine.getAIMoveWithTelemetry(1, gameState);
+
+    expect(result.move).toEqual(fakeMove);
+    expect(result.telemetry).toMatchObject({
+      modelVersion: 'v2.0.0',
+      modelPath: 'canonical_square8_2p.pth',
+      aiTier: 9,
+      fallbackUsed: false,
+      fallbackReason: null,
+      aiType: 'gumbel_mcts',
+      source: 'python_service',
+    });
+    expect(result.telemetry.latencyMs).toEqual(expect.any(Number));
   });
 
   it('getAIMove uses IG_GMO service mapping when profile aiType is ig_gmo', async () => {
