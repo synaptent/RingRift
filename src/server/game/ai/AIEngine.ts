@@ -686,9 +686,14 @@ export class AIEngine {
       // path after service degradation (e.g. repeated Python AI failures or
       // rules-engine rejections of service moves).
       aiFallbackCounter.labels('service_degraded').inc();
-      // We do not know the configured tier here; use the "unknown" label so
-      // the per-tier view still sums correctly.
-      aiFallbackMovesCounter.labels('service_degraded', 'unknown', 'unknown').inc();
+      // #86: derive tier context from aiConfigs instead of emitting
+      // 'unknown' for every service_degraded fallback. Falls back to
+      // 'unknown' only when the player has no configured AI (test harness
+      // or unconfigured seat) so per-tier alerts stay accurate.
+      const cfg = this.aiConfigs.get(playerNumber);
+      const aiTypeLabel = cfg?.aiType ? String(cfg.aiType) : 'unknown';
+      const difficultyLabel = cfg?.difficulty != null ? String(cfg.difficulty) : 'unknown';
+      aiFallbackMovesCounter.labels('service_degraded', aiTypeLabel, difficultyLabel).inc();
     }
 
     return move;
