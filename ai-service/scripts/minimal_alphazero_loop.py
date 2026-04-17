@@ -189,6 +189,8 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
            "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
            "--encoder-version", encoder,
            "--gpu-selfplay"]
+    if MODEL_VERSION in ("v5", "v5-gnn", "v5-heavy"):
+        cmd.append("--include-heuristics")
     logger.info(f"  exporting {jsonl.name} -> {npz.name}")
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
@@ -742,16 +744,25 @@ def main() -> None:
     # Resume: find the last completed iteration to avoid overwriting data
     existing = sorted(wdir.glob("iter_*.npz"))
     start_iter = len(existing) + 1 if existing else 1
+    # Cached metrics history: read once at startup, appended to in-memory on
+    # each iteration.  Fixes #84: previously the plateau detector re-read the
+    # full metrics.jsonl every iteration, which is O(N^2) and has a race with
+    # its own just-completed append.  Keeping history in-memory is both
+    # cheaper and correct-by-construction.
+    metrics_history: list[dict] = []
+    if start_iter > 1 and logf.exists():
+        for line in logf.read_text().strip().split("\n"):
+            if not line.strip():
+                continue
+            try:
+                m = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                # Partial/corrupt line — tolerate and continue; resume is best-effort.
+                continue
+            metrics_history.append(m)
+            promos = m.get("total_promotions", promos)
+            elo = m.get("estimated_elo", elo)
     if start_iter > 1:
-        # Reload state from metrics
-        if logf.exists():
-            for line in logf.read_text().strip().split("\n"):
-                try:
-                    m = json.loads(line)
-                    promos = m.get("total_promotions", promos)
-                    elo = m.get("estimated_elo", elo)
-                except Exception:
-                    pass
         logger.info(f"Resuming from iteration {start_iter} (elo={elo:.0f}, promos={promos})")
 
     logger.info("=" * 70)
@@ -1051,13 +1062,12 @@ def main() -> None:
         # Plateau detection (A2 / plan #79). Diagnostic by default; when the
         # explicit opt-in flag is set, a detected plateau arms relaxed staged
         # promotion thresholds for the next three iterations.
+        # #84 fix: use the in-memory metrics_history list rather than
+        # re-reading metrics.jsonl from disk — same detection behaviour but
+        # O(1) per iteration and no partial-read race with the append below.
         if it % 10 == 0:
             try:
-                history = []
-                if logf.exists():
-                    with open(logf) as f:
-                        history = [json.loads(line) for line in f if line.strip()]
-                plateau = detect_plateau([*history, metrics])
+                plateau = detect_plateau([*metrics_history, metrics])
                 metrics["plateau"] = {
                     "detected": plateau.detected,
                     "recent_rejection_rate": plateau.recent_rejection_rate,
@@ -1096,6 +1106,11 @@ def main() -> None:
 
         with open(logf, "a") as f:
             f.write(json.dumps(metrics) + "\n")
+
+        # Keep the in-memory metrics cache in lockstep with metrics.jsonl so
+        # the next plateau detection (every 10 iterations) sees this entry
+        # without a disk re-read.
+        metrics_history.append(metrics)
 
         # Write a human-readable progress file so observers don't need to parse JSONL
         try:
