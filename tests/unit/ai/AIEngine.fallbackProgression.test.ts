@@ -34,6 +34,19 @@ jest.mock('../../../src/server/utils/rulesParityMetrics', () => ({
       inc: jest.fn(),
     }),
   },
+  aiFallbackMovesCounter: {
+    labels: () => ({
+      inc: jest.fn(),
+    }),
+  },
+  aiCircuitBreakerStateGauge: {
+    set: jest.fn(),
+  },
+  aiCircuitBreakerTransitionsCounter: {
+    labels: () => ({
+      inc: jest.fn(),
+    }),
+  },
   rulesParityMetrics: {
     validMismatch: { inc: jest.fn() },
     hashMismatch: { inc: jest.fn() },
