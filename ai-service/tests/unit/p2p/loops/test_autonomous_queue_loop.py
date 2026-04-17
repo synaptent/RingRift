@@ -777,7 +777,11 @@ class TestSelfplayEnabledCheck:
         orchestrator = create_mock_orchestrator()
         loop = AutonomousQueuePopulationLoop(orchestrator)
 
-        result = loop._is_selfplay_enabled_for_node()
+        with patch(
+            "scripts.p2p.loops.autonomous_queue_loop.socket.gethostname",
+            return_value="unmapped-test-host",
+        ):
+            result = loop._is_selfplay_enabled_for_node()
 
         assert result is False
 
