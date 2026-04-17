@@ -2,7 +2,7 @@
 
 This document summarizes the current research evidence from the RingRift self-play training project.
 
-Status is current as of April 16, 2026.
+Status is current as of April 17, 2026.
 
 For claim provenance, see
 [`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json).
@@ -66,7 +66,36 @@ The active v4 run is an experiment, not a completed result.
 | Hardware         | `gh200-8`                                                                    |
 | Start date       | April 15, 2026                                                               |
 
-Until a completed v4 iteration promotes, the public claim remains the v3-family `1979.8` result.
+First completed v4 iterations (source: `gh200-8` node `metrics.jsonl`, not yet mirrored to S3):
+
+| Iteration | Win Rate |  Eval Games | Result  | Estimated Elo |
+| --------- | -------: | ----------: | ------- | ------------: |
+| `7`       |  `55.0%` | `200` games | promote |      `1534.9` |
+| `8`       |  `43.0%` | `100` games | reject  |      `1534.9` |
+
+Interpretation: the training-probe fix committed at `beafb4a07` unstuck the v4 pipeline (previously all iterations failed at the architecture-version-mismatch probe). v4 now completes iterations and has produced one promotion, but it is starting from a `1500` baseline — nowhere near catching the supported v3/v2-family `1979.8` result. It will take many more promotions for v4 to be considered a plateau-break candidate.
+
+Until a completed v4 iteration crosses `1979.8`, the public headline claim remains the v3-family result.
+
+### `hex8_2p` v5-heavy Experiment
+
+A second architecture experiment was launched April 17 on `gh200-11`.
+
+| Field            | Value                                                                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hypothesis       | A v5-heavy architecture (FiLM-conditioned heuristic features + optional GNN + spatial policy heads) can succeed where v4 attention does not           |
+| Baseline         | Same as v4: `1979.8` Elo from supported v3/v2-family checkpoint                                                                                       |
+| Success criteria | Promote above `1979.8` within the experiment window                                                                                                   |
+| Hardware         | `gh200-11`                                                                                                                                            |
+| Start date       | April 17, 2026                                                                                                                                        |
+| Status           | Launched; first iteration self-play in progress, no completed iteration yet. Compatibility validation between 40ch bootstrap and export/train pending |
+
+Prerequisites landed immediately before launch:
+
+- `6aff2c65c feat(training): export v5 heuristic features from selfplay jsonl`
+- `1848182b9 fix(training): align v5-heavy bootstrap schema`
+
+Until the first v5-heavy iteration completes the full self-play → export → train → eval cycle, this is _launched_ rather than _working_. We hold the claim language until we see a completed iteration in `metrics.jsonl`.
 
 ### `square8_2p`
 
@@ -108,7 +137,9 @@ This result matters because it proves the hex multiplayer path can at least comp
 
 This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, but the corrected seat-fair results remain weak: iteration `19` rejected at `20%`, iteration `21` rejected at `30%`, and the current tail is still below a persuasive threshold.
 
-As of April 15, 2026, the result is still not strong enough to claim robust multiplayer progress. What it does show is that the multiplayer path is no longer blocked by the earlier evaluator bug; it now has one promotion under the corrected threshold and seat-fair regime, but it still needs another clean promotion before it should be treated as persuasive evidence.
+As of April 17, 2026, the node is on iteration `26` self-play after a restart that deployed A1 per-seat WR tracking (commit `98736c566`). The next completed evaluation will surface a `seat_wr` map in the quality-gate output and, if per-seat WR max/min ratio exceeds `1.5`, a `SEAT_WR_IMBALANCE` warning. Two hypotheses are still live: (1) the candidate is genuinely weak, or (2) evaluation seat assignment is structurally biased despite the rotation fix. Iteration `26` eval will be the first data point under the instrumentation; we will not decide between the two until then.
+
+The result is still not strong enough to claim robust multiplayer progress. What it does show is that the multiplayer path is no longer blocked by the earlier evaluator bug; it now has one promotion under the corrected threshold and seat-fair regime, but it still needs another clean promotion before it should be treated as persuasive evidence.
 
 ### `square8_4p`
 
