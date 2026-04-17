@@ -20,7 +20,11 @@ import {
   BoardType,
 } from '../../shared/types/game';
 import { logger, getRequestContext } from '../utils/logger';
-import { aiMoveLatencyHistogram } from '../utils/rulesParityMetrics';
+import {
+  aiMoveLatencyHistogram,
+  aiCircuitBreakerStateGauge,
+  aiCircuitBreakerTransitionsCounter,
+} from '../utils/rulesParityMetrics';
 import { getServiceStatusManager } from './ServiceStatusManager';
 import type { PositionEvaluationByPlayer } from '../../shared/types/websocket';
 import { toPythonWireGameState } from './pythonWire';
@@ -36,21 +40,43 @@ export type AIServiceErrorCode =
   | 'AI_SERVICE_ERROR'
   | 'AI_SERVICE_OVERLOADED';
 
+type BreakerState = 'closed' | 'open' | 'half_open';
+
+const BREAKER_STATE_GAUGE_VALUE: Record<BreakerState, number> = {
+  closed: 0,
+  open: 1,
+  half_open: 0.5,
+};
+
 /**
- * Circuit breaker to prevent hammering a failing AI service
+ * Circuit breaker to prevent hammering a failing AI service.
+ *
+ * D5 (issue #82) instruments every state transition with Prometheus
+ * metrics so alerting / dashboards can distinguish a flapping breaker
+ * from a stably-open one.
  */
 class CircuitBreaker {
   private failureCount = 0;
   private lastFailureTime = 0;
   private isOpen = false;
+  private state: BreakerState = 'closed';
   private readonly threshold = 5; // failures before opening
   private readonly timeout = 60000; // 1 minute cooldown
+
+  constructor() {
+    // Initialise the gauge at process start so alert rules don't misfire
+    // waiting for the first scrape to populate the label.
+    this.emitState();
+  }
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     if (this.isOpen) {
       const now = Date.now();
       if (now - this.lastFailureTime > this.timeout) {
-        this.reset(); // Try again after timeout
+        // Enter half-open: one trial request allowed through. reset()
+        // below will update state to "closed" on success or "open" on
+        // failure via recordFailure().
+        this.transitionTo('half_open');
         logger.info('Circuit breaker transitioning from open to half-open');
       } else {
         throw new Error('Circuit breaker is open - AI service temporarily unavailable');
@@ -71,11 +97,14 @@ class CircuitBreaker {
     this.failureCount++;
     this.lastFailureTime = Date.now();
     if (this.failureCount >= this.threshold) {
+      if (this.state !== 'open') {
+        this.transitionTo('open');
+        logger.warn('Circuit breaker opened after repeated failures', {
+          failureCount: this.failureCount,
+          threshold: this.threshold,
+        });
+      }
       this.isOpen = true;
-      logger.warn('Circuit breaker opened after repeated failures', {
-        failureCount: this.failureCount,
-        threshold: this.threshold,
-      });
     }
   }
 
@@ -88,12 +117,38 @@ class CircuitBreaker {
     }
     this.failureCount = 0;
     this.isOpen = false;
+    if (this.state !== 'closed') {
+      this.transitionTo('closed');
+    }
   }
 
-  getStatus(): { isOpen: boolean; failureCount: number } {
+  private transitionTo(to: BreakerState): void {
+    const from = this.state;
+    if (from === to) {
+      return;
+    }
+    this.state = to;
+    try {
+      aiCircuitBreakerStateGauge.set(BREAKER_STATE_GAUGE_VALUE[to]);
+      aiCircuitBreakerTransitionsCounter.labels(from, to).inc();
+    } catch {
+      // Metrics emission must never break the breaker itself.
+    }
+  }
+
+  private emitState(): void {
+    try {
+      aiCircuitBreakerStateGauge.set(BREAKER_STATE_GAUGE_VALUE[this.state]);
+    } catch {
+      // ignore
+    }
+  }
+
+  getStatus(): { isOpen: boolean; failureCount: number; state: BreakerState } {
     return {
       isOpen: this.isOpen,
       failureCount: this.failureCount,
+      state: this.state,
     };
   }
 

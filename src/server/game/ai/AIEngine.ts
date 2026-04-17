@@ -27,7 +27,11 @@ import {
   LocalAIRng,
 } from '../../../shared/engine/localAIMoveSelection';
 import { SeededRNG } from '../../../shared/utils/rng';
-import { aiMoveLatencyHistogram, aiFallbackCounter } from '../../utils/rulesParityMetrics';
+import {
+  aiMoveLatencyHistogram,
+  aiFallbackCounter,
+  aiFallbackMovesCounter,
+} from '../../utils/rulesParityMetrics';
 import { getMetricsService } from '../../services/MetricsService';
 
 export enum AIType {
@@ -295,10 +299,18 @@ export class AIEngine {
 
     let lastError: Error | null = null;
 
+    // Classify the configured AI type up-front so every fallback site in
+    // this method can label metrics and log lines consistently. This is the
+    // tier's INTENDED AI type — what we would be using if the service call
+    // succeeded — not the eventual fallback engine. Makes "D10 should be
+    // Gumbel MCTS, not local heuristic" easy to alert on.
+    const configuredAiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+    const configuredAiTypeLabel = String(configuredAiType);
+
     // Level 1: Try Python AI service (if mode is 'service')
     if (config.mode === 'service') {
       try {
-        const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+        const aiType = configuredAiType;
         const serviceAIType = this.mapInternalTypeToServiceType(aiType);
         const response = await getAIServiceClient().getAIMove(
           gameState,
@@ -331,11 +343,17 @@ export class AIEngine {
               validMoveCount: validMoves.length,
             });
             aiFallbackCounter.labels('validation_failed').inc();
+            aiFallbackMovesCounter
+              .labels('validation_failed', configuredAiTypeLabel, difficultyLabel)
+              .inc();
             getMetricsService().recordAIFallback('validation_failed');
           }
         } else {
           // Service did not return a usable move; fall back to local heuristics.
           aiFallbackCounter.labels('no_move_from_service').inc();
+          aiFallbackMovesCounter
+            .labels('no_move_from_service', configuredAiTypeLabel, difficultyLabel)
+            .inc();
           getMetricsService().recordAIFallback('no_move_from_service');
         }
       } catch (error) {
@@ -374,12 +392,16 @@ export class AIEngine {
         }
 
         aiFallbackCounter.labels(reason).inc();
+        aiFallbackMovesCounter.labels(reason, configuredAiTypeLabel, difficultyLabel).inc();
         getMetricsService().recordAIFallback(reason);
 
         logger.warn('Remote AI service failed, falling back to local heuristics', {
           error: error instanceof Error ? error.message : 'Unknown error',
           playerNumber,
           difficulty: config.difficulty,
+          tier: difficultyLabel,
+          configuredAiType: configuredAiTypeLabel,
+          reason,
         });
 
         // Record the service failure for diagnostics
@@ -664,6 +686,9 @@ export class AIEngine {
       // path after service degradation (e.g. repeated Python AI failures or
       // rules-engine rejections of service moves).
       aiFallbackCounter.labels('service_degraded').inc();
+      // We do not know the configured tier here; use the "unknown" label so
+      // the per-tier view still sums correctly.
+      aiFallbackMovesCounter.labels('service_degraded', 'unknown', 'unknown').inc();
     }
 
     return move;

@@ -42,6 +42,47 @@ export const aiFallbackCounter = new client.Counter({
   labelNames: ['reason'] as const,
 });
 
+/**
+ * Richer fallback counter (D5 / issue #82). Emitted alongside the existing
+ * `ai_fallback_total` so downstream dashboards are not disturbed; new
+ * alerting paths key off this metric because it includes the difficulty
+ * tier and intended AI type.
+ *
+ * The `ai_type` label carries the tier's CONFIGURED AI type (what the
+ * request would have used if the service call had succeeded) — not the
+ * eventual fallback AI type. This makes it straightforward to alert on
+ * "D10 should be Gumbel MCTS, not local heuristic."
+ */
+export const aiFallbackMovesCounter = new client.Counter({
+  name: 'ai_fallback_moves_total',
+  help:
+    'Total /ai/move requests that fell back to local heuristic or random, ' +
+    'labeled by the classified reason, configured AI type, and difficulty tier.',
+  labelNames: ['reason', 'ai_type', 'difficulty'] as const,
+});
+
+/**
+ * Circuit-breaker state observability. 0 = closed, 1 = open, 0.5 = half-open.
+ * Alertmanager can key off `max_over_time(ai_circuit_breaker_state[5m]) == 1`
+ * to detect a sustained open state.
+ */
+export const aiCircuitBreakerStateGauge = new client.Gauge({
+  name: 'ai_circuit_breaker_state',
+  help:
+    'Current state of the AI service circuit breaker: 0=closed, ' +
+    '0.5=half-open, 1=open. Derived from AIServiceClient.CircuitBreaker.',
+});
+
+/**
+ * Count transitions between circuit-breaker states so we can distinguish a
+ * flapping breaker from a stably-open one.
+ */
+export const aiCircuitBreakerTransitionsCounter = new client.Counter({
+  name: 'ai_circuit_breaker_transitions_total',
+  help: 'Total AI circuit-breaker state transitions, labeled by from/to state.',
+  labelNames: ['from_state', 'to_state'] as const,
+});
+
 export const gameMoveLatencyHistogram = new client.Histogram({
   name: 'game_move_latency_ms',
   help: 'Latency of game move processing in milliseconds',

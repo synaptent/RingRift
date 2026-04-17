@@ -578,6 +578,79 @@ groups:
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/CLUSTER_ELO.md'
           impact: 'Elo validation disabled, ratings may diverge.'
 
+      # -------------------------------------------------------------------------
+      # D5 (issue #82): Silent-fallback observability.
+      #
+      # ai_fallback_moves_total / ai_move_latency_ms_count is the fraction
+      # of /ai/move requests that fell back to local heuristic or random.
+      # Under normal operation this should stay well below 1%.
+      # -------------------------------------------------------------------------
+      - alert: AIFallbackMovesElevated
+        expr: |
+          (
+            sum(rate(ai_fallback_moves_total[5m]))
+            /
+            (sum(rate(ai_move_latency_ms_count[5m])) > 0)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: 'AI fallback rate elevated ({{ $value | humanizePercentage }})'
+          description: |
+            More than 5% of /ai/move requests are falling back to local
+            heuristic or random over the last 5 minutes. Players are
+            silently seeing weaker AI. Check Python AI service health
+            (54.198.219.106: `pm2 status ringrift-ai`) and recent deploys.
+            Breakdown by reason / tier is in
+            `ai_fallback_moves_total{reason, ai_type, difficulty}`.
+          runbook_url: 'https://github.com/synaptent/RingRift/blob/main/docs/runbooks/AI_FALLBACK.md'
+          impact: 'AI move quality degraded for ~{{ $value | humanizePercentage }} of requests.'
+
+      # -------------------------------------------------------------------------
+      # Circuit breaker has been open for more than 5 minutes.
+      # -------------------------------------------------------------------------
+      - alert: AICircuitBreakerOpen
+        expr: max_over_time(ai_circuit_breaker_state[5m]) >= 1
+        for: 5m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: 'AI service circuit breaker has been open'
+          description: |
+            The AIServiceClient circuit breaker has been in the OPEN
+            state (value 1) for at least 5 minutes, meaning every
+            /ai/move request is short-circuiting to local fallback
+            without attempting Python. Check ringrift-ai service logs
+            and restart if the underlying cause is resolved. Transitions
+            are counted in `ai_circuit_breaker_transitions_total`.
+          runbook_url: 'https://github.com/synaptent/RingRift/blob/main/docs/runbooks/AI_FALLBACK.md'
+          impact: 'All AI moves served from local heuristic; neural net effectively disabled.'
+
+      # -------------------------------------------------------------------------
+      # Circuit breaker flapping: multiple open/close transitions in a short
+      # window suggests intermittent Python-side instability.
+      # -------------------------------------------------------------------------
+      - alert: AICircuitBreakerFlapping
+        expr: |
+          sum(increase(ai_circuit_breaker_transitions_total{to_state="open"}[15m])) >= 3
+        for: 15m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: 'AI circuit breaker flapping ({{ $value }} opens in 15 min)'
+          description: |
+            The circuit breaker has opened three or more times in the
+            last 15 minutes, indicating intermittent Python service
+            failures that trip and recover repeatedly. Investigate
+            service logs for recurring errors; a flapping breaker
+            masks per-call fallback rate in the percentage alert above.
+          runbook_url: 'https://github.com/synaptent/RingRift/blob/main/docs/runbooks/AI_FALLBACK.md'
+          impact: 'Degraded AI serving; fallback rate may appear lower than true impact.'
+
   # ===========================================================================
   # DEGRADATION ALERTS
   # ===========================================================================
