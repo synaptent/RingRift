@@ -141,23 +141,98 @@ def _play_game(env, ai_players: dict[int, GumbelMCTSAI], idx: int, seed: int):
             "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+def _count_valid_games(path: Path) -> tuple[int, dict[int, int]]:
+    """Count well-formed JSONL game records. Stops at first corrupt line.
+
+    Returns (game_count, wins_by_player). Caller rewrites the file truncated
+    to game_count lines so appended resumes don't leave garbage trailing a
+    corrupt line.
+    """
+    wins: dict[int, int] = {p: 0 for p in range(1, NUM_PLAYERS + 1)}
+    count = 0
+    if not path.exists():
+        return 0, wins
+    try:
+        with open(path) as f:
+            for line in f:
+                if not line.strip():
+                    break
+                try:
+                    g = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    break
+                w = g.get("winner")
+                if w in wins:
+                    wins[w] += 1
+                count += 1
+    except OSError:
+        return 0, {p: 0 for p in range(1, NUM_PLAYERS + 1)}
+    return count, wins
+
+
+def _truncate_jsonl_to(path: Path, keep_count: int) -> None:
+    """Rewrite path keeping only the first `keep_count` valid JSON lines.
+
+    Called before append-mode resume so partial/corrupt trailing data is
+    discarded and the file is a clean prefix of what's needed.
+    """
+    if keep_count == 0:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+    try:
+        kept: list[str] = []
+        with open(path) as f:
+            for line in f:
+                if len(kept) >= keep_count:
+                    break
+                try:
+                    json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    break
+                kept.append(line if line.endswith("\n") else line + "\n")
+        with open(path, "w") as f:
+            f.writelines(kept)
+    except OSError:
+        pass
+
+
 def run_selfplay(model_path: str, n_games: int, out: Path, budget: int,
                   randomness: float = 0.25) -> dict:
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    # Game-granular resume: reuse any completed games already on disk from
+    # a prior run of this same iteration. Truncate the JSONL to the last
+    # valid line before appending, so restart never duplicates or corrupts
+    # games.
+    resume_start, wins = _count_valid_games(out)
+    _truncate_jsonl_to(out, resume_start)
+
+    if resume_start >= n_games:
+        logger.info(f"  selfplay already complete: {resume_start}/{n_games} games on disk")
+        result: dict[str, Any] = {"completed": resume_start, "elapsed_s": 0.0}
+        for p in wins:
+            result[f"p{p}_wins"] = wins[p]
+        return result
+
     env = _make_env()
     # Use exploration noise (randomness > 0) for training data diversity
     ais = {p: _make_ai(p, model_path, budget, randomness=randomness)
            for p in range(1, NUM_PLAYERS + 1)}
-    out.parent.mkdir(parents=True, exist_ok=True)
     # Use os.urandom for entropy instead of Python random (which may share state)
     seed = int.from_bytes(os.urandom(4), "big")
+    if resume_start > 0:
+        logger.info(f"  selfplay resume: {resume_start}/{n_games} already done, continuing from game {resume_start}")
     logger.info(f"  selfplay seed={seed}")
-    wins = {p: 0 for p in range(1, NUM_PLAYERS + 1)}
-    done_n, t0 = 0, time.time()
-    with open(out, "w") as f:
-        for i in range(n_games):
+    done_n, t0 = resume_start, time.time()
+    with open(out, "a") as f:
+        for i in range(resume_start, n_games):
             try:
                 g = _play_game(env, ais, i, seed)
                 f.write(json.dumps(g) + "\n")
+                f.flush()  # Durable per-game so SIGTERM loses at most the in-flight game
                 w = g.get("winner")
                 if w in wins:
                     wins[w] += 1
@@ -169,7 +244,7 @@ def run_selfplay(model_path: str, n_games: int, out: Path, budget: int,
                 logger.warning(f"  game {i} failed: {e}")
     el = time.time() - t0
     logger.info(f"  selfplay done: {done_n}/{n_games} in {el:.0f}s")
-    result: dict[str, Any] = {"completed": done_n, "elapsed_s": el}
+    result = {"completed": done_n, "elapsed_s": el}
     for p in wins:
         result[f"p{p}_wins"] = wins[p]
     return result
@@ -439,6 +514,7 @@ def staged_evaluate(
     cand: str, best: str, budget: int,
     *, tracker: "QualityGateTracker | None" = None,
     promote_threshold_cap: float | None = None,
+    checkpoint_path: Path | None = None,
 ) -> dict:
     """Staged head-to-head evaluation with early exit.
 
@@ -446,6 +522,14 @@ def staged_evaluate(
     decisive enough to promote or reject early. This saves GPU time on
     clear wins/losses while giving marginal improvements up to 400 games
     of evidence.
+
+    When ``checkpoint_path`` is provided, per-game progress (candidate_wins,
+    best_wins, draws, games_played, per-seat outcomes) is persisted after
+    every game. On restart, the function resumes from that state rather than
+    replaying the full stage. Tracker move-level data from pre-restart is
+    not recovered — only game outcomes are replayed into the tracker — so
+    per-seat WR remains accurate but policy/value diversity metrics will
+    reflect only the post-resume portion.
     """
     eval_stages = _get_eval_stages()
     eval_stages = _cap_promote_thresholds(eval_stages, promote_threshold_cap)
@@ -455,8 +539,65 @@ def staged_evaluate(
     games_played = 0
     decision = None
     decision_stage = 0
+    seat_outcomes: list[dict[str, Any]] = []
+
+    if checkpoint_path is not None and checkpoint_path.exists():
+        try:
+            ckpt = json.loads(checkpoint_path.read_text())
+            cw = int(ckpt.get("candidate_wins", 0))
+            bw = int(ckpt.get("best_wins", 0))
+            dr = int(ckpt.get("draws", 0))
+            games_played = int(ckpt.get("games_played", 0))
+            seat_outcomes = list(ckpt.get("seat_outcomes", []))
+            logger.info(
+                f"  eval resume: {games_played} games already played "
+                f"(cand={cw} best={bw} draws={dr})"
+            )
+            if tracker is not None:
+                for so in seat_outcomes:
+                    try:
+                        tracker.record_game_outcome(
+                            int(so["i"]), int(so["candidate_player"]), bool(so["won"]),
+                        )
+                    except (KeyError, TypeError, ValueError):
+                        continue
+        except (OSError, json.JSONDecodeError, ValueError):
+            logger.warning("  eval checkpoint corrupt, starting eval from scratch")
+            cw = bw = dr = games_played = 0
+            seat_outcomes = []
+
+    def _save_eval_checkpoint() -> None:
+        if checkpoint_path is None:
+            return
+        try:
+            payload = {
+                "candidate_wins": cw,
+                "best_wins": bw,
+                "draws": dr,
+                "games_played": games_played,
+                "seat_outcomes": seat_outcomes,
+            }
+            tmp = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload))
+            tmp.replace(checkpoint_path)
+        except OSError:
+            pass
 
     for stage_idx, (target_games, promote_thr, reject_thr) in enumerate(eval_stages):
+        if games_played >= target_games:
+            # This stage was fully covered by the resumed checkpoint.
+            # Check its thresholds and continue to the next stage.
+            dec = cw + bw
+            wr = cw / dec if dec > 0 else 0.5
+            if wr >= promote_thr:
+                decision = "promote"
+                decision_stage = stage_idx + 1
+                break
+            elif wr <= reject_thr:
+                decision = "reject"
+                decision_stage = stage_idx + 1
+                break
+            continue
         games_this_stage = target_games - games_played
         for i in range(games_played, target_games):
             gseed = 42_000 + i * 7919
@@ -505,11 +646,12 @@ def staged_evaluate(
                 cw += 1
             else:
                 bw += 1
+            won = (w == candidate_player)
             if tracker is not None:
-                tracker.record_game_outcome(
-                    i, candidate_player, w == candidate_player,
-                )
+                tracker.record_game_outcome(i, candidate_player, won)
+            seat_outcomes.append({"i": i, "candidate_player": candidate_player, "won": won})
             games_played += 1
+            _save_eval_checkpoint()
 
         # Check stage thresholds
         dec = cw + bw
@@ -530,6 +672,15 @@ def staged_evaluate(
         # Reached final stage without early exit
         decision = "reject"
         decision_stage = len(eval_stages)
+
+    # Decision reached — drop the resume checkpoint so the next iteration
+    # starts clean. Leave it on disk if we somehow exited without a decision
+    # (should never happen, but fail-safe: file will be overwritten next run).
+    if checkpoint_path is not None and decision is not None:
+        try:
+            checkpoint_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     el = time.time() - t0
     dec = cw + bw
@@ -741,16 +892,14 @@ def main() -> None:
     plateau_relax_until_iter = 0
     reset_recovery_counts()  # Fresh recovery budget for this loop run
 
-    # Resume: find the last completed iteration to avoid overwriting data
-    existing = sorted(wdir.glob("iter_*.npz"))
-    start_iter = len(existing) + 1 if existing else 1
     # Cached metrics history: read once at startup, appended to in-memory on
     # each iteration.  Fixes #84: previously the plateau detector re-read the
     # full metrics.jsonl every iteration, which is O(N^2) and has a race with
     # its own just-completed append.  Keeping history in-memory is both
     # cheaper and correct-by-construction.
     metrics_history: list[dict] = []
-    if start_iter > 1 and logf.exists():
+    last_metrics_iter = 0
+    if logf.exists():
         for line in logf.read_text().strip().split("\n"):
             if not line.strip():
                 continue
@@ -760,8 +909,23 @@ def main() -> None:
                 # Partial/corrupt line — tolerate and continue; resume is best-effort.
                 continue
             metrics_history.append(m)
+            it_val = m.get("iteration")
+            if isinstance(it_val, int):
+                last_metrics_iter = max(last_metrics_iter, it_val)
             promos = m.get("total_promotions", promos)
             elo = m.get("estimated_elo", elo)
+
+    # Resume: the metrics.jsonl line is appended only after training + eval
+    # finish, so last_metrics_iter is the authoritative "fully completed"
+    # marker. Falling back to the npz count only for pre-existing runs that
+    # lack a metrics log. Using npz count alone was wrong because iter_N.npz
+    # is written after training but before eval completes — so an eval
+    # interrupted by SIGTERM would have been silently skipped on restart.
+    if last_metrics_iter > 0:
+        start_iter = last_metrics_iter + 1
+    else:
+        existing_npz = sorted(wdir.glob("iter_*.npz"))
+        start_iter = len(existing_npz) + 1 if existing_npz else 1
     if start_iter > 1:
         logger.info(f"Resuming from iteration {start_iter} (elo={elo:.0f}, promos={promos})")
 
@@ -1020,9 +1184,11 @@ def main() -> None:
                 plateau_relax_until_iter,
                 AUTO_PLATEAU_RELAX_PROMOTE_THRESHOLD * 100,
             )
+        eval_ckpt_path = wdir / f"iter_{it:03d}_eval.json"
         ev = staged_evaluate(str(cpath), str(best), eval_budget,
                              tracker=qg_tracker,
-                             promote_threshold_cap=promote_threshold_cap)
+                             promote_threshold_cap=promote_threshold_cap,
+                             checkpoint_path=eval_ckpt_path)
 
         # 4.5 MODEL QUALITY GATE — reject degenerate candidates before promotion
         quality_blocked = False
