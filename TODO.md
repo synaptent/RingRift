@@ -30,7 +30,7 @@ Do not treat this tracker as a duplicate status dashboard. Use the canonical sou
 3. Continue the in-repo cleanup program in [docs/CODEBASE_QUALITY_PROGRAM.md](docs/CODEBASE_QUALITY_PROGRAM.md), especially surface-area discipline and operational reliability.
 4. Continue reducing source-of-truth drift across docs, snapshots, public entrypoints, and runbooks.
 5. Continue contracting `ai-service/app/coordination` and other large package facades toward explicit submodule imports.
-6. Execute [docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md](docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md) — quality, strength, diversity, and production-experience plan; Week 1 tasks tracked as GitHub issues.
+6. Execute [docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md](docs/planning/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md) — quality, strength, diversity, and production-experience plan; tracked as [#77](https://github.com/synaptent/RingRift/issues/77) with Week 1 children [#78 A1](https://github.com/synaptent/RingRift/issues/78), [#79 A2](https://github.com/synaptent/RingRift/issues/79), [#80 C2](https://github.com/synaptent/RingRift/issues/80), [#81 D1](https://github.com/synaptent/RingRift/issues/81), [#82 D5](https://github.com/synaptent/RingRift/issues/82).
 
 ## What Remains Unproven Or Weak
 
