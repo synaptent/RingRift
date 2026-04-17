@@ -22,6 +22,7 @@ import {
   getAIServiceClient,
   AIType as ServiceAIType,
   type PersonaId,
+  type MoveResponse,
 } from '../../services/AIServiceClient';
 import { logger } from '../../utils/logger';
 import { BoardManager } from '../BoardManager';
@@ -82,6 +83,37 @@ export interface AIDiagnostics {
    * selection layer; downstream rules validation may still reject the move.
    */
   localFallbackCount: number;
+}
+
+export type AIMoveTelemetrySource =
+  | 'python_service'
+  | 'local_heuristic'
+  | 'random'
+  | 'single_legal_move'
+  | 'no_legal_moves';
+
+export interface AIMoveTelemetry {
+  /** Served NN architecture/checkpoint version when known. Null for non-NN and fallback paths. */
+  modelVersion: string | null;
+  /** Served checkpoint/model path or identifier when the AI service reports one. */
+  modelPath: string | null;
+  /** Numeric difficulty tier requested for this move. */
+  aiTier: number;
+  /** End-to-end server-side selection latency for this move. */
+  latencyMs: number;
+  /** True when the selected move came from local fallback rather than the intended Python service. */
+  fallbackUsed: boolean;
+  /** Structured reason for fallback, when fallbackUsed is true. */
+  fallbackReason: string | null;
+  /** Intended or served AI type for this move. */
+  aiType: string;
+  /** Move source used by the server after service/fallback decisions. */
+  source: AIMoveTelemetrySource;
+}
+
+export interface AIMoveResult {
+  move: Move | null;
+  telemetry: AIMoveTelemetry;
 }
 
 /**
@@ -265,6 +297,8 @@ export class AIEngine {
 
   /**
    * Get move from AI player via Python microservice.
+   * Preserves the historical API by returning only the selected move. New
+   * production observability callers should use getAIMoveWithTelemetry().
    *
    * @param playerNumber - The player number
    * @param gameState - Current game state
@@ -279,6 +313,27 @@ export class AIEngine {
     rng?: LocalAIRng,
     options?: { token?: CancellationToken }
   ): Promise<Move | null> {
+    const result = await this.getAIMoveWithTelemetry(playerNumber, gameState, rng, options);
+    return result.move;
+  }
+
+  /**
+   * Get move from AI player with server-side telemetry that says which model
+   * answered, whether local fallback fired, and how long selection took.
+   *
+   * @param playerNumber - The player number
+   * @param gameState - Current game state
+   * @param rng - Optional RNG hook used by local fallback paths. When
+   *   provided, this is threaded through to getLocalAIMove so that test
+   *   harnesses and parity tools can keep sandbox and backend AI on the
+   *   same deterministic RNG stream.
+   */
+  async getAIMoveWithTelemetry(
+    playerNumber: number,
+    gameState: GameState,
+    rng?: LocalAIRng,
+    options?: { token?: CancellationToken }
+  ): Promise<AIMoveResult> {
     const config = this.aiConfigs.get(playerNumber);
 
     if (!config) {
@@ -290,6 +345,8 @@ export class AIEngine {
     const difficultyLabel = String(config.difficulty ?? 'n/a');
     const effectiveRng: LocalAIRng =
       rng ?? this.createDeterministicLocalRng(gameState, playerNumber);
+    const configuredAiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+    const configuredAiTypeLabel = String(configuredAiType);
 
     // Get valid moves for validation
     const boardManager = new BoardManager(gameState.boardType);
@@ -319,7 +376,15 @@ export class AIEngine {
 
     if (validMoves.length === 0) {
       logger.warn('No valid moves available for AI player', { playerNumber });
-      return null;
+      return {
+        move: null,
+        telemetry: this.buildNonFallbackTelemetry(
+          config,
+          requestStart,
+          configuredAiTypeLabel,
+          'no_legal_moves'
+        ),
+      };
     }
 
     // If only one move is available, return it immediately
@@ -328,18 +393,25 @@ export class AIEngine {
         playerNumber,
         moveType: validMoves[0].type,
       });
-      return validMoves[0];
+      return {
+        move: validMoves[0],
+        telemetry: this.buildNonFallbackTelemetry(
+          config,
+          requestStart,
+          configuredAiTypeLabel,
+          'single_legal_move'
+        ),
+      };
     }
 
     let lastError: Error | null = null;
+    let fallbackReason: string | null = config.mode === 'service' ? null : 'local_mode';
 
     // Classify the configured AI type up-front so every fallback site in
     // this method can label metrics and log lines consistently. This is the
     // tier's INTENDED AI type — what we would be using if the service call
     // succeeded — not the eventual fallback engine. Makes "D10 should be
     // Gumbel MCTS, not local heuristic" easy to alert on.
-    const configuredAiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
-    const configuredAiTypeLabel = String(configuredAiType);
 
     // Level 1: Try Python AI service (if mode is 'service')
     if (config.mode === 'service') {
@@ -370,13 +442,22 @@ export class AIEngine {
               thinkingTime: response.thinking_time_ms,
               aiType: response.ai_type,
             });
-            return normalizedMove;
+            return {
+              move: normalizedMove,
+              telemetry: this.buildServiceTelemetry(
+                response,
+                config,
+                requestStart,
+                configuredAiTypeLabel
+              ),
+            };
           } else {
             logger.warn('Remote AI service returned invalid move', {
               playerNumber,
               suggestedMove: normalizedMove,
               validMoveCount: validMoves.length,
             });
+            fallbackReason = 'validation_failed';
             aiFallbackCounter.labels('validation_failed').inc();
             aiFallbackMovesCounter
               .labels('validation_failed', configuredAiTypeLabel, difficultyLabel)
@@ -385,6 +466,7 @@ export class AIEngine {
           }
         } else {
           // Service did not return a usable move; fall back to local heuristics.
+          fallbackReason = 'no_move_from_service';
           aiFallbackCounter.labels('no_move_from_service').inc();
           aiFallbackMovesCounter
             .labels('no_move_from_service', configuredAiTypeLabel, difficultyLabel)
@@ -429,6 +511,7 @@ export class AIEngine {
         aiFallbackCounter.labels(reason).inc();
         aiFallbackMovesCounter.labels(reason, configuredAiTypeLabel, difficultyLabel).inc();
         getMetricsService().recordAIFallback(reason);
+        fallbackReason = reason;
 
         logger.warn('Remote AI service failed, falling back to local heuristics', {
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -465,10 +548,19 @@ export class AIEngine {
           moveType: localMove.type,
           fallback: config.mode === 'service',
         });
-        return localMove;
+        const telemetry = this.buildFallbackTelemetry(
+          config,
+          requestStart,
+          configuredAiTypeLabel,
+          fallbackReason ?? 'local_mode',
+          'local_heuristic'
+        );
+        this.logAIMoveFallback(playerNumber, gameState, localMove, telemetry);
+        return { move: localMove, telemetry };
       }
     } catch (error) {
       lastError = error as Error;
+      fallbackReason = fallbackReason ?? 'local_heuristic_failed';
       logger.error('Local heuristic AI failed, falling back to random', {
         error: error instanceof Error ? error.message : 'Unknown error',
         playerNumber,
@@ -487,7 +579,102 @@ export class AIEngine {
     metrics.recordAIRequestLatencyMs(totalDuration, 'fallback');
 
     const randomIndex = Math.floor(effectiveRng() * validMoves.length);
-    return validMoves[randomIndex];
+    const randomMove = validMoves[randomIndex];
+    const telemetry = this.buildFallbackTelemetry(
+      config,
+      requestStart,
+      configuredAiTypeLabel,
+      fallbackReason ?? 'all_methods_failed',
+      'random'
+    );
+    this.logAIMoveFallback(playerNumber, gameState, randomMove, telemetry);
+    return { move: randomMove, telemetry };
+  }
+
+  private buildServiceTelemetry(
+    response: MoveResponse,
+    config: AIConfig,
+    requestStart: number,
+    configuredAiTypeLabel: string
+  ): AIMoveTelemetry {
+    const modelVersion = response.nn_model_version ?? response.model_version ?? null;
+    const modelPath =
+      response.nn_model_path ??
+      response.model_path ??
+      response.nn_checkpoint ??
+      response.nnue_checkpoint ??
+      response.model_id ??
+      null;
+
+    return {
+      modelVersion,
+      modelPath,
+      aiTier: config.difficulty,
+      latencyMs: Math.round(performance.now() - requestStart),
+      fallbackUsed: false,
+      fallbackReason: null,
+      aiType: response.ai_type ?? configuredAiTypeLabel,
+      source: 'python_service',
+    };
+  }
+
+  private buildNonFallbackTelemetry(
+    config: AIConfig,
+    requestStart: number,
+    configuredAiTypeLabel: string,
+    source: 'single_legal_move' | 'no_legal_moves'
+  ): AIMoveTelemetry {
+    return {
+      modelVersion: null,
+      modelPath: null,
+      aiTier: config.difficulty,
+      latencyMs: Math.round(performance.now() - requestStart),
+      fallbackUsed: false,
+      fallbackReason: null,
+      aiType: configuredAiTypeLabel,
+      source,
+    };
+  }
+
+  private buildFallbackTelemetry(
+    config: AIConfig,
+    requestStart: number,
+    configuredAiTypeLabel: string,
+    fallbackReason: string,
+    source: 'local_heuristic' | 'random'
+  ): AIMoveTelemetry {
+    return {
+      modelVersion: null,
+      modelPath: null,
+      aiTier: config.difficulty,
+      latencyMs: Math.round(performance.now() - requestStart),
+      fallbackUsed: true,
+      fallbackReason,
+      aiType: configuredAiTypeLabel,
+      source,
+    };
+  }
+
+  private logAIMoveFallback(
+    playerNumber: number,
+    gameState: GameState,
+    move: Move | null,
+    telemetry: AIMoveTelemetry
+  ): void {
+    logger.warn('AI move fallback used', {
+      event: 'ai_move_fallback',
+      gameId: gameState.id,
+      playerNumber,
+      moveType: move?.type ?? null,
+      modelVersion: telemetry.modelVersion,
+      modelPath: telemetry.modelPath,
+      aiTier: telemetry.aiTier,
+      latencyMs: telemetry.latencyMs,
+      fallbackUsed: telemetry.fallbackUsed,
+      fallbackReason: telemetry.fallbackReason,
+      aiType: telemetry.aiType,
+      source: telemetry.source,
+    });
   }
 
   /**

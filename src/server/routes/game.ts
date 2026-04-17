@@ -372,7 +372,17 @@ sandboxHelperRoutes.post(
 
     const aiClient = getAIServiceClient();
     try {
+      const requestStart = performance.now();
       const response = await aiClient.getAIMove(gameState, playerNumber, difficulty);
+      const latencyMs = Math.round(performance.now() - requestStart);
+      const modelVersion = response.nn_model_version ?? response.model_version ?? null;
+      const modelPath =
+        response.nn_model_path ??
+        response.model_path ??
+        response.nn_checkpoint ??
+        response.nnue_checkpoint ??
+        response.model_id ??
+        null;
 
       res.status(200).json({
         move: response.move,
@@ -390,6 +400,11 @@ sandboxHelperRoutes.post(
         simulationBudget: response.simulation_budget,
         device: response.device,
         searchStatsSummary: response.search_stats_summary,
+        modelVersion,
+        modelPath,
+        aiTier: difficulty,
+        latencyMs,
+        fallbackUsed: false,
       });
     } catch (err) {
       const message =

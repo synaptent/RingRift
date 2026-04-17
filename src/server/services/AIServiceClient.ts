@@ -252,8 +252,11 @@ export interface MoveResponse {
   use_neural_net?: boolean;
   nn_model_id?: string;
   nn_checkpoint?: string;
+  nn_model_path?: string | null;
   nnue_checkpoint?: string;
   model_id?: string | null;
+  model_path?: string | null;
+  model_version?: string | null;
   eval_mode?: string | null;
   simulation_budget?: number | null;
   device?: string | null;
@@ -264,6 +267,9 @@ export interface MoveResponse {
   /** Architecture version of the served NN, mirrored from
    * X-RingRift-Model-Version header (e.g. "v2.0.0", "v4.0.0"). */
   nn_model_version?: string | null;
+  ai_tier?: number | null;
+  latency_ms?: number | null;
+  fallback_used?: boolean | null;
 }
 
 export interface EvaluationRequest {
@@ -688,6 +694,13 @@ export class AIServiceClient {
             useNeuralNet: response.data.use_neural_net,
             nnModelId: response.data.nn_model_id,
             nnCheckpoint: response.data.nn_checkpoint,
+            modelVersion: response.data.nn_model_version ?? response.data.model_version,
+            modelPath:
+              response.data.nn_model_path ??
+              response.data.model_path ??
+              response.data.nn_checkpoint ??
+              response.data.nnue_checkpoint ??
+              response.data.model_id,
             nnueCheckpoint: response.data.nnue_checkpoint,
             modelId: response.data.model_id,
             evalMode: response.data.eval_mode,
