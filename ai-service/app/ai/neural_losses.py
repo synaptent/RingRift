@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 # Maximum number of players for multi-player value head
 MAX_PLAYERS = 4
+POLICY_LOGIT_CLAMP_MIN = -30.0
+POLICY_LOGIT_CLAMP_MAX = 30.0
 
 
 def multi_player_value_loss(
@@ -421,6 +423,27 @@ def masked_log_softmax(
     return output
 
 
+def stable_policy_log_softmax(
+    policy_logits: torch.Tensor,
+    valid_mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Clamp policy logits before log-softmax for numerically stable losses.
+
+    The training loop can see very large policy logits during failed or
+    borderline runs. Clamping to [-30, 30] preserves effectively-certain
+    probabilities while preventing extreme logits from dominating KL loss or
+    producing unstable gradients.
+    """
+    clamped_logits = torch.clamp(
+        policy_logits,
+        min=POLICY_LOGIT_CLAMP_MIN,
+        max=POLICY_LOGIT_CLAMP_MAX,
+    )
+    if valid_mask is not None:
+        return masked_log_softmax(clamped_logits, valid_mask)
+    return torch.log_softmax(clamped_logits, dim=1)
+
+
 def uses_spatial_policy_head(model) -> bool:
     """Check if a model uses spatial policy heads with masking.
 
@@ -661,5 +684,6 @@ __all__ = [
     'multi_player_value_loss',
     'rank_distribution_loss',
     'ranks_from_game_result',
+    'stable_policy_log_softmax',
     'validate_hex_policy_indices',
 ]

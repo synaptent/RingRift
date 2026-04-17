@@ -11,11 +11,14 @@ import torch
 
 from app.ai.neural_losses import (
     MAX_PLAYERS,
+    POLICY_LOGIT_CLAMP_MAX,
+    POLICY_LOGIT_CLAMP_MIN,
     build_rank_targets,
     masked_policy_kl,
     multi_player_value_loss,
     rank_distribution_loss,
     ranks_from_game_result,
+    stable_policy_log_softmax,
 )
 
 
@@ -289,6 +292,44 @@ class TestMaskedPolicyKL:
 
         assert torch.isfinite(loss)
         assert loss.item() >= 0
+
+
+class TestStablePolicyLogSoftmax:
+    """Tests for policy logit clamping before loss normalization."""
+
+    def test_clamps_extreme_flat_logits_before_log_softmax(self):
+        logits = torch.tensor([[1000.0, 0.0, -1000.0]])
+
+        log_probs = stable_policy_log_softmax(logits)
+
+        expected = torch.log_softmax(
+            torch.clamp(
+                logits,
+                min=POLICY_LOGIT_CLAMP_MIN,
+                max=POLICY_LOGIT_CLAMP_MAX,
+            ),
+            dim=1,
+        )
+        assert torch.allclose(log_probs, expected)
+        assert torch.isfinite(log_probs).all()
+
+    def test_clamps_masked_logits_without_unmasking_invalid_actions(self):
+        logits = torch.tensor([[1000.0, 0.0, -1000.0, -1e9]])
+        valid_mask = torch.tensor([[True, True, True, False]])
+
+        log_probs = stable_policy_log_softmax(logits, valid_mask)
+
+        expected_valid = torch.log_softmax(
+            torch.tensor([[
+                POLICY_LOGIT_CLAMP_MAX,
+                0.0,
+                POLICY_LOGIT_CLAMP_MIN,
+            ]]),
+            dim=1,
+        )
+        assert torch.allclose(log_probs[:, :3], expected_valid)
+        assert torch.isneginf(log_probs[:, 3]).all()
+        assert torch.isfinite(log_probs[:, :3]).all()
 
 
 class TestBuildRankTargets:

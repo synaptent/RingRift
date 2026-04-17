@@ -49,8 +49,8 @@ from app.training.train_metrics import (
 from app.ai.neural_losses import (
     build_rank_targets,
     detect_masked_policy_output,
-    masked_log_softmax,
     masked_policy_kl,
+    stable_policy_log_softmax,
     uses_spatial_policy_head,
     validate_hex_policy_indices,
 )
@@ -1652,17 +1652,19 @@ def train_model(
                                 f"valid_range=[{valid_logits.min():.2e}, {valid_logits.max():.2e}]"
                             )
 
-                    # Apply log_softmax to policy prediction for KLDivLoss
-                    # For spatial policy heads (V3/V4), use masked_log_softmax to avoid
-                    # numerical instability from -1e4/-1e9 masked positions
+                    # Apply stable log_softmax to policy prediction for KLDivLoss.
+                    # Spatial policy heads keep the valid-action mask semantics while
+                    # all heads clamp extreme logits before normalization.
                     if detect_masked_policy_output(policy_pred):
                         # Valid positions are either: (1) target distribution > 0, or
                         # (2) model logits > -1e3 (not masked by spatial scatter)
                         valid_mask = (policy_targets > 0) | (policy_pred > -1e3)
-                        policy_log_probs = masked_log_softmax(policy_pred, valid_mask)
+                        policy_log_probs = stable_policy_log_softmax(
+                            policy_pred,
+                            valid_mask,
+                        )
                     else:
-                        # Flat policy heads (V2, V3_Flat) - use standard log_softmax
-                        policy_log_probs = torch.log_softmax(policy_pred, dim=1)
+                        policy_log_probs = stable_policy_log_softmax(policy_pred)
 
                     # Use multi-player value loss for vector value targets
                     if use_multi_player_loss:
@@ -2271,12 +2273,16 @@ def train_model(
                             value_pred, policy_pred = out
                             rank_dist_pred = None
 
-                        # Use masked log_softmax for spatial policy heads
+                        # Clamp extreme logits before log-softmax while preserving
+                        # masked spatial-head normalization.
                         if detect_masked_policy_output(policy_pred):
                             valid_mask = (policy_targets > 0) | (policy_pred > -1e3)
-                            policy_log_probs = masked_log_softmax(policy_pred, valid_mask)
+                            policy_log_probs = stable_policy_log_softmax(
+                                policy_pred,
+                                valid_mask,
+                            )
                         else:
-                            policy_log_probs = torch.log_softmax(policy_pred, dim=1)
+                            policy_log_probs = stable_policy_log_softmax(policy_pred)
 
                         # Policy accuracy: compare predicted move vs target move
                         pred_move = policy_pred.argmax(dim=1)
