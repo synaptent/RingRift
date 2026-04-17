@@ -514,6 +514,22 @@ class MoveRequest(BaseModel):
         le=0x7FFFFFFF,
         description="Optional RNG seed for deterministic AI behavior"
     )
+    # C2 / issue #80: optional persona selector.  Accepts one of the four
+    # named personas registered in app.ai.heuristic_weights:
+    #   "balanced" | "aggressive" | "territorial" | "defensive"
+    # When present and RINGRIFT_PERSONAS_ENABLED=true on the server, this
+    # overrides the ladder's default heuristic_profile_id for tiers that
+    # use a heuristic profile (every tier that eventually calls into the
+    # heuristic weights — D2 heuristic, D3-D6 minimax/descent, D7-D10
+    # MCTS/Gumbel all blend against heuristic). Otherwise the default
+    # ladder profile is used unchanged.
+    persona_id: str | None = Field(
+        None,
+        description=(
+            "Optional named persona: balanced|aggressive|territorial|defensive. "
+            "Maps to heuristic_v1_<persona> profile when personas feature flag is on."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_player_number(self) -> Self:
@@ -526,6 +542,54 @@ class MoveRequest(BaseModel):
                 f"player_number {self.player_number} exceeds number of players ({len(players)})"
             )
         return self
+
+    @model_validator(mode="after")
+    def validate_persona_id(self) -> Self:
+        """Reject unknown personas up front so we don't silently pick the
+        default. Accepts None (no persona) or one of the 4 registered names."""
+        if self.persona_id is None:
+            return self
+        if self.persona_id not in _ALLOWED_PERSONA_IDS:
+            raise ValueError(
+                f"persona_id {self.persona_id!r} not in "
+                f"{sorted(_ALLOWED_PERSONA_IDS)}"
+            )
+        return self
+
+
+# Kept in sync with app.ai.heuristic_weights.HEURISTIC_PROFILES keys. Only the
+# four high-level persona names are valid request values; the board-specific
+# ids (heuristic_v1_sq8_2p etc.) are server-side implementation detail.
+_ALLOWED_PERSONA_IDS = frozenset({
+    "balanced",
+    "aggressive",
+    "territorial",
+    "defensive",
+})
+
+
+def _personas_feature_enabled() -> bool:
+    """Server-side feature flag for the persona selector.
+
+    Default off so current traffic is untouched. Flip via
+    ``RINGRIFT_PERSONAS_ENABLED=true`` once the UI ships.
+    """
+    return os.environ.get("RINGRIFT_PERSONAS_ENABLED", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _resolve_persona_profile_id(persona_id: str | None) -> str | None:
+    """Return the heuristic_v1_<persona> profile id for a requested persona,
+    or None when no persona was requested or the flag is off."""
+    if not persona_id:
+        return None
+    if not _personas_feature_enabled():
+        return None
+    if persona_id not in _ALLOWED_PERSONA_IDS:
+        # Should have been caught by the request validator; be defensive.
+        return None
+    return f"heuristic_v1_{persona_id}"
 
 
 class MoveResponse(BaseModel):
@@ -551,6 +615,9 @@ class MoveResponse(BaseModel):
     # active (random/heuristic/minimax-without-NNUE or silent fallback).
     # Mirrored as X-RingRift-Model-Version response header.
     nn_model_version: str | None = None
+    # C2: echoes the persona that actually served this move, or null when
+    # no persona was requested / the personas feature flag is off.
+    persona_id: str | None = None
 
 
 def _summarize_search_stats(stats: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1299,6 +1366,17 @@ async def get_ai_move(request: MoveRequest, response: Response):
         elif ai_type == AIType.HEURISTIC:
             heuristic_profile_id = profile.get("profile_id")
 
+        # C2 persona override: when the request carries persona_id and the
+        # server has personas enabled, swap the ladder's default heuristic
+        # profile for heuristic_v1_<persona>. The 4 personas each change
+        # weight deltas on 51 heuristic features (see app.ai.heuristic_weights)
+        # — same AI type, same think time, distinguishably different play.
+        persona_profile_id = _resolve_persona_profile_id(request.persona_id)
+        persona_applied = False
+        if persona_profile_id is not None:
+            heuristic_profile_id = persona_profile_id
+            persona_applied = True
+
         if use_neural_net and ladder_config is not None and ladder_config.model_id:
             nn_model_id = ladder_config.model_id
 
@@ -1521,13 +1599,18 @@ async def get_ai_move(request: MoveRequest, response: Response):
         response.headers["X-RingRift-Model-Version"] = version_label
         if nn_checkpoint:
             response.headers["X-RingRift-Model-Checkpoint"] = nn_checkpoint
+        if persona_applied:
+            # Clients and proxies can confirm their persona request was
+            # actually honored — useful because it silently no-ops when the
+            # RINGRIFT_PERSONAS_ENABLED server flag is off.
+            response.headers["X-RingRift-Persona"] = request.persona_id or ""
 
         logger.info(
             (
                 "AI move: type=%s, difficulty=%d, time=%dms, eval=%.2f, "
                 "model_id=%s, model_version=%s, eval_mode=%s, "
                 "simulation_budget=%s, actual_simulations=%s, device=%s, "
-                "fallback_reason=%s"
+                "fallback_reason=%s, persona=%s"
             ),
             ai_type.value,
             request.difficulty,
@@ -1540,6 +1623,7 @@ async def get_ai_move(request: MoveRequest, response: Response):
             actual_simulations,
             device,
             fallback_reason,
+            request.persona_id if persona_applied else None,
         )
 
         return MoveResponse(
@@ -1559,6 +1643,7 @@ async def get_ai_move(request: MoveRequest, response: Response):
             device=device,
             search_stats_summary=search_stats_summary,
             nn_model_version=nn_model_version,
+            persona_id=request.persona_id if persona_applied else None,
         )
 
     except Exception as e:
