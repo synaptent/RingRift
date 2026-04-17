@@ -282,8 +282,6 @@ export const SandboxGameHost: React.FC = () => {
   const sandboxActiveGameIdRef = useRef<string | null>(null);
   const sandboxGameStartedAtRef = useRef<number | null>(null);
   const processedSandboxAiTimingKeysRef = useRef<Set<string>>(new Set());
-  const pendingScenarioAiKickEngineRef = useRef<ClientSandboxEngine | null>(null);
-  const [scenarioAiKickNonce, setScenarioAiKickNonce] = useState(0);
 
   // Game view once configured (local sandbox) - needed early for clock hook
   const sandboxGameStateForClock: GameState | null = sandboxEngine
@@ -641,8 +639,29 @@ export const SandboxGameHost: React.FC = () => {
         // The hook now returns the engine synchronously so we can use it for replay
         const engine = hookHandleLoadScenario(scenario);
         if (engine) {
-          pendingScenarioAiKickEngineRef.current = engine;
-          setScenarioAiKickNonce((nonce) => nonce + 1);
+          window.setTimeout(() => {
+            void (async () => {
+              let safetyCounter = 0;
+
+              while (safetyCounter < 8) {
+                const state = engine.getGameState();
+                const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
+                if (state.gameStatus !== 'active' || !current || current.type !== 'ai') {
+                  break;
+                }
+
+                await engine.maybeRunAITurn();
+                setSelected(undefined);
+                setValidTargets([]);
+                setSandboxStateVersion((v) => v + 1);
+                setSandboxLastProgressAt(Date.now());
+                setSandboxStallWarning(null);
+
+                safetyCounter += 1;
+                await new Promise((resolve) => window.setTimeout(resolve, 120));
+              }
+            })();
+          }, 80);
         }
 
         // Handle self-play specific logic
@@ -808,22 +827,6 @@ export const SandboxGameHost: React.FC = () => {
     setValidTargets,
     choiceResolverRef: sandboxChoiceResolverRef,
   });
-
-  useEffect(() => {
-    const engine = pendingScenarioAiKickEngineRef.current;
-    if (!engine) {
-      return;
-    }
-
-    pendingScenarioAiKickEngineRef.current = null;
-    const timeoutId = window.setTimeout(() => {
-      maybeRunSandboxAiIfNeeded(engine);
-    }, 60);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [scenarioAiKickNonce, maybeRunSandboxAiIfNeeded]);
 
   // Game lifecycle: start, reset, rematch, and preset handlers via extracted hook
   const { actions: lifecycleActions } = useSandboxGameLifecycle({
