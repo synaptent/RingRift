@@ -4380,9 +4380,37 @@ class NeuralNetAI(BaseAI):
         board_name_str = board_type.name.lower()
         players = num_players or 2
 
-        # V5-heavy models use 40 input channels (v2 encoder with heuristics)
-        # determined from training data
-        in_channels = 40  # Default for v2 encoder with heuristics
+        # Inspect the checkpoint (if present) and build the model with
+        # matching input channels. Previously this hardcoded 40ch, which
+        # silently broke the minimal-loop v5-heavy pipeline: the loop
+        # exports 64ch NPZ (v3 encoder) for hex under --model-version
+        # v5-heavy, and the runtime would then refuse the 64ch checkpoint
+        # at strict load_state_dict. Falling back to 40ch when no
+        # checkpoint exists preserves the pre-existing default.
+        in_channels = 40  # default when no checkpoint is available
+        if os.path.exists(model_path):
+            try:
+                from ..utils.torch_utils import safe_load_checkpoint
+                _peek_ckpt = safe_load_checkpoint(model_path, map_location="cpu")
+                _peek_sd = (
+                    _peek_ckpt.get("model_state_dict")
+                    or _peek_ckpt.get("state_dict")
+                    or _peek_ckpt
+                )
+                _peek_sd = _strip_module_prefix(_peek_sd)
+                _conv1 = _peek_sd.get("conv1.weight")
+                if _conv1 is not None and len(_conv1.shape) == 4:
+                    in_channels = int(_conv1.shape[1])
+                    logger.info(
+                        "V5-Heavy checkpoint conv1 indicates in_channels=%d",
+                        in_channels,
+                    )
+            except Exception as exc:  # noqa: BLE001 — never block on metadata peek
+                logger.warning(
+                    "Could not inspect V5-Heavy checkpoint for in_channels "
+                    "(falling back to %d): %s",
+                    in_channels, exc,
+                )
 
         if variant == "large":
             self.model = create_v5_heavy_large(
