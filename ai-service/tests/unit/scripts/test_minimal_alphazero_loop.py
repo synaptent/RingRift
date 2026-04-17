@@ -214,6 +214,32 @@ def _run_loop_once(
     }
 
 
+def test_export_npz_requests_heuristics_for_v5_heavy(monkeypatch, tmp_path):
+    """V5-heavy minimal-loop exports must include heuristic features."""
+    jsonl_path = tmp_path / "games.jsonl"
+    jsonl_path.write_text("{}\n", encoding="utf-8")
+    npz_path = tmp_path / "games.npz"
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, capture_output, text):
+        captured["cmd"] = cmd
+        np.savez_compressed(
+            npz_path,
+            features=np.zeros((1, 64, 9, 9), dtype=np.float32),
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(loop.subprocess, "run", fake_run)
+    monkeypatch.setattr(loop, "MODEL_VERSION", "v5-heavy")
+    monkeypatch.setattr(loop, "BOARD_TYPE", "hex8")
+    monkeypatch.setattr(loop, "NUM_PLAYERS", 2)
+
+    assert loop.export_npz(jsonl_path, npz_path) is True
+    assert "--encoder-version" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--encoder-version") + 1] == "v3"
+    assert "--include-heuristics" in captured["cmd"]
+
+
 def test_loop_records_split_budgets_fixed_lr_and_heartbeat_context(monkeypatch, tmp_path):
     result = _run_loop_once(
         monkeypatch,

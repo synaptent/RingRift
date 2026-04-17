@@ -148,6 +148,67 @@ def test_npz_export_produces_expected_schema(tmp_path: Path, monkeypatch) -> Non
         assert data["values"].shape[0] == stats.positions_extracted
 
 
+def test_npz_export_can_emit_v5_heuristics(tmp_path: Path, monkeypatch) -> None:
+    """V5-family JSONL exports include heuristic features required by training."""
+    monkeypatch.setenv("RINGRIFT_FORCE_CPU", "1")
+    monkeypatch.setenv("RINGRIFT_MIN_MOVES", "1")
+
+    from scripts.jsonl_to_npz import convert_jsonl_to_npz
+
+    env = make_env(TrainingEnvConfig(board_type=BoardType.HEX8, num_players=2, max_moves=80))
+    state = env.reset(seed=456)
+    moves = []
+
+    for _ in range(12):
+        legal_moves = env.legal_moves()
+        assert legal_moves, "Generated contract game ran out of legal moves"
+        move = legal_moves[0]
+        move_payload = move.model_dump(by_alias=True, exclude_none=True, mode="json")
+        move_payload.setdefault("mcts_policy", {"0": 1.0})
+        moves.append(move_payload)
+        state, _reward, done, _info = env.step(move)
+        if done:
+            break
+
+    jsonl_path = tmp_path / "contract_game_v5.jsonl"
+    npz_path = tmp_path / "contract_game_v5.npz"
+    game_status = getattr(state.game_status, "value", state.game_status)
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "game_id": "contract_hex8_2p_v5",
+                "board_type": "hex8",
+                "num_players": 2,
+                "winner": state.winner or 1,
+                "status": game_status,
+                "num_moves": len(moves),
+                "moves": moves,
+                "timestamp": "2026-04-10T00:00:00Z",
+            }
+        )
+        + "\n"
+    )
+
+    stats = convert_jsonl_to_npz(
+        [jsonl_path],
+        npz_path,
+        "hex8",
+        players_filter=2,
+        max_games=1,
+        gpu_selfplay_mode=True,
+        encoder_version="v3",
+        include_heuristics=True,
+    )
+
+    assert stats.games_processed == 1
+    assert stats.positions_extracted > 0
+    with np.load(npz_path, allow_pickle=True) as data:
+        assert data["features"].shape[1] == get_expected_channels(BoardType.HEX8, "v3")
+        assert data["heuristics"].shape == (stats.positions_extracted, 21)
+        assert int(data["num_heuristic_features"].item()) == 21
+        assert str(data["heuristic_mode"].item()) == "fast"
+
+
 def test_gauntlet_eval_budget_matches_threshold_source_of_truth() -> None:
     """Gauntlet budgets are centralized through thresholds.py for all configs."""
     assert GUMBEL_BUDGET_QUALITY == GUMBEL_BUDGET_STANDARD

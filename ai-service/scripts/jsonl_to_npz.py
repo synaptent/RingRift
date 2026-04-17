@@ -24,6 +24,7 @@ Output NPZ format (compatible with train.py):
 - phases: (N,) object - Game phase at each position
 - values_mp: (N, 4) float32 - Multi-player value vectors
 - num_players: (N,) int32 - Player count per sample
+- heuristics: optional (N, 21) float32 - Fast heuristic features for v5-family models
 
 Usage:
     # Basic conversion (replays games properly)
@@ -86,6 +87,17 @@ from app.rules.global_actions import apply_forced_elimination_for_player
 from app.rules.serialization import deserialize_game_state
 from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 
+try:
+    from app.training.fast_heuristic_features import (
+        NUM_HEURISTIC_FEATURES,
+        extract_heuristic_features,
+    )
+    HAS_HEURISTIC_EXTRACTOR = True
+except ImportError:  # pragma: no cover - fallback only for stripped deployments
+    NUM_HEURISTIC_FEATURES = 21
+    HAS_HEURISTIC_EXTRACTOR = False
+    extract_heuristic_features = None
+
 
 def create_initial_state_from_record(
     board_type_str: str,
@@ -145,6 +157,22 @@ def _should_train_on_move(move_dict: dict[str, Any] | Any) -> bool:
     if "policy_target" not in move_dict:
         return True
     return bool(move_dict.get("policy_target"))
+
+
+def _extract_fast_heuristics(state: GameState, player_number: int) -> np.ndarray:
+    """Extract the 21-feature heuristic vector expected by v5-family models."""
+    if not HAS_HEURISTIC_EXTRACTOR or extract_heuristic_features is None:
+        return np.zeros(NUM_HEURISTIC_FEATURES, dtype=np.float32)
+    try:
+        return extract_heuristic_features(
+            state,
+            player_number=player_number,
+            eval_mode="full",
+            normalize=True,
+        ).astype(np.float32)
+    except Exception as exc:
+        logger.debug("Heuristic feature extraction failed: %s", exc)
+        return np.zeros(NUM_HEURISTIC_FEATURES, dtype=np.float32)
 
 
 def _complete_remaining_phases(
@@ -320,6 +348,7 @@ def _process_gpu_selfplay_record(
     encoder: NeuralNetAI,
     history_length: int,
     sample_every: int,
+    include_heuristics: bool = False,
 ) -> tuple[
     list[np.ndarray],  # features
     list[np.ndarray],  # globals
@@ -331,6 +360,7 @@ def _process_gpu_selfplay_record(
     list[int],         # move_numbers
     list[int],         # total_game_moves
     list[str],         # phases
+    list[np.ndarray],  # heuristics
     int,               # positions_extracted
 ]:
     """Process a GPU selfplay record with proper policy extraction.
@@ -352,6 +382,7 @@ def _process_gpu_selfplay_record(
     move_numbers_list: list[int] = []
     total_game_moves_list: list[int] = []
     phases_list: list[str] = []
+    heuristics_list: list[np.ndarray] = []
 
     # Extract data from record
     initial_state_dict = record.get("initial_state")
@@ -363,7 +394,8 @@ def _process_gpu_selfplay_record(
     if not moves_list:
         return (features_list, globals_list, values_list, values_mp_list,
                 num_players_list, policy_indices_list, policy_values_list,
-                move_numbers_list, total_game_moves_list, phases_list, 0)
+                move_numbers_list, total_game_moves_list, phases_list,
+                heuristics_list, 0)
 
     # Parse initial state (or create fresh if not provided)
     if initial_state_dict:
@@ -531,6 +563,10 @@ def _process_gpu_selfplay_record(
             move_numbers_list.append(move_idx)
             total_game_moves_list.append(total_moves)
             phases_list.append(phase_str)
+            if include_heuristics:
+                heuristics_list.append(
+                    _extract_fast_heuristics(current_state, current_state.current_player)
+                )
 
             positions_extracted += 1
 
@@ -553,7 +589,8 @@ def _process_gpu_selfplay_record(
 
     return (features_list, globals_list, values_list, values_mp_list,
             num_players_list, policy_indices_list, policy_values_list,
-            move_numbers_list, total_game_moves_list, phases_list, positions_extracted)
+            move_numbers_list, total_game_moves_list, phases_list,
+            heuristics_list, positions_extracted)
 
 
 def _move_type_from_str(type_str: str) -> MoveType | None:
@@ -1118,6 +1155,7 @@ class CheckpointManager:
         move_numbers: list[int],
         total_game_moves: list[int],
         phases: list[str],
+        heuristics: list[np.ndarray] | None = None,
     ) -> Path | None:
         """Save a chunk of data to disk."""
         if not self.enabled or not features:
@@ -1126,30 +1164,34 @@ class CheckpointManager:
         chunk_path = self.checkpoint_dir / f"chunk_{self.chunk_count:04d}.npz"
 
         try:
-            np.savez_compressed(
-                chunk_path,
-                features=np.stack(features, axis=0).astype(np.float32),
-                globals=np.stack(globals_vec, axis=0).astype(np.float32),
-                values=np.array(values, dtype=np.float32),
-                values_mp=np.stack(values_mp, axis=0).astype(np.float32),
-                num_players=np.array(num_players, dtype=np.int32),
-                policy_indices=np.array(policy_indices, dtype=object),
-                policy_values=np.array(policy_values, dtype=object),
-                move_numbers=np.array(move_numbers, dtype=np.int32),
-                total_game_moves=np.array(total_game_moves, dtype=np.int32),
-                phases=np.array(phases, dtype=object),
-                history_length=np.asarray(int(self.history_length)),
-                feature_version=np.asarray(int(self.feature_version)),
-                policy_encoding=np.asarray(self.policy_encoding),
+            save_kwargs = {
+                "features": np.stack(features, axis=0).astype(np.float32),
+                "globals": np.stack(globals_vec, axis=0).astype(np.float32),
+                "values": np.array(values, dtype=np.float32),
+                "values_mp": np.stack(values_mp, axis=0).astype(np.float32),
+                "num_players": np.array(num_players, dtype=np.int32),
+                "policy_indices": np.array(policy_indices, dtype=object),
+                "policy_values": np.array(policy_values, dtype=object),
+                "move_numbers": np.array(move_numbers, dtype=np.int32),
+                "total_game_moves": np.array(total_game_moves, dtype=np.int32),
+                "phases": np.array(phases, dtype=object),
+                "history_length": np.asarray(int(self.history_length)),
+                "feature_version": np.asarray(int(self.feature_version)),
+                "policy_encoding": np.asarray(self.policy_encoding),
                 # Encoder metadata for model compatibility validation
-                encoder_type=np.asarray(self.encoder_metadata.get("encoder_type", "unknown")),
-                base_channels=np.asarray(self.encoder_metadata.get("base_channels", 0)),
-                in_channels=np.asarray(self.encoder_metadata.get("in_channels", 0)),
-                board_type=np.asarray(self.encoder_metadata.get("board_type", "unknown")),
-                spatial_size=np.asarray(self.encoder_metadata.get("spatial_size", 0)),
-                policy_size=np.asarray(self.encoder_metadata.get("policy_size", 0)),
-                data_schema_version=np.asarray(self.encoder_metadata.get("data_schema_version", "v1")),
-            )
+                "encoder_type": np.asarray(self.encoder_metadata.get("encoder_type", "unknown")),
+                "base_channels": np.asarray(self.encoder_metadata.get("base_channels", 0)),
+                "in_channels": np.asarray(self.encoder_metadata.get("in_channels", 0)),
+                "board_type": np.asarray(self.encoder_metadata.get("board_type", "unknown")),
+                "spatial_size": np.asarray(self.encoder_metadata.get("spatial_size", 0)),
+                "policy_size": np.asarray(self.encoder_metadata.get("policy_size", 0)),
+                "data_schema_version": np.asarray(self.encoder_metadata.get("data_schema_version", "v1")),
+            }
+            if heuristics:
+                save_kwargs["heuristics"] = np.stack(heuristics, axis=0).astype(np.float32)
+                save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES)
+                save_kwargs["heuristic_mode"] = np.asarray("fast")
+            np.savez_compressed(chunk_path, **save_kwargs)
 
             self.chunk_count += 1
             logger.info(f"Saved checkpoint chunk {self.chunk_count}: {len(features)} samples to {chunk_path}")
@@ -1182,6 +1224,7 @@ class CheckpointManager:
         all_move_numbers = []
         all_total_game_moves = []
         all_phases = []
+        all_heuristics = []
 
         for chunk_file in chunk_files:
             try:
@@ -1196,6 +1239,8 @@ class CheckpointManager:
                     all_move_numbers.append(data["move_numbers"])
                     all_total_game_moves.append(data["total_game_moves"])
                     all_phases.extend(data["phases"])
+                    if "heuristics" in data.files:
+                        all_heuristics.append(data["heuristics"])
             except Exception as e:
                 logger.error(f"Failed to load chunk {chunk_file}: {e}")
                 return False
@@ -1211,33 +1256,42 @@ class CheckpointManager:
         policy_indices_arr = np.array(all_policy_indices, dtype=object)
         policy_values_arr = np.array(all_policy_values, dtype=object)
         phases_arr = np.array(all_phases, dtype=object)
+        heuristics_arr = (
+            np.concatenate(all_heuristics, axis=0).astype(np.float32)
+            if all_heuristics
+            else None
+        )
 
         # Save merged file
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            output_path,
-            features=features_arr,
-            globals=globals_arr,
-            values=values_arr,
-            policy_indices=policy_indices_arr,
-            policy_values=policy_values_arr,
-            move_numbers=move_numbers_arr,
-            total_game_moves=total_game_moves_arr,
-            phases=phases_arr,
-            values_mp=values_mp_arr,
-            num_players=num_players_arr,
-            history_length=np.asarray(int(self.history_length)),
-            feature_version=np.asarray(int(self.feature_version)),
-            policy_encoding=np.asarray(self.policy_encoding),
+        save_kwargs = {
+            "features": features_arr,
+            "globals": globals_arr,
+            "values": values_arr,
+            "policy_indices": policy_indices_arr,
+            "policy_values": policy_values_arr,
+            "move_numbers": move_numbers_arr,
+            "total_game_moves": total_game_moves_arr,
+            "phases": phases_arr,
+            "values_mp": values_mp_arr,
+            "num_players": num_players_arr,
+            "history_length": np.asarray(int(self.history_length)),
+            "feature_version": np.asarray(int(self.feature_version)),
+            "policy_encoding": np.asarray(self.policy_encoding),
             # Encoder metadata for model compatibility validation
-            encoder_type=np.asarray(self.encoder_metadata.get("encoder_type", "unknown")),
-            base_channels=np.asarray(self.encoder_metadata.get("base_channels", 0)),
-            in_channels=np.asarray(self.encoder_metadata.get("in_channels", 0)),
-            board_type=np.asarray(self.encoder_metadata.get("board_type", "unknown")),
-            spatial_size=np.asarray(self.encoder_metadata.get("spatial_size", 0)),
-            policy_size=np.asarray(self.encoder_metadata.get("policy_size", 0)),
-            data_schema_version=np.asarray(self.encoder_metadata.get("data_schema_version", "v1")),
-        )
+            "encoder_type": np.asarray(self.encoder_metadata.get("encoder_type", "unknown")),
+            "base_channels": np.asarray(self.encoder_metadata.get("base_channels", 0)),
+            "in_channels": np.asarray(self.encoder_metadata.get("in_channels", 0)),
+            "board_type": np.asarray(self.encoder_metadata.get("board_type", "unknown")),
+            "spatial_size": np.asarray(self.encoder_metadata.get("spatial_size", 0)),
+            "policy_size": np.asarray(self.encoder_metadata.get("policy_size", 0)),
+            "data_schema_version": np.asarray(self.encoder_metadata.get("data_schema_version", "v1")),
+        }
+        if heuristics_arr is not None:
+            save_kwargs["heuristics"] = heuristics_arr
+            save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES)
+            save_kwargs["heuristic_mode"] = np.asarray("fast")
+        np.savez_compressed(output_path, **save_kwargs)
 
         logger.info(f"Merged {len(features_arr)} samples into {output_path}")
         return True
@@ -1263,6 +1317,7 @@ def process_jsonl_file(
     history_length: int,
     current_games: int,
     gpu_selfplay_mode: bool = False,
+    include_heuristics: bool = False,
 ) -> tuple[
     list[np.ndarray],  # features
     list[np.ndarray],  # globals
@@ -1274,6 +1329,7 @@ def process_jsonl_file(
     list[int],         # move_numbers
     list[int],         # total_game_moves
     list[str],         # phases
+    list[np.ndarray],  # heuristics
     ConversionStats,
 ]:
     """Process a single JSONL file and extract training data."""
@@ -1287,6 +1343,7 @@ def process_jsonl_file(
     move_numbers_list = []
     total_game_moves_list = []
     phases_list = []
+    heuristics_list = []
 
     stats = ConversionStats()
     games_in_file = 0
@@ -1337,9 +1394,14 @@ def process_jsonl_file(
                     (
                         gpu_features, gpu_globals, gpu_values, gpu_values_mp,
                         gpu_num_players, gpu_policy_idx, gpu_policy_val,
-                        gpu_move_nums, gpu_total_moves, gpu_phases, extracted
+                        gpu_move_nums, gpu_total_moves, gpu_phases,
+                        gpu_heuristics, extracted
                     ) = _process_gpu_selfplay_record(
-                        record, encoder, history_length, sample_every
+                        record,
+                        encoder,
+                        history_length,
+                        sample_every,
+                        include_heuristics=include_heuristics,
                     )
 
                     features_list.extend(gpu_features)
@@ -1352,6 +1414,7 @@ def process_jsonl_file(
                     move_numbers_list.extend(gpu_move_nums)
                     total_game_moves_list.extend(gpu_total_moves)
                     phases_list.extend(gpu_phases)
+                    heuristics_list.extend(gpu_heuristics)
 
                     stats.positions_extracted += extracted
                     games_in_file += 1
@@ -1511,6 +1574,10 @@ def process_jsonl_file(
                     move_numbers_list.append(move_idx)
                     total_game_moves_list.append(moves_succeeded)
                     phases_list.append(phase_str)
+                    if include_heuristics:
+                        heuristics_list.append(
+                            _extract_fast_heuristics(current_state, current_state.current_player)
+                        )
 
                     stats.positions_extracted += 1
 
@@ -1532,7 +1599,8 @@ def process_jsonl_file(
     return (
         features_list, globals_list, values_list, values_mp_list,
         num_players_list, policy_indices_list, policy_values_list,
-        move_numbers_list, total_game_moves_list, phases_list, stats
+        move_numbers_list, total_game_moves_list, phases_list,
+        heuristics_list, stats
     )
 
 
@@ -1558,6 +1626,7 @@ def convert_jsonl_to_npz(
     checkpoint_interval: int = 100,
     resume: bool = False,
     encoder_version: str = "v2",
+    include_heuristics: bool = False,
 ) -> ConversionStats:
     """Convert JSONL files to NPZ training data.
 
@@ -1624,6 +1693,7 @@ def convert_jsonl_to_npz(
     all_move_numbers = []
     all_total_game_moves = []
     all_phases = []
+    all_heuristics = []
 
     total_stats = ConversionStats()
     games_since_checkpoint = 0
@@ -1639,7 +1709,7 @@ def convert_jsonl_to_npz(
 
         (features, globals_vec, values, values_mp, num_players,
          policy_indices, policy_values, move_numbers, total_moves,
-         phases, stats) = process_jsonl_file(
+         phases, heuristics, stats) = process_jsonl_file(
             filepath=filepath,
             encoder=encoder,
             board_type=board_type,
@@ -1650,6 +1720,7 @@ def convert_jsonl_to_npz(
             history_length=history_length,
             current_games=total_stats.games_processed,
             gpu_selfplay_mode=gpu_selfplay_mode,
+            include_heuristics=include_heuristics,
         )
 
         all_features.extend(features)
@@ -1662,6 +1733,7 @@ def convert_jsonl_to_npz(
         all_move_numbers.extend(move_numbers)
         all_total_game_moves.extend(total_moves)
         all_phases.extend(phases)
+        all_heuristics.extend(heuristics)
 
         total_stats.files_processed += stats.files_processed
         total_stats.games_processed += stats.games_processed
@@ -1678,6 +1750,7 @@ def convert_jsonl_to_npz(
                 all_features, all_globals, all_values, all_values_mp,
                 all_num_players, all_policy_indices, all_policy_values,
                 all_move_numbers, all_total_game_moves, all_phases,
+                all_heuristics if include_heuristics else None,
             )
             checkpoint_mgr.save_progress(total_stats.games_processed, total_stats)
 
@@ -1692,6 +1765,7 @@ def convert_jsonl_to_npz(
             all_move_numbers.clear()
             all_total_game_moves.clear()
             all_phases.clear()
+            all_heuristics.clear()
             games_since_checkpoint = 0
 
         if (i + 1) % 10 == 0 or i == len(input_paths) - 1:
@@ -1707,6 +1781,7 @@ def convert_jsonl_to_npz(
             all_features, all_globals, all_values, all_values_mp,
             all_num_players, all_policy_indices, all_policy_values,
             all_move_numbers, all_total_game_moves, all_phases,
+            all_heuristics if include_heuristics else None,
         )
         checkpoint_mgr.save_progress(total_stats.games_processed, total_stats)
 
@@ -1751,30 +1826,35 @@ def convert_jsonl_to_npz(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Saving to {output_path}...")
 
-        np.savez_compressed(
-            output_path,
-            features=features_arr,
-            globals=globals_arr,
-            values=values_arr,
-            policy_indices=policy_indices_arr,
-            policy_values=policy_values_arr,
-            move_numbers=move_numbers_arr,
-            total_game_moves=total_game_moves_arr,
-            phases=phases_arr,
-            values_mp=values_mp_arr,
-            num_players=num_players_arr,
-            history_length=np.asarray(int(history_length)),
-            feature_version=np.asarray(int(feature_version)),
-            policy_encoding=np.asarray("board_aware"),
+        save_kwargs = {
+            "features": features_arr,
+            "globals": globals_arr,
+            "values": values_arr,
+            "policy_indices": policy_indices_arr,
+            "policy_values": policy_values_arr,
+            "move_numbers": move_numbers_arr,
+            "total_game_moves": total_game_moves_arr,
+            "phases": phases_arr,
+            "values_mp": values_mp_arr,
+            "num_players": num_players_arr,
+            "history_length": np.asarray(int(history_length)),
+            "feature_version": np.asarray(int(feature_version)),
+            "policy_encoding": np.asarray("board_aware"),
             # Encoder metadata for model compatibility validation
-            encoder_type=np.asarray(encoder_metadata.get("encoder_type", "unknown")),
-            base_channels=np.asarray(encoder_metadata.get("base_channels", 0)),
-            in_channels=np.asarray(encoder_metadata.get("in_channels", 0)),
-            board_type=np.asarray(encoder_metadata.get("board_type", "unknown")),
-            spatial_size=np.asarray(encoder_metadata.get("spatial_size", 0)),
-            policy_size=np.asarray(encoder_metadata.get("policy_size", 0)),
-            data_schema_version=np.asarray(encoder_metadata.get("data_schema_version", "v1")),
-        )
+            "encoder_type": np.asarray(encoder_metadata.get("encoder_type", "unknown")),
+            "base_channels": np.asarray(encoder_metadata.get("base_channels", 0)),
+            "in_channels": np.asarray(encoder_metadata.get("in_channels", 0)),
+            "board_type": np.asarray(encoder_metadata.get("board_type", "unknown")),
+            "spatial_size": np.asarray(encoder_metadata.get("spatial_size", 0)),
+            "policy_size": np.asarray(encoder_metadata.get("policy_size", 0)),
+            "data_schema_version": np.asarray(encoder_metadata.get("data_schema_version", "v1")),
+        }
+        if include_heuristics:
+            save_kwargs["heuristics"] = np.stack(all_heuristics, axis=0).astype(np.float32)
+            save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES)
+            save_kwargs["heuristic_mode"] = np.asarray("fast")
+
+        np.savez_compressed(output_path, **save_kwargs)
     else:
         logger.warning("No training data extracted!")
         return total_stats
@@ -1859,6 +1939,11 @@ def main():
              "compatible with HexNeuralNet_v3). Default: v2",
     )
     parser.add_argument(
+        "--include-heuristics",
+        action="store_true",
+        help="Emit 21 fast heuristic features required by v5-family models",
+    )
+    parser.add_argument(
         "--checkpoint-dir",
         type=str,
         help="Directory for checkpoint chunks (enables incremental saves to prevent data loss)",
@@ -1903,6 +1988,7 @@ def main():
         checkpoint_interval=args.checkpoint_interval,
         resume=args.resume,
         encoder_version=args.encoder_version,
+        include_heuristics=args.include_heuristics,
     )
 
     logger.info("")
