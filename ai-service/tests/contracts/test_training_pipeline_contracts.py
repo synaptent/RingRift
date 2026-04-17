@@ -204,9 +204,9 @@ def test_npz_export_can_emit_v5_heuristics(tmp_path: Path, monkeypatch) -> None:
     assert stats.positions_extracted > 0
     with np.load(npz_path, allow_pickle=True) as data:
         assert data["features"].shape[1] == get_expected_channels(BoardType.HEX8, "v3")
-        assert data["heuristics"].shape == (stats.positions_extracted, 21)
-        assert int(data["num_heuristic_features"].item()) == 21
-        assert str(data["heuristic_mode"].item()) == "fast"
+        assert data["heuristics"].shape == (stats.positions_extracted, 49)
+        assert int(data["num_heuristic_features"].item()) == 49
+        assert str(data["heuristic_mode"].item()) == "full"
 
 
 def test_gauntlet_eval_budget_matches_threshold_source_of_truth() -> None:

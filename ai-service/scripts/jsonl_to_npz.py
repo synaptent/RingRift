@@ -24,7 +24,7 @@ Output NPZ format (compatible with train.py):
 - phases: (N,) object - Game phase at each position
 - values_mp: (N, 4) float32 - Multi-player value vectors
 - num_players: (N,) int32 - Player count per sample
-- heuristics: optional (N, 21) float32 - Fast heuristic features for v5-family models
+- heuristics: optional (N, 49) float32 - Full heuristic features for v5-family models
 
 Usage:
     # Basic conversion (replays games properly)
@@ -89,14 +89,14 @@ from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 
 try:
     from app.training.fast_heuristic_features import (
-        NUM_HEURISTIC_FEATURES,
-        extract_heuristic_features,
+        NUM_HEURISTIC_FEATURES_FULL,
+        extract_full_heuristic_features,
     )
     HAS_HEURISTIC_EXTRACTOR = True
 except ImportError:  # pragma: no cover - fallback only for stripped deployments
-    NUM_HEURISTIC_FEATURES = 21
+    NUM_HEURISTIC_FEATURES_FULL = 49
     HAS_HEURISTIC_EXTRACTOR = False
-    extract_heuristic_features = None
+    extract_full_heuristic_features = None
 
 
 def create_initial_state_from_record(
@@ -159,20 +159,27 @@ def _should_train_on_move(move_dict: dict[str, Any] | Any) -> bool:
     return bool(move_dict.get("policy_target"))
 
 
-def _extract_fast_heuristics(state: GameState, player_number: int) -> np.ndarray:
-    """Extract the 21-feature heuristic vector expected by v5-family models."""
-    if not HAS_HEURISTIC_EXTRACTOR or extract_heuristic_features is None:
-        return np.zeros(NUM_HEURISTIC_FEATURES, dtype=np.float32)
+def _extract_v5_heuristics(state: GameState, player_number: int) -> np.ndarray:
+    """Extract the 49-feature heuristic vector expected by v5-heavy runtime."""
+    if not HAS_HEURISTIC_EXTRACTOR or extract_full_heuristic_features is None:
+        return np.zeros(NUM_HEURISTIC_FEATURES_FULL, dtype=np.float32)
     try:
-        return extract_heuristic_features(
+        features = extract_full_heuristic_features(
             state,
             player_number=player_number,
-            eval_mode="full",
             normalize=True,
         ).astype(np.float32)
+        target_size = int(NUM_HEURISTIC_FEATURES_FULL)
+        if features.shape[0] > target_size:
+            return features[:target_size]
+        if features.shape[0] < target_size:
+            padded = np.zeros(target_size, dtype=np.float32)
+            padded[: features.shape[0]] = features
+            return padded
+        return features
     except Exception as exc:
         logger.debug("Heuristic feature extraction failed: %s", exc)
-        return np.zeros(NUM_HEURISTIC_FEATURES, dtype=np.float32)
+        return np.zeros(NUM_HEURISTIC_FEATURES_FULL, dtype=np.float32)
 
 
 def _complete_remaining_phases(
@@ -565,7 +572,7 @@ def _process_gpu_selfplay_record(
             phases_list.append(phase_str)
             if include_heuristics:
                 heuristics_list.append(
-                    _extract_fast_heuristics(current_state, current_state.current_player)
+                    _extract_v5_heuristics(current_state, current_state.current_player)
                 )
 
             positions_extracted += 1
@@ -1189,8 +1196,8 @@ class CheckpointManager:
             }
             if heuristics:
                 save_kwargs["heuristics"] = np.stack(heuristics, axis=0).astype(np.float32)
-                save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES)
-                save_kwargs["heuristic_mode"] = np.asarray("fast")
+                save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES_FULL)
+                save_kwargs["heuristic_mode"] = np.asarray("full")
             np.savez_compressed(chunk_path, **save_kwargs)
 
             self.chunk_count += 1
@@ -1289,8 +1296,8 @@ class CheckpointManager:
         }
         if heuristics_arr is not None:
             save_kwargs["heuristics"] = heuristics_arr
-            save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES)
-            save_kwargs["heuristic_mode"] = np.asarray("fast")
+            save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES_FULL)
+            save_kwargs["heuristic_mode"] = np.asarray("full")
         np.savez_compressed(output_path, **save_kwargs)
 
         logger.info(f"Merged {len(features_arr)} samples into {output_path}")
@@ -1576,7 +1583,7 @@ def process_jsonl_file(
                     phases_list.append(phase_str)
                     if include_heuristics:
                         heuristics_list.append(
-                            _extract_fast_heuristics(current_state, current_state.current_player)
+                            _extract_v5_heuristics(current_state, current_state.current_player)
                         )
 
                     stats.positions_extracted += 1
@@ -1851,8 +1858,8 @@ def convert_jsonl_to_npz(
         }
         if include_heuristics:
             save_kwargs["heuristics"] = np.stack(all_heuristics, axis=0).astype(np.float32)
-            save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES)
-            save_kwargs["heuristic_mode"] = np.asarray("fast")
+            save_kwargs["num_heuristic_features"] = np.asarray(NUM_HEURISTIC_FEATURES_FULL)
+            save_kwargs["heuristic_mode"] = np.asarray("full")
 
         np.savez_compressed(output_path, **save_kwargs)
     else:
@@ -1941,7 +1948,7 @@ def main():
     parser.add_argument(
         "--include-heuristics",
         action="store_true",
-        help="Emit 21 fast heuristic features required by v5-family models",
+        help="Emit 49 full heuristic features required by v5-heavy runtime models",
     )
     parser.add_argument(
         "--checkpoint-dir",

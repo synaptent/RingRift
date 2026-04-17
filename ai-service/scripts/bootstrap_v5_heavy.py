@@ -211,6 +211,7 @@ def _create_v5_heavy_model(board_type: str, num_players: int):
         board_type=board_type,
         num_players=num_players,
         num_heuristics=NUM_HEURISTIC_FEATURES_FULL,
+        in_channels=40,
     )
 
 
