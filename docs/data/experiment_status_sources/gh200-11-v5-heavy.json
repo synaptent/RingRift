@@ -1,0 +1,25 @@
+{
+  "node": "gh200-11",
+  "config": "hex8_2p_v5_heavy",
+  "role": "trainer",
+  "model_version": "v5-heavy",
+  "process_alive": true,
+  "work_dir": "data/minimal_loop_hex8_2p_v5_heavy",
+  "progress": {
+    "iteration": 1,
+    "stage": "selfplay_started",
+    "estimated_elo": 1500.0,
+    "total_promotions": 0,
+    "games_target": 100,
+    "selfplay_budget": 200,
+    "updated_at": "2026-04-17T12:14:26.355041+00:00"
+  },
+  "remote_evidence": {
+    "host_alias": "gh200-11",
+    "progress_path": "~/ringrift/ai-service/data/minimal_loop_hex8_2p_v5_heavy/progress.json",
+    "process_command_contains": "--model-version v5-heavy"
+  },
+  "gpu_utilization_pct": 98.0,
+  "gpu_memory_used_mb": 1537.0,
+  "gpu_power_w": 149.55
+}

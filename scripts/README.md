@@ -79,6 +79,15 @@ For Python training/runtime operations inside `ai-service`, also read [ai-servic
 - [`product_smoke_test.sh`](/scripts/product_smoke_test.sh)
   High-level product smoke test entrypoint.
 
+- [`refresh_experiment_status.py`](/scripts/refresh_experiment_status.py)
+  Builds `docs/data/experiment_status.json` from the fleet manifest, result
+  snapshot, and optional live status snapshots so public claims can cite
+  concrete evidence paths and fields.
+
+- [`refresh_results_artifacts.py`](/scripts/refresh_results_artifacts.py)
+  Refreshes `docs/data/results_snapshot.json` and generated result SVGs from
+  local minimal-loop metrics files.
+
 - [`replay-db-healthcheck.ts`](/scripts/replay-db-healthcheck.ts)
   Replay database health probe.
 
