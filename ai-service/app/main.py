@@ -1566,16 +1566,69 @@ async def get_ai_move(request: MoveRequest, response: Response):
                 EnsembleFailure,
                 select_move_ensemble,
             )
+            # CPU-bound production boxes cannot run N full-budget MCTS
+            # instances in parallel — the first deploy attempt
+            # (2026-04-17) timed out because 2× 400-sim searches
+            # exceeded the 30s AI_OPERATION_TIMEOUT.  Fix: divide the
+            # per-instance simulation budget by the ensemble size so
+            # total CPU work ≈ single-model.  Ensemble benefit comes
+            # from exploring different branches of the tree with
+            # different weights, not from deeper per-model search.
+            ensemble_size_total = 1 + len(ensemble_extra_paths)
+            reduced_budget: int | None = None
+            if gumbel_budget is not None:
+                reduced_budget = max(1, gumbel_budget // ensemble_size_total)
+
+            # Build a reduced-budget primary SPECIFICALLY for the
+            # ensemble path. The full-budget `ai` remains cached and
+            # is used for the single-model fallback branch below.
+            ensemble_primary_config = config.model_copy(
+                update=(
+                    {"gumbel_simulation_budget": reduced_budget}
+                    if reduced_budget is not None
+                    else {}
+                ),
+            )
+            ensemble_primary_cache_key: str | None = None
+            ensemble_primary = None
+            if cache_key is not None and reduced_budget is not None:
+                ensemble_primary_cache_key = _ai_cache_key(
+                    request.game_state,
+                    request.player_number,
+                    ai_type,
+                    ensemble_primary_config,
+                )
+                ensemble_primary = _get_cached_ai(ensemble_primary_cache_key)
+            if ensemble_primary is None:
+                try:
+                    ensemble_primary = _create_ai_instance(
+                        ai_type,
+                        request.player_number,
+                        ensemble_primary_config,
+                        board_type=board_type,
+                    )
+                    if ensemble_primary_cache_key is not None:
+                        _put_cached_ai(ensemble_primary_cache_key, ensemble_primary)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "C1 ensemble: failed to build reduced-budget primary "
+                        "(falling back to full-budget cached primary): %s",
+                        exc,
+                    )
+                    ensemble_primary = ai
+
             # Build extra AI instances pointing at the alternate
-            # checkpoints.  Each reuses the same AIConfig template but
-            # with nn_model_id overridden.  Cached independently from
-            # the primary so re-use across requests stays cheap.
-            ensemble_ais = [ai]
+            # checkpoints.  Each uses the reduced-budget config and is
+            # cached independently so re-use across requests stays cheap.
+            ensemble_ais = [ensemble_primary]
             for extra_path in ensemble_extra_paths:
                 try:
-                    extra_config = config.model_copy(
-                        update={"nn_model_id": extra_path},
-                    )
+                    extra_config_updates = {"nn_model_id": extra_path}
+                    if reduced_budget is not None:
+                        extra_config_updates["gumbel_simulation_budget"] = (
+                            reduced_budget
+                        )
+                    extra_config = config.model_copy(update=extra_config_updates)
                     extra_cache_key = None
                     if cache_key is not None:
                         extra_cache_key = _ai_cache_key(
@@ -1614,11 +1667,13 @@ async def get_ai_move(request: MoveRequest, response: Response):
                     ensemble_agreement = vote.agreement_count
                     ensemble_size = vote.ensemble_size
                     logger.info(
-                        "C1 ensemble vote: size=%d agreement=%d/%d failures=%d picks=%s",
+                        "C1 ensemble vote: size=%d agreement=%d/%d failures=%d "
+                        "per_model_budget=%s picks=%s",
                         vote.ensemble_size,
                         vote.agreement_count,
                         vote.ensemble_size,
                         vote.failures,
+                        reduced_budget if reduced_budget is not None else "inherit",
                         vote.individual_move_repr,
                     )
                 except EnsembleFailure as exc:

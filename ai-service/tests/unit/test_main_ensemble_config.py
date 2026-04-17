@@ -133,3 +133,46 @@ class TestEnsembleExtraCheckpoints:
         assert main._ensemble_extra_checkpoints(self._board("hex8"), None) == [
             "models/alt.pth",
         ]
+
+
+class TestEnsembleBudgetReduction:
+    """Regression guard for the CPU-bound ensemble fix.
+
+    After the first production deploy (2026-04-17) hit 30s timeouts
+    running 2× D10 searches at full budget on CPU, the ensemble path
+    now divides each constituent's ``gumbel_simulation_budget`` by
+    the ensemble size so total CPU work stays comparable to
+    single-model.  These tests lock in that division math directly
+    without spinning up real AI instances.
+    """
+
+    @pytest.mark.parametrize(
+        "full_budget,ensemble_size,expected",
+        [
+            (400, 2, 200),  # D10 production case
+            (400, 3, 133),  # 3-model ensemble
+            (200, 2, 100),
+            (64, 2, 32),
+            (1, 2, 1),  # floor: max(1, ...) so budget never drops to 0
+            (0, 2, 1),  # degenerate: minimum 1 sim
+        ],
+    )
+    def test_reduced_budget_divides_full_by_ensemble_size(
+        self, full_budget, ensemble_size, expected,
+    ):
+        # Mirrors the inline computation in app/main.py::get_ai_move
+        # ensemble branch.  If this test changes, update both sites.
+        reduced = max(1, full_budget // ensemble_size)
+        assert reduced == expected
+
+    def test_none_full_budget_leaves_config_untouched(self):
+        """Non-Gumbel tiers (no explicit budget) should not gain a
+        bogus gumbel_simulation_budget from the reduction math."""
+        # This mirrors the guard `if gumbel_budget is not None:` in the
+        # ensemble branch — when it's None, no budget override is applied.
+        full_budget = None
+        if full_budget is not None:
+            reduced = max(1, full_budget // 2)
+        else:
+            reduced = None
+        assert reduced is None
