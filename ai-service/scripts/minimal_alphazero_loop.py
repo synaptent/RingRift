@@ -413,6 +413,10 @@ _EVAL_STAGES_4P = [
     (400, 0.334, 0.0),  # beat random chance = promote
 ]
 
+AUTO_PLATEAU_RELAX_PROMOTE_THRESHOLD = 0.52
+AUTO_PLATEAU_RELAX_ITERATIONS = 3
+
+
 def _get_eval_stages() -> list:
     if NUM_PLAYERS == 3:
         return _EVAL_STAGES_3P
@@ -421,9 +425,18 @@ def _get_eval_stages() -> list:
     return _EVAL_STAGES_2P
 
 
+def _cap_promote_thresholds(eval_stages: list, cap: float | None) -> list:
+    """Return eval stages with promotion thresholds capped for plateau recovery."""
+    if cap is None:
+        return eval_stages
+    return [(games, min(promote_thr, cap), reject_thr)
+            for games, promote_thr, reject_thr in eval_stages]
+
+
 def staged_evaluate(
     cand: str, best: str, budget: int,
     *, tracker: "QualityGateTracker | None" = None,
+    promote_threshold_cap: float | None = None,
 ) -> dict:
     """Staged head-to-head evaluation with early exit.
 
@@ -433,6 +446,7 @@ def staged_evaluate(
     of evidence.
     """
     eval_stages = _get_eval_stages()
+    eval_stages = _cap_promote_thresholds(eval_stages, promote_threshold_cap)
     env = _make_env()
     cw, bw, dr = 0, 0, 0
     t0 = time.time()
@@ -520,13 +534,16 @@ def staged_evaluate(
     wr = cw / dec if dec > 0 else 0.5
     logger.info(f"  eval done: cand {cw}-{bw} best (wr={wr:.1%}, "
                  f"{dr} draws, {el:.0f}s, stage {decision_stage}/{len(eval_stages)})")
-    return {
+    result = {
         "candidate_wins": cw, "best_wins": bw, "draws": dr,
         "win_rate": wr, "elapsed_s": el,
         "games_played": games_played,
         "decision": decision,
         "decision_stage": decision_stage,
     }
+    if promote_threshold_cap is not None:
+        result["promote_threshold_cap"] = promote_threshold_cap
+    return result
 
 
 S3_HEARTBEAT_BUCKET = "s3://ringrift-models-20251214/consolidated/heartbeats"
@@ -640,6 +657,14 @@ def main() -> None:
                     help="Skip training effectiveness probes after training")
     ap.add_argument("--skip-quality-gate", action="store_true",
                     help="Skip model quality gate (behavioral diversity + value health) after evaluation")
+    ap.add_argument(
+        "--auto-plateau-relax",
+        action="store_true",
+        help=(
+            "After PLATEAU_DETECTED, cap staged promotion thresholds at "
+            "52% for the next 3 iterations"
+        ),
+    )
     ap.add_argument("--no-self-heal", action="store_true",
                     help="Disable automatic recovery on circuit breaker trips")
     args = ap.parse_args()
@@ -711,6 +736,7 @@ def main() -> None:
     MAX_CONSEC_FAILURES = 3
     last_error = ""  # Captured for self-healing diagnostics
     last_error_stage = ""
+    plateau_relax_until_iter = 0
     reset_recovery_counts()  # Fresh recovery budget for this loop run
 
     # Resume: find the last completed iteration to avoid overwriting data
@@ -970,8 +996,22 @@ def main() -> None:
         except OSError:
             pass
         qg_tracker = None if args.skip_quality_gate else QualityGateTracker()
+        relax_active = args.auto_plateau_relax and it <= plateau_relax_until_iter
+        promote_threshold_cap = (
+            AUTO_PLATEAU_RELAX_PROMOTE_THRESHOLD if relax_active else None
+        )
+        if relax_active:
+            logger.warning(
+                "PLATEAU_RELAX_ACTIVE config=%s iter=%d through_iter=%d "
+                "promote_threshold_cap=%.0f%%",
+                config_key,
+                it,
+                plateau_relax_until_iter,
+                AUTO_PLATEAU_RELAX_PROMOTE_THRESHOLD * 100,
+            )
         ev = staged_evaluate(str(cpath), str(best), eval_budget,
-                             tracker=qg_tracker)
+                             tracker=qg_tracker,
+                             promote_threshold_cap=promote_threshold_cap)
 
         # 4.5 MODEL QUALITY GATE — reject degenerate candidates before promotion
         quality_blocked = False
@@ -1000,34 +1040,62 @@ def main() -> None:
         iel = time.time() - it0
         # Experiment params for metrics and heartbeats
         exp_params = training_exp_params
-        metrics = {"iteration": it, "timestamp": datetime.now(timezone.utc).isoformat(),
-                   "selfplay": sp, "training": {k: v for k, v in ti.items() if k != "log_line"},
-                   "evaluation": ev, "promoted": promoted, "estimated_elo": round(elo, 1),
-                   "total_promotions": promos, "iteration_time_s": round(iel, 1),
-                   **exp_params}
+        metrics = {
+            "iteration": it, "timestamp": datetime.now(timezone.utc).isoformat(),
+            "selfplay": sp, "training": {k: v for k, v in ti.items() if k != "log_line"},
+            "evaluation": ev, "promoted": promoted, "estimated_elo": round(elo, 1),
+            "total_promotions": promos, "iteration_time_s": round(iel, 1),
+            **exp_params,
+        }
+
+        # Plateau detection (A2 / plan #79). Diagnostic by default; when the
+        # explicit opt-in flag is set, a detected plateau arms relaxed staged
+        # promotion thresholds for the next three iterations.
+        if it % 10 == 0:
+            try:
+                history = []
+                if logf.exists():
+                    with open(logf) as f:
+                        history = [json.loads(line) for line in f if line.strip()]
+                plateau = detect_plateau([*history, metrics])
+                metrics["plateau"] = {
+                    "detected": plateau.detected,
+                    "recent_rejection_rate": plateau.recent_rejection_rate,
+                    "iterations_since_promotion": plateau.iterations_since_promotion,
+                    "window_size": plateau.window_size,
+                    "total_iterations": plateau.total_iterations,
+                    "last_promoted_iteration": plateau.last_promoted_iteration,
+                    "reason": plateau.reason,
+                    "auto_relax_enabled": args.auto_plateau_relax,
+                }
+                if plateau.detected:
+                    logger.warning(
+                        "%s config=%s iter=%d last_promoted=%s total_iters=%d",
+                        plateau.reason,
+                        config_key,
+                        it,
+                        plateau.last_promoted_iteration,
+                        plateau.total_iterations,
+                    )
+                    if args.auto_plateau_relax:
+                        plateau_relax_until_iter = max(
+                            plateau_relax_until_iter,
+                            it + AUTO_PLATEAU_RELAX_ITERATIONS,
+                        )
+                        metrics["plateau"]["relax_until_iteration"] = plateau_relax_until_iter
+                        logger.warning(
+                            "PLATEAU_RELAX_ARMED config=%s active_iters=%d-%d "
+                            "promote_threshold_cap=%.0f%%",
+                            config_key,
+                            it + 1,
+                            plateau_relax_until_iter,
+                            AUTO_PLATEAU_RELAX_PROMOTE_THRESHOLD * 100,
+                        )
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                logger.debug("plateau detector skipped: %s", exc)
+
         with open(logf, "a") as f:
             f.write(json.dumps(metrics) + "\n")
-
-        # Plateau detection (A2 / plan #79).  Diagnostic-only for now: logs
-        # a structured line when both the rejection-rate and staleness
-        # triggers fire, without changing thresholds or exploration.  Acts
-        # only on persisted history so the detector agrees with anything
-        # looking at metrics.jsonl after the fact.
-        try:
-            with open(logf) as f:
-                history = [json.loads(line) for line in f if line.strip()]
-            plateau = detect_plateau(history)
-            if plateau.detected:
-                logger.warning(
-                    "%s config=%s iter=%d last_promoted=%s total_iters=%d",
-                    plateau.reason,
-                    config_key,
-                    it,
-                    plateau.last_promoted_iteration,
-                    plateau.total_iterations,
-                )
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            logger.debug("plateau detector skipped: %s", exc)
 
         # Write a human-readable progress file so observers don't need to parse JSONL
         try:

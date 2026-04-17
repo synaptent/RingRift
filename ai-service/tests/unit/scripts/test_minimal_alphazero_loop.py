@@ -45,7 +45,9 @@ def _run_loop_once(
     tmp_path: Path,
     *,
     extra_args: list[str],
+    iterations: int = 1,
     existing_npz_markers: list[float] | None = None,
+    existing_metrics: list[dict] | None = None,
     supplemental_markers: list[float] | None = None,
 ):
     work_dir = tmp_path / "work"
@@ -57,6 +59,13 @@ def _run_loop_once(
         for index, marker in enumerate(existing_npz_markers, start=1):
             _write_iteration_npz(work_dir / f"iter_{index:03d}.npz", marker)
 
+    if existing_metrics:
+        metrics_path = work_dir / "metrics.jsonl"
+        metrics_path.write_text(
+            "".join(json.dumps(row) + "\n" for row in existing_metrics),
+            encoding="utf-8",
+        )
+
     supplemental_dir = tmp_path / "supplemental"
     if supplemental_markers:
         supplemental_dir.mkdir()
@@ -65,6 +74,7 @@ def _run_loop_once(
 
     heartbeats: list[dict] = []
     train_calls: list[dict] = []
+    eval_calls: list[dict] = []
     export_markers: list[float] = []
 
     def fake_run_selfplay(model_path, n_games, out_path, budget, randomness=0.25):
@@ -107,8 +117,22 @@ def _run_loop_once(
             "draws": 0,
         }
 
-    def fake_staged_evaluate(candidate_path, best_path, budget, tracker=None):
-        return {
+    def fake_staged_evaluate(
+        candidate_path,
+        best_path,
+        budget,
+        tracker=None,
+        promote_threshold_cap=None,
+    ):
+        eval_calls.append(
+            {
+                "candidate_path": candidate_path,
+                "best_path": best_path,
+                "budget": budget,
+                "promote_threshold_cap": promote_threshold_cap,
+            }
+        )
+        result = {
             "win_rate": 0.50,
             "budget": budget,
             "candidate_wins": 1,
@@ -117,6 +141,11 @@ def _run_loop_once(
             "games_played": 50,
             "decision": "reject",
             "decision_stage": 1,
+        }
+        if promote_threshold_cap is not None:
+            result["promote_threshold_cap"] = promote_threshold_cap
+        return {
+            **result,
         }
 
     def fake_push_heartbeat(node_id, config_key, iteration, elo, promos, data_quality_score=None, *, stage="iteration_done", experiment_params=None):
@@ -151,7 +180,7 @@ def _run_loop_once(
             "--num-players",
             "2",
             "--iterations",
-            "1",
+            str(iterations),
             "--games-per-iter",
             "1",
             "--eval-games",
@@ -179,6 +208,7 @@ def _run_loop_once(
         "work_dir": work_dir,
         "heartbeats": heartbeats,
         "train_calls": train_calls,
+        "eval_calls": eval_calls,
         "metrics": metrics_rows,
         "export_markers": export_markers,
     }
@@ -308,6 +338,41 @@ def test_loop_merges_supplemental_npz_without_touching_iteration_namespace(monke
     train_call = result["train_calls"][0]
     assert train_call["npz_name"] == "combined_003.npz"
     assert train_call["markers"] == [2.0, 3.0, 9.0]
+
+
+def test_cap_promote_thresholds_only_lowers_stricter_stages() -> None:
+    stages = [(50, 0.60, 0.42), (100, 0.56, 0.46), (400, 0.501, 0.0)]
+
+    capped = loop._cap_promote_thresholds(stages, 0.52)
+
+    assert capped == [(50, 0.52, 0.42), (100, 0.52, 0.46), (400, 0.501, 0.0)]
+    assert loop._cap_promote_thresholds(stages, None) is stages
+
+
+def test_auto_plateau_relax_arms_next_three_iterations(monkeypatch, tmp_path):
+    existing_metrics = [
+        {"iteration": i, "promoted": False}
+        for i in range(1, 20)
+    ]
+
+    result = _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        iterations=2,
+        existing_npz_markers=[float(i) for i in range(1, 20)],
+        existing_metrics=existing_metrics,
+        extra_args=["--auto-plateau-relax"],
+    )
+
+    assert result["eval_calls"][0]["promote_threshold_cap"] is None
+    assert result["eval_calls"][1]["promote_threshold_cap"] == 0.52
+
+    new_metrics = result["metrics"][-2:]
+    assert new_metrics[0]["iteration"] == 20
+    assert new_metrics[0]["plateau"]["detected"] is True
+    assert new_metrics[0]["plateau"]["relax_until_iteration"] == 23
+    assert new_metrics[1]["iteration"] == 21
+    assert new_metrics[1]["evaluation"]["promote_threshold_cap"] == 0.52
 
 
 def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):
