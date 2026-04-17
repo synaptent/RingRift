@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
 import os
 import secrets
 import threading
@@ -579,6 +580,72 @@ def _personas_feature_enabled() -> bool:
     )
 
 
+def _ensemble_feature_enabled() -> bool:
+    """Server-side feature flag for move-level ensemble serving (C1).
+
+    Default off — even when on, the ensemble path only triggers at
+    difficulty 9/10 AND when extra checkpoints are configured for the
+    current (board_type, num_players). Flipping this flag without
+    configuring checkpoints is a safe no-op.
+    """
+    return os.environ.get("RINGRIFT_ENSEMBLE_ENABLED", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _ensemble_extra_checkpoints(
+    board_type: Any,
+    num_players: int | None,
+) -> list[str]:
+    """Return additional checkpoint paths to include in the ensemble for
+    the given config, or an empty list when none are configured.
+
+    Configured via the ``RINGRIFT_ENSEMBLE_EXTRA_CHECKPOINTS`` env var
+    which holds a JSON object of the form::
+
+        {"hex8_2p": ["models/candidate_033.pth", "models/candidate_030.pth"],
+         "square8_2p": ["models/backup_canonical.pth"]}
+
+    The key format is ``<board>_<N>p`` mirroring the training config
+    keys. Missing key → empty list → ensemble is a no-op and the move
+    endpoint falls back to the existing single-model path.
+
+    JSON parse errors are swallowed and logged; ensemble must never
+    crash move serving.
+    """
+    raw = os.environ.get("RINGRIFT_ENSEMBLE_EXTRA_CHECKPOINTS", "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning(
+            "RINGRIFT_ENSEMBLE_EXTRA_CHECKPOINTS did not parse as JSON: %s",
+            exc,
+        )
+        return []
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "RINGRIFT_ENSEMBLE_EXTRA_CHECKPOINTS must be a JSON object, got %s",
+            type(parsed).__name__,
+        )
+        return []
+    board_name = (
+        board_type.value if hasattr(board_type, "value") else str(board_type)
+    ).lower()
+    key = f"{board_name}_{num_players or 2}p"
+    entries = parsed.get(key, [])
+    if isinstance(entries, str):
+        entries = [entries]
+    if not isinstance(entries, list):
+        logger.warning(
+            "RINGRIFT_ENSEMBLE_EXTRA_CHECKPOINTS[%s] must be a list, got %s",
+            key, type(entries).__name__,
+        )
+        return []
+    return [str(p) for p in entries if isinstance(p, str) and p]
+
+
 def _resolve_persona_profile_id(persona_id: str | None) -> str | None:
     """Return the heuristic_v1_<persona> profile id for a requested persona,
     or None when no persona was requested or the flag is off."""
@@ -618,6 +685,12 @@ class MoveResponse(BaseModel):
     # C2: echoes the persona that actually served this move, or null when
     # no persona was requested / the personas feature flag is off.
     persona_id: str | None = None
+    # C1: set when a move-level ensemble vote produced this move. Carries
+    # the number of constituents and how many agreed on the chosen move
+    # so dashboards can track "high agreement" vs "low agreement" periods
+    # as a quality signal.
+    ensemble_size: int | None = None
+    ensemble_agreement: int | None = None
 
 
 def _summarize_search_stats(stats: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1471,17 +1544,103 @@ async def get_ai_move(request: MoveRequest, response: Response):
             if cache_key is not None:
                 _put_cached_ai(cache_key, ai)
 
-        # Get move from AI with timeout protection
-        try:
-            move = await asyncio.wait_for(
-                asyncio.to_thread(ai.select_move, request.game_state),
-                timeout=AI_OPERATION_TIMEOUT
+        # C1: move-level ensemble for D9/D10 when enabled AND extra
+        # checkpoints are configured for this (board, num_players). The
+        # existing single-model path is the fallback, and this whole
+        # branch is a no-op when either gate is off.
+        ensemble_applied = False
+        ensemble_agreement = 0
+        ensemble_size = 0
+        ensemble_extra_paths: list[str] = []
+        if (
+            _ensemble_feature_enabled()
+            and request.difficulty in (9, 10)
+            and ai_type in (AIType.GUMBEL_MCTS, AIType.MCTS, AIType.DESCENT)
+        ):
+            ensemble_extra_paths = _ensemble_extra_checkpoints(
+                board_type, num_players,
             )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=504,
-                detail=f"AI move selection timed out after {AI_OPERATION_TIMEOUT}s"
+
+        if ensemble_extra_paths:
+            from app.ai.ensemble_move import (
+                EnsembleFailure,
+                select_move_ensemble,
             )
+            # Build extra AI instances pointing at the alternate
+            # checkpoints.  Each reuses the same AIConfig template but
+            # with nn_model_id overridden.  Cached independently from
+            # the primary so re-use across requests stays cheap.
+            ensemble_ais = [ai]
+            for extra_path in ensemble_extra_paths:
+                try:
+                    extra_config = config.model_copy(
+                        update={"nn_model_id": extra_path},
+                    )
+                    extra_cache_key = None
+                    if cache_key is not None:
+                        extra_cache_key = _ai_cache_key(
+                            request.game_state,
+                            request.player_number,
+                            ai_type,
+                            extra_config,
+                        )
+                        cached_extra = _get_cached_ai(extra_cache_key)
+                        if cached_extra is not None:
+                            ensemble_ais.append(cached_extra)
+                            continue
+                    extra_ai = _create_ai_instance(
+                        ai_type,
+                        request.player_number,
+                        extra_config,
+                        board_type=board_type,
+                    )
+                    ensemble_ais.append(extra_ai)
+                    if extra_cache_key is not None:
+                        _put_cached_ai(extra_cache_key, extra_ai)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "C1 ensemble: failed to load extra checkpoint %s: %s",
+                        extra_path, exc,
+                    )
+            if len(ensemble_ais) >= 2:
+                try:
+                    vote = await select_move_ensemble(
+                        ensemble_ais,
+                        request.game_state,
+                        timeout=AI_OPERATION_TIMEOUT,
+                    )
+                    move = vote.move
+                    ensemble_applied = True
+                    ensemble_agreement = vote.agreement_count
+                    ensemble_size = vote.ensemble_size
+                    logger.info(
+                        "C1 ensemble vote: size=%d agreement=%d/%d failures=%d picks=%s",
+                        vote.ensemble_size,
+                        vote.agreement_count,
+                        vote.ensemble_size,
+                        vote.failures,
+                        vote.individual_move_repr,
+                    )
+                except EnsembleFailure as exc:
+                    logger.warning(
+                        "C1 ensemble failed, falling back to single model: %s",
+                        exc,
+                    )
+                    # Fall through to single-model path below.
+                    ensemble_applied = False
+
+        # Single-model path (default and ensemble-fallback).
+        if not ensemble_applied:
+            try:
+                move = await asyncio.wait_for(
+                    asyncio.to_thread(ai.select_move, request.game_state),
+                    timeout=AI_OPERATION_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"AI move selection timed out after {AI_OPERATION_TIMEOUT}s"
+                )
 
         # Evaluate position with timeout protection
         try:
@@ -1604,6 +1763,9 @@ async def get_ai_move(request: MoveRequest, response: Response):
             # actually honored — useful because it silently no-ops when the
             # RINGRIFT_PERSONAS_ENABLED server flag is off.
             response.headers["X-RingRift-Persona"] = request.persona_id or ""
+        if ensemble_applied:
+            response.headers["X-RingRift-Ensemble-Size"] = str(ensemble_size)
+            response.headers["X-RingRift-Ensemble-Agreement"] = str(ensemble_agreement)
 
         logger.info(
             (
@@ -1644,6 +1806,8 @@ async def get_ai_move(request: MoveRequest, response: Response):
             search_stats_summary=search_stats_summary,
             nn_model_version=nn_model_version,
             persona_id=request.persona_id if persona_applied else None,
+            ensemble_size=ensemble_size if ensemble_applied else None,
+            ensemble_agreement=ensemble_agreement if ensemble_applied else None,
         )
 
     except Exception as e:
