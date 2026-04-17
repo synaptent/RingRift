@@ -298,3 +298,151 @@ class TestWeightDeltaEdgeCases:
             crit, warns, details = _weight_delta_check(cand_path, best_path)
             # Should compare only layer1.weight (common shape)
             assert details["params_compared"] == 1
+
+
+# ---------------------------------------------------------------------------
+# A3: model_version propagation regression test
+# ---------------------------------------------------------------------------
+#
+# The v4 experiment on gh200-8 was silently stalled for ~20 hours because
+# the training probe did not pass --model-version through to the inference
+# probe's AIConfig. That bug was fixed in commit beafb4a07 by threading
+# `model_version` through run_training_probes -> _inference_probe -> AIConfig.
+# This test locks in the propagation contract so a future refactor cannot
+# reintroduce the same silent failure for v4 / v5-heavy / future non-v2
+# architectures.
+
+
+def _run_probes_with_stub_ai(model_version):
+    """Invoke run_training_probes with stubbed AI/env and return the
+    AIConfig that _inference_probe constructed.
+
+    _inference_probe's imports are resolved lazily from the real modules,
+    so we patch the `GumbelMCTSAI` / `make_env` / `get_theoretical_max_moves`
+    attributes on those modules in-place.  Everything else in the probe
+    chain runs for real against our fakes.
+    """
+    import torch
+
+    import app.ai.gumbel_mcts_ai as gumbel_module
+    import app.training.env as env_module
+    import scripts.lib.training_probes as tp
+    from app.models import GameStatus
+
+    captured: dict = {}
+
+    class FakeAI:
+        def __init__(self, _player, cfg, _board_type):
+            captured["config"] = cfg
+            self._last_search_actions = []
+            self._last_search_stats = {}
+            self.player_number = 1
+
+        def select_move(self, _state):
+            return None
+
+        def reset_for_new_game(self, **_kwargs):
+            pass
+
+    class _FakeState:
+        game_status = GameStatus.ACTIVE
+        current_player = 1
+
+    class FakeEnv:
+        num_players = 2
+
+        def reset(self, seed=None):
+            return _FakeState()
+
+        def legal_moves(self):
+            return []
+
+        def step(self, _move):
+            s = _FakeState()
+            s.game_status = GameStatus.COMPLETED
+            return s, 0.0, True, {}
+
+    def _fake_make_env(_cfg):
+        return FakeEnv()
+
+    def _fake_tmax(_board_type, _num_players):
+        return 100
+
+    class _FakeEnvCfg:
+        def __init__(self, **_kwargs):
+            pass
+
+    with patch.object(gumbel_module, "GumbelMCTSAI", FakeAI), \
+         patch.object(env_module, "make_env", _fake_make_env), \
+         patch.object(env_module, "get_theoretical_max_moves", _fake_tmax), \
+         patch.object(env_module, "TrainingEnvConfig", _FakeEnvCfg):
+        with tempfile.TemporaryDirectory() as td:
+            c = os.path.join(td, "candidate.pth")
+            b = os.path.join(td, "best.pth")
+            # Use distinct random weights so _weight_delta_check produces a
+            # non-zero L2.  Identical state dicts would collapse to L2=0,
+            # trigger the "zero gradient effect" critical path, and skip
+            # the inference probe — silently hiding the very behaviour
+            # this test is supposed to exercise.
+            torch.save({"layer.weight": torch.randn(4, 4)}, c)
+            torch.save({"layer.weight": torch.randn(4, 4)}, b)
+            if model_version is _UNSET:
+                tp.run_training_probes(
+                    c, b,
+                    {"last_epoch_line": "Epoch 1, Train Loss: 0.5"},
+                    MagicMock(),
+                    2, 16,
+                )
+            else:
+                tp.run_training_probes(
+                    c, b,
+                    {"last_epoch_line": "Epoch 1, Train Loss: 0.5"},
+                    MagicMock(),
+                    2, 16,
+                    model_version=model_version,
+                )
+
+    return captured.get("config")
+
+
+class _UnsetSentinel:
+    pass
+
+
+_UNSET = _UnsetSentinel()
+
+
+class TestModelVersionPropagation:
+    """run_training_probes must forward model_version to AIConfig."""
+
+    def test_v4_threads_version_to_aiconfig(self):
+        cfg = _run_probes_with_stub_ai("v4")
+        assert cfg is not None, "FakeAI was never constructed — probe chain broke"
+        assert getattr(cfg, "nn_model_version", None) == "v4"
+        assert cfg.nn_model_id.endswith("candidate.pth")
+        assert cfg.allow_fresh_weights is False
+        assert cfg.use_neural_net is True
+
+    def test_v5_heavy_threads_version_to_aiconfig(self):
+        cfg = _run_probes_with_stub_ai("v5-heavy")
+        assert cfg is not None
+        assert getattr(cfg, "nn_model_version", None) == "v5-heavy"
+
+    def test_v5_heavy_large_threads_version_to_aiconfig(self):
+        cfg = _run_probes_with_stub_ai("v5-heavy-large")
+        assert cfg is not None
+        assert getattr(cfg, "nn_model_version", None) == "v5-heavy-large"
+
+    def test_v2_default_is_none(self):
+        """nn_model_version should be None for v2 so legacy AIConfig call
+        sites keep working. This was the "pass through when not v2"
+        convention used in _make_ai throughout minimal_alphazero_loop.py."""
+        cfg = _run_probes_with_stub_ai("v2")
+        assert cfg is not None
+        assert getattr(cfg, "nn_model_version", None) is None
+
+    def test_missing_model_version_is_none(self):
+        """Omitting model_version entirely must behave the same as v2."""
+        cfg = _run_probes_with_stub_ai(_UNSET)
+        assert cfg is not None
+        assert getattr(cfg, "nn_model_version", None) is None
