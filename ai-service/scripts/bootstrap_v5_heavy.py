@@ -202,17 +202,48 @@ def step_transfer_weights(
 
 
 def _create_v5_heavy_model(board_type: str, num_players: int):
-    """Create a v5-heavy model using the factory function."""
+    """Create a v5-heavy model using the factory function.
+
+    Input-channel count is aligned with the minimal AlphaZero loop's
+    declared encoder choice (scripts/minimal_alphazero_loop.py): v4 and
+    v5-heavy use the v3 encoder, which produces:
+      - hex boards: 16 base × 4 frames = 64 total channels
+      - square boards: 14 base × 4 frames = 56 total channels
+
+    Keeping bootstrap and the minimal loop's export in lockstep is
+    required so that iter 1's NPZ can actually train the bootstrap
+    checkpoint. Previously both sides disagreed (bootstrap=40ch,
+    loop export=64ch for hex) and training would have failed at the
+    first shape check after self-play.
+    """
     from app.ai.neural_net.v5_heavy import (
         create_v5_heavy_model,
         NUM_HEURISTIC_FEATURES_FULL,
     )
+    in_channels = _v5_heavy_in_channels(board_type)
     return create_v5_heavy_model(
         board_type=board_type,
         num_players=num_players,
         num_heuristics=NUM_HEURISTIC_FEATURES_FULL,
-        in_channels=40,
+        in_channels=in_channels,
     )
+
+
+def _v5_heavy_in_channels(board_type: str) -> int:
+    """Return the total input channel count for the v3 encoder.
+
+    Mirrors the ``_ENCODER_METADATA`` table in ``scripts/jsonl_to_npz.py``
+    (``hex_v3``: 16 × frames; square: 14 × frames).  History frames is
+    fixed at 4 across the trainer so (history + 1) = 4.  Single source
+    of truth for the bootstrap / loop alignment.
+    """
+    history_frames = 4
+    if board_type.startswith("hex") or board_type == "hexagonal":
+        base_channels = 16
+    else:
+        # square8, square19 and any future rectangular grid.
+        base_channels = 14
+    return base_channels * history_frames
 
 
 def _save_bootstrap_checkpoint(
