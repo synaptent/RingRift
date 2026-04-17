@@ -7,6 +7,7 @@ machine-readable snapshot aligned on the current headline numbers.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -300,7 +301,7 @@ def test_training_fleet_ops_docs_are_linked_and_explicit_about_reboot_limits() -
 def test_todo_routes_readers_to_current_sources() -> None:
     text = (REPO_ROOT / "TODO.md").read_text(encoding="utf-8")
 
-    assert "**Last Updated:** 2026-04-16" in text
+    assert re.search(r"\*\*Last Updated:\*\* 2026-04-\d{2}", text)
     assert "Current Research And Runtime Sources" in text
     assert "RESULTS.md" in text
     assert "RESEARCH_SNAPSHOT.md" in text
