@@ -20,7 +20,8 @@ import {
 import { useMatchmaking } from '../hooks/useMatchmaking';
 import { QueueStatus } from '../components/QueueStatus';
 import { AIQuickPlayPanel, AIQuickPlayOption } from '../components/AIQuickPlayPanel';
-import { getDifficultyAiType } from '../config/aiQuickPlay';
+import { AIPersonaPicker, personasFeatureEnabled } from '../components/AIPersonaPicker';
+import { getDifficultyAiType, type PersonaId } from '../config/aiQuickPlay';
 
 interface FormState {
   boardType: BoardType;
@@ -511,6 +512,9 @@ export default function LobbyPage() {
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [showFindMatchForm, setShowFindMatchForm] = useState(false);
   const [matchmakingBoardType, setMatchmakingBoardType] = useState<BoardType>('square8');
+  // C2 persona selection applied to AI quick-play games. Single persona
+  // shared across all AI seats — per-seat selection is a follow-up (C3).
+  const [selectedPersonaId, setSelectedPersonaId] = useState<PersonaId | undefined>(undefined);
 
   // Matchmaking hook
   const {
@@ -779,6 +783,12 @@ export default function LobbyPage() {
     try {
       setIsSubmitting(true);
       setError(null);
+      const aiCount = option.numPlayers - 1;
+      // C2: option-level persona wins over the lobby-level selector when
+      // the preset carries one. Otherwise fall back to the lobby-level
+      // picker value (which itself is undefined when no persona chosen
+      // or when the feature flag is off).
+      const effectivePersona: PersonaId | undefined = option.personaId ?? selectedPersonaId;
       const payload: CreateGameRequest = {
         boardType: option.boardType,
         maxPlayers: option.numPlayers,
@@ -790,14 +800,19 @@ export default function LobbyPage() {
           increment: 15,
         },
         aiOpponents: {
-          count: option.numPlayers - 1,
-          difficulty: Array(option.numPlayers - 1).fill(option.difficulty),
+          count: aiCount,
+          difficulty: Array(aiCount).fill(option.difficulty),
           mode: 'service',
           aiType: getDifficultyAiType(option.difficulty) as
             | 'random'
             | 'heuristic'
             | 'minimax'
             | 'mcts',
+          // Broadcast the single selected persona to every AI seat.
+          // Server tolerates undefined entries and undefined-length array.
+          ...(effectivePersona && {
+            personaIds: Array(aiCount).fill(effectivePersona),
+          }),
         },
       };
       const game = await gameApi.createGame(payload);
@@ -1208,6 +1223,20 @@ export default function LobbyPage() {
         <div className="space-y-6">
           {/* AI Quick Play Panel */}
           <AIQuickPlayPanel onStartGame={handleAIQuickPlay} isLoading={isSubmitting} />
+
+          {/* C2 persona selector — renders nothing when
+              VITE_RINGRIFT_PERSONAS_ENABLED is off. Sits between the
+              quick-play grid and the multiplayer games section so
+              players can pick a personality before firing off a game. */}
+          {personasFeatureEnabled() && (
+            <div className="rounded-lg border border-gray-700 bg-gray-900/30 p-4">
+              <AIPersonaPicker
+                value={selectedPersonaId}
+                onChange={setSelectedPersonaId}
+                disabled={isSubmitting}
+              />
+            </div>
+          )}
 
           {/* Multiplayer Games Section */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

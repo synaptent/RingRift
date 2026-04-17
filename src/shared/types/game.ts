@@ -210,6 +210,15 @@ export interface AiOpponentsConfig {
    * order as `difficulty`). Falls back to `aiType` if not provided.
    */
   aiTypes?: AITacticType[] | undefined;
+  /**
+   * Optional C2 persona override per opponent. Indexed the same as
+   * `difficulty` and `aiTypes`. Accepts one of
+   * 'balanced' | 'aggressive' | 'territorial' | 'defensive' (untrusted
+   * strings; server-side validator coerces unknown names to undefined).
+   * When omitted (or entry is undefined), the opponent uses the
+   * ladder's default heuristic profile.
+   */
+  personaIds?: (string | undefined)[] | undefined;
 }
 
 /**

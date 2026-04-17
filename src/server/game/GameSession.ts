@@ -124,6 +124,8 @@ interface PersistedGameStateSnapshot {
     mode?: AIControlMode;
     aiType?: AITacticType;
     aiTypes?: AITacticType[];
+    /** C2 per-seat persona names; indexed in the same order as `difficulty`. */
+    personaIds?: (string | undefined)[];
   };
   rulesOptions?: GameState['rulesOptions'];
   fixture?: DecisionPhaseFixtureMetadata;
@@ -288,10 +290,14 @@ export class GameSession {
         const difficulty = aiOpponents.difficulty?.[i] ?? 5;
         // Use per-player AI type from aiTypes array if available, falling back to shared aiType
         const aiType = aiOpponents.aiTypes?.[i] ?? aiOpponents.aiType;
+        // C2 per-seat persona. Untrusted string here; AIEngine.coercePersonaId
+        // validates against the 4-name allow-list before applying.
+        const personaId = aiOpponents.personaIds?.[i];
         const aiProfile: AIProfile = {
           difficulty,
           mode: aiOpponents.mode ?? 'service',
           ...(aiType && { aiType }),
+          ...(personaId && { personaId }),
         };
 
         players.push({

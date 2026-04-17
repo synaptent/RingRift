@@ -310,6 +310,14 @@ export const CreateGameSchema = z.object({
           ])
         )
         .optional(),
+      // C2: per-opponent persona selector; indexed in the same order as
+      // `difficulty` / `aiTypes`.  Entries may be undefined (the opponent
+      // then uses the ladder's default heuristic profile).  Unknown
+      // strings are rejected at the enum layer so garbage cannot survive
+      // validation even before AIEngine's own allow-list coerce.
+      personaIds: z
+        .array(z.enum(['balanced', 'aggressive', 'territorial', 'defensive']).optional())
+        .optional(),
     })
     .optional(),
   seed: z.number().int().min(0).max(0x7fffffff).optional(), // Optional RNG seed for deterministic games

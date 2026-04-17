@@ -2,6 +2,50 @@ import { BoardType } from '../../shared/types/game';
 
 export type DifficultyTier = 'easy' | 'medium' | 'hard' | 'expert';
 
+/**
+ * Four heuristic personas (C2 / #80). Each is a ~51-weight delta
+ * applied to the ladder's baseline heuristic profile on the Python
+ * side. Same tactical engine, same think-time, visibly different play.
+ * Kept mirrored with AIServiceClient.PersonaId on the server.
+ */
+export type PersonaId = 'balanced' | 'aggressive' | 'territorial' | 'defensive';
+
+export const ALL_PERSONAS: readonly PersonaId[] = [
+  'balanced',
+  'aggressive',
+  'territorial',
+  'defensive',
+] as const;
+
+/**
+ * Designer-facing descriptions — kept short enough for a UI tooltip.
+ * Derived from the weight deltas in app.ai.heuristic_weights.py so
+ * the UX label matches the actual play behaviour.
+ */
+export const PERSONA_COPY: Record<PersonaId, { label: string; tagline: string; detail: string }> = {
+  balanced: {
+    label: 'Balanced',
+    tagline: 'Neutral, all-round play',
+    detail: 'The reference opponent. Weighs captures, territory, defence, and mobility evenly.',
+  },
+  aggressive: {
+    label: 'Aggressive',
+    tagline: 'Favours captures and overtakes',
+    detail:
+      'Values eliminations and overtakes ~25% higher and risks ~15% more vulnerability than Balanced.',
+  },
+  territorial: {
+    label: 'Territorial',
+    tagline: 'Favours board control and closure',
+    detail: 'Values territory and closure ~25% higher; less eager to trade rings for captures.',
+  },
+  defensive: {
+    label: 'Defensive',
+    tagline: 'Risk-averse, mobility-focused',
+    detail: 'Weighs vulnerability ~20% higher and prefers mobile positions; slower to engage.',
+  },
+};
+
 export interface AIQuickPlayOption {
   id: string;
   boardType: BoardType;
@@ -11,6 +55,14 @@ export interface AIQuickPlayOption {
   displayName: string;
   description: string;
   estimatedElo: number; // Legacy model-training estimate; do not present as human Elo.
+  /**
+   * Optional persona selector (C2 phase 3). When unset, the server
+   * uses the ladder's default heuristic profile. Multiplying the base
+   * grid by personas is intentionally done at game-creation time
+   * rather than by expanding the preset array so URLs, analytics, and
+   * ladder test harnesses stay stable.
+   */
+  personaId?: PersonaId;
 }
 
 /**
