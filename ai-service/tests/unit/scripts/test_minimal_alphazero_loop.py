@@ -123,13 +123,23 @@ def _run_loop_once(
         budget,
         tracker=None,
         promote_threshold_cap=None,
+        checkpoint_path=None,
+        **extra_kwargs,
     ):
+        # checkpoint_path was added by commit 69fc25aa0 (game-granular resume
+        # for selfplay + eval). Accept it here so these tests keep working
+        # after production adds new keyword-only params to staged_evaluate.
+        # Any additional future kwargs fall into **extra_kwargs — we record
+        # them so a surprise param is visible in the test output rather than
+        # silently crashing the whole loop.
         eval_calls.append(
             {
                 "candidate_path": candidate_path,
                 "best_path": best_path,
                 "budget": budget,
                 "promote_threshold_cap": promote_threshold_cap,
+                "checkpoint_path": checkpoint_path,
+                "extra_kwargs": dict(extra_kwargs) if extra_kwargs else {},
             }
         )
         result = {
