@@ -1,21 +1,25 @@
 # Reddit Post Draft
 
+Target: `r/MachineLearning` or `r/gamedev`
+
 ## Draft
 
-I built a novel board game, then used AI coding agents to help build an AlphaZero-style training stack for it. The result is a mix of real progress and hard lessons.
+I spent 4 months having AI agents build an AlphaZero training system for a novel board game. Here's what happened.
 
-The game is RingRift: a territory-control board game played on square or hex boards. Players place rings, stack and move them, form lines, capture, and win by ring elimination, territory control, or last-player-standing conditions. The rules are unusual enough that a hand-written heuristic is not obviously dominant.
+The game is RingRift: a deterministic abstract strategy game on square and hex boards, loosely inspired by TZAAR, DVONN, and Go. Players place rings, move stacks, leave markers, form lines, collapse territory, and can win by ring elimination, territory control, or last player standing. You can try it at https://ringrift.ai.
 
-The training result so far: iterative self-play improved square8_2p from 1500 to 1782 Elo over five promotions, including two back-to-back 62% win-rate promotions. hex8_2p improved from 1500 to about 1980 Elo before plateauing. A v4 architecture experiment is now running to test whether the hex plateau is model capacity/architecture rather than game saturation.
+The training stack is a minimal AlphaZero-style loop backed by a larger Python AI service and TypeScript rules engine. The current cluster uses 7 GH200 GPUs. The cleanest 2-player results are real but narrow: `hex8_2p` improved from `1500 -> 1979.8` Elo with 7 promotions, and `square8_2p` improved from `1500 -> 1782.0` Elo with 5 promotions, including two consecutive candidates promoting at 62% win rate.
 
-The messy part: I initially gave agents broad prompts like "make the codebase better." That produced useful work, but also massive sprawl: at one point the Python AI service had roughly 17K Python files, much of it duplicate or archived agent output. We also lost time to infrastructure failures: watchdogs that killed the jobs they were supposed to protect, orphan-process detectors fighting systemd, and self-play data that looked valid until we discovered it lacked the MCTS policy targets needed for training.
+The failures were the interesting part. Vague prompts like "improve the codebase" created massive sprawl: at one point the Python service had about 17K Python files. A watchdog death spiral killed training jobs while trying to protect them. A P2P orphan detector fought systemd and killed healthy processes. The 3-player evaluator turned out to be unfair because candidate models were effectively tested 1-vs-2. A wrong learning-rate schedule killed learning for roughly 8 iterations before fixed LR became the breakthrough.
 
-What worked was narrowing the system down to a minimal reproducible training loop, adding ratchet tests around codebase boundaries, and treating results as evidence-backed artifacts instead of marketing claims. The repo now has reproducibility docs, result snapshots, and a live sandbox where you can play against the current AI or watch AI-vs-AI games.
+What worked was making the system smaller and more evidence-driven. The minimal loop is about 1000 lines and is now the reproducible proof harness. Result claims are tied to snapshots and archived metrics instead of hand-written status notes. The fixed-LR change was dramatic on `square8_2p`, and a v4 architecture experiment is running now to test whether the `hex8_2p` plateau is an architecture limit.
 
-The project is not "solved." Multiplayer training is still weak, the hex model is plateaued, and the codebase still carries scars from agent-driven iteration. But the core claim is now real enough to inspect: self-play on this game produces measurable improvement, and the game is playable in a browser.
+My takeaway: AI agents can build useful systems from vague direction, but they also generate enormous surface area unless you add ratchets, tests, and hard source-of-truth boundaries. For long-running training projects, operational reliability mattered more than code quality because a beautiful refactor does not matter if GPUs are silently idle or killing each other.
+
+I do not think this proves the game is "solved." Multiplayer training is still weak, large boards are immature, and the codebase still has scars. But the core experiment is now inspectable: self-play made the agents measurably stronger, and the game may be interesting enough that multiplayer AI remains nontrivial.
 
 Play: https://ringrift.ai
 
 Code: https://github.com/synaptent/RingRift
 
-I would be interested in feedback on two things: whether the game itself looks strategically interesting, and whether the engineering lessons match what others are seeing when using coding agents on long-running projects.
+Results/evidence: https://github.com/synaptent/RingRift/blob/main/docs/RESULTS.md
