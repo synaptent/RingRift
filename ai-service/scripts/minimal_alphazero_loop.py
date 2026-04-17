@@ -38,6 +38,7 @@ from scripts.lib.loop_self_healing import (
 )
 from scripts.lib.minimal_loop_strategy import recommend_transfer_source, resolve_loop_profile
 from scripts.lib.model_quality_gate import QualityGateTracker, check_model_quality
+from scripts.lib.plateau_detector import detect_plateau
 from scripts.lib.training_probes import run_training_probes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
@@ -1006,6 +1007,27 @@ def main() -> None:
                    **exp_params}
         with open(logf, "a") as f:
             f.write(json.dumps(metrics) + "\n")
+
+        # Plateau detection (A2 / plan #79).  Diagnostic-only for now: logs
+        # a structured line when both the rejection-rate and staleness
+        # triggers fire, without changing thresholds or exploration.  Acts
+        # only on persisted history so the detector agrees with anything
+        # looking at metrics.jsonl after the fact.
+        try:
+            with open(logf) as f:
+                history = [json.loads(line) for line in f if line.strip()]
+            plateau = detect_plateau(history)
+            if plateau.detected:
+                logger.warning(
+                    "%s config=%s iter=%d last_promoted=%s total_iters=%d",
+                    plateau.reason,
+                    config_key,
+                    it,
+                    plateau.last_promoted_iteration,
+                    plateau.total_iterations,
+                )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            logger.debug("plateau detector skipped: %s", exc)
 
         # Write a human-readable progress file so observers don't need to parse JSONL
         try:
