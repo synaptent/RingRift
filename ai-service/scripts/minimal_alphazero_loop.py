@@ -363,6 +363,10 @@ def evaluate(cand: str, best: str, n_games: int, budget: int,
             cw += 1
         else:
             bw += 1
+        if tracker is not None:
+            tracker.record_game_outcome(
+                i, candidate_player, w == candidate_player,
+            )
         if (i + 1) % max(1, n_games // 5) == 0:
             logger.info(f"  eval {i+1}/{n_games} cand={cw} best={bw} draws={dr}")
     el = time.time() - t0
@@ -484,6 +488,10 @@ def staged_evaluate(
                 cw += 1
             else:
                 bw += 1
+            if tracker is not None:
+                tracker.record_game_outcome(
+                    i, candidate_player, w == candidate_player,
+                )
             games_played += 1
 
         # Check stage thresholds

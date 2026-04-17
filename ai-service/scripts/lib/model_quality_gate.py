@@ -96,6 +96,12 @@ class QualityGateTracker:
         # Value head outputs
         self._values: list[float] = []
         self._game_count: int = 0
+        # Per-seat outcome tracking: seat (1..num_players) -> wins/games by candidate
+        # when it played that seat.  Used to detect structural seat-fairness bugs
+        # in multiplayer evaluation (e.g. the square8_3p 20-30% WR pattern where
+        # the candidate consistently plays a disadvantaged seat).
+        self._seat_wins: dict[int, int] = {}
+        self._seat_games: dict[int, int] = {}
 
     def record_move(
         self,
@@ -137,6 +143,31 @@ class QualityGateTracker:
 
         Optional: game count is also auto-tracked by record_move.
         """
+        self._game_count = max(self._game_count, game_idx + 1)
+
+    def record_game_outcome(
+        self,
+        game_idx: int,
+        candidate_seat: int,
+        candidate_won: bool,
+    ) -> None:
+        """Record which seat the candidate played and whether it won.
+
+        Args:
+            game_idx: Which evaluation game this outcome belongs to.
+            candidate_seat: The seat (player number, 1-indexed) the candidate
+                played in this game.
+            candidate_won: True if the candidate won, False otherwise (loss or
+                draw).
+
+        Used by the seat-fairness check to detect structural imbalance in
+        multiplayer evaluation where the candidate performs very differently
+        across seats even though seats are rotated fairly across games.
+        """
+        self._seat_games[candidate_seat] = self._seat_games.get(candidate_seat, 0) + 1
+        if candidate_won:
+            self._seat_wins[candidate_seat] = self._seat_wins.get(candidate_seat, 0) + 1
+        # Game count also advances, in case this is the last signal for the game.
         self._game_count = max(self._game_count, game_idx + 1)
 
 
@@ -258,7 +289,90 @@ def _check_value_head_health(
 
 
 # ---------------------------------------------------------------------------
-# 4. Quality Verdict
+# 4. Seat Fairness Check (multiplayer)
+# ---------------------------------------------------------------------------
+
+# Minimum games per seat before seat-fairness analysis runs.  Below this we
+# cannot distinguish real imbalance from sampling noise.
+SEAT_FAIRNESS_MIN_GAMES_PER_SEAT = 10
+# Ratio of highest per-seat WR to lowest per-seat WR above which we flag an
+# imbalance warning.  A fair model playing all seats should have a ratio close
+# to 1.0; 1.5 captures structural bias without firing on normal seat variance.
+SEAT_FAIRNESS_MAX_RATIO = 1.5
+
+
+def _check_seat_fairness(
+    tracker: QualityGateTracker,
+) -> tuple[bool, list[str], dict]:
+    """Check whether the candidate's win rate differs sharply across seats.
+
+    For 3p/4p multiplayer this is the single most diagnostic signal for the
+    "value head is seat-biased" failure mode observed on square8_3p (iters
+    9-23 rejected at 20-30% WR).  Staged evaluation rotates the candidate
+    through every seat, so a fair model should win at roughly the same rate
+    from each seat.  Wildly different per-seat WRs indicate the value head
+    has learned "seat N usually wins" instead of evaluating positions.
+
+    Returns (critical, warnings, details).  Never critical today — this is a
+    diagnostic signal; callers decide whether to act on it.
+    """
+    warnings: list[str] = []
+    details: dict = {}
+
+    seat_games = dict(tracker._seat_games)
+    seat_wins = dict(tracker._seat_wins)
+
+    if not seat_games:
+        details["skipped"] = "no seat outcomes recorded"
+        return False, [], details
+
+    # Compute per-seat WR
+    seat_wr: dict[int, float] = {}
+    for seat, games in sorted(seat_games.items()):
+        wins = seat_wins.get(seat, 0)
+        seat_wr[seat] = wins / games if games > 0 else 0.0
+    details["seat_games"] = seat_games
+    details["seat_wr"] = {s: round(wr, 3) for s, wr in seat_wr.items()}
+
+    # Only analyze when every seat has enough samples.  With fewer than
+    # SEAT_FAIRNESS_MIN_GAMES_PER_SEAT per seat, the ratio is noisy.
+    min_games = min(seat_games.values())
+    details["min_games_per_seat"] = min_games
+    if min_games < SEAT_FAIRNESS_MIN_GAMES_PER_SEAT:
+        details["skipped"] = (
+            f"min {min_games} games/seat < {SEAT_FAIRNESS_MIN_GAMES_PER_SEAT}"
+        )
+        return False, [], details
+
+    # Single-seat tracking (2p games where candidate played only seat 1 or 2):
+    # We can still report the WR but cannot compute a ratio.
+    if len(seat_wr) < 2:
+        details["note"] = "only one seat observed, ratio N/A"
+        return False, [], details
+
+    # Avoid division by zero when some seat has 0 wins.  Use a small epsilon
+    # that still flags imbalance cleanly.
+    min_wr = min(seat_wr.values())
+    max_wr = max(seat_wr.values())
+    eff_min = max(min_wr, 1e-3)
+    ratio = max_wr / eff_min
+    details["wr_ratio"] = round(ratio, 3)
+
+    if ratio > SEAT_FAIRNESS_MAX_RATIO:
+        seat_str = ", ".join(
+            f"seat{s}={seat_wr[s]:.0%} ({seat_wins.get(s, 0)}/{seat_games[s]})"
+            for s in sorted(seat_wr)
+        )
+        warnings.append(
+            f"SEAT_WR_IMBALANCE: max/min per-seat WR ratio "
+            f"{ratio:.2f} > {SEAT_FAIRNESS_MAX_RATIO} ({seat_str})"
+        )
+
+    return False, warnings, details
+
+
+# ---------------------------------------------------------------------------
+# 5. Quality Verdict
 # ---------------------------------------------------------------------------
 
 def check_model_quality(tracker: QualityGateTracker) -> QualityGateVerdict:
@@ -291,6 +405,18 @@ def check_model_quality(tracker: QualityGateTracker) -> QualityGateVerdict:
     except Exception as e:
         logger.warning("Value head health check error: %s", e)
         verdict.details["value_head_health"] = {"error": str(e)}
+
+    # Seat fairness (multiplayer diagnostic; never critical by itself)
+    try:
+        crit, warns, details = _check_seat_fairness(tracker)
+        verdict.details["seat_fairness"] = details
+        if crit:
+            verdict.critical = True
+            verdict.passed = False
+        verdict.warnings.extend(warns)
+    except Exception as e:
+        logger.warning("Seat fairness check error: %s", e)
+        verdict.details["seat_fairness"] = {"error": str(e)}
 
     # Warnings without critical still pass, but flag for logging
     if verdict.warnings and not verdict.critical:
