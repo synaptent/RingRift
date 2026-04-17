@@ -163,6 +163,10 @@ def _extract_table_rows(path: Path) -> dict[str, list[str]]:
     return rows
 
 
+def _as_one_decimal(value: str) -> str:
+    return f"{float(value.replace(',', '')):.1f}"
+
+
 def test_public_results_docs_match_results_snapshot() -> None:
     results_rows = _extract_table_rows(DOCS_ROOT / "RESULTS.md")
     research_rows = _extract_table_rows(DOCS_ROOT / "RESEARCH_SNAPSHOT.md")
@@ -170,17 +174,21 @@ def test_public_results_docs_match_results_snapshot() -> None:
     snapshot = json.loads((DOCS_ROOT / "data" / "results_snapshot.json").read_text(encoding="utf-8"))
     snapshot_rows = {
         item["config"]: (
+            f"{float(item['start_elo']):.1f}",
             f"{float(item['best_elo']):.1f}",
             str(int(item["promotions"])),
         )
         for item in snapshot["headline"]
-        if item["config"] in TARGET_CONFIGS
     }
 
-    assert set(results_rows) == set(TARGET_CONFIGS)
+    assert set(snapshot_rows).issubset(results_rows)
     assert set(research_rows) == set(TARGET_CONFIGS)
     assert set(brief_rows) == set(TARGET_CONFIGS)
-    assert set(snapshot_rows) == set(TARGET_CONFIGS)
+
+    for config, (snapshot_start_elo, snapshot_best_elo, snapshot_promotions) in snapshot_rows.items():
+        assert _as_one_decimal(results_rows[config][1]) == snapshot_start_elo
+        assert _as_one_decimal(results_rows[config][2]) == snapshot_best_elo
+        assert results_rows[config][3] == snapshot_promotions
 
     for config in TARGET_CONFIGS:
         results_best_elo = results_rows[config][2]
@@ -189,7 +197,7 @@ def test_public_results_docs_match_results_snapshot() -> None:
         research_promotions = research_rows[config][2]
         brief_best_elo = brief_rows[config][1]
         brief_promotions = brief_rows[config][2]
-        snapshot_best_elo, snapshot_promotions = snapshot_rows[config]
+        _, snapshot_best_elo, snapshot_promotions = snapshot_rows[config]
 
         assert results_best_elo == research_best_elo == brief_best_elo == snapshot_best_elo
         assert results_promotions == research_promotions == brief_promotions == snapshot_promotions
