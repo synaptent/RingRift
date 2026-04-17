@@ -18,7 +18,11 @@ import {
   positionToString,
 } from '../../../shared/types/game';
 import type { CancellationToken } from '../../../shared/utils/cancellation';
-import { getAIServiceClient, AIType as ServiceAIType } from '../../services/AIServiceClient';
+import {
+  getAIServiceClient,
+  AIType as ServiceAIType,
+  type PersonaId,
+} from '../../services/AIServiceClient';
 import { logger } from '../../utils/logger';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
@@ -54,6 +58,13 @@ export interface AIConfig {
   aiType?: AIType;
   /** How this AI makes decisions about moves/choices. */
   mode?: AIControlMode;
+  /**
+   * Optional C2 persona override. Forwarded to the Python /ai/move
+   * service as `persona_id`; the Python server honors it only when
+   * `RINGRIFT_PERSONAS_ENABLED` is on. Default undefined = use the
+   * ladder's default heuristic profile (balanced-equivalent).
+   */
+  personaId?: PersonaId;
 }
 
 /**
@@ -205,6 +216,15 @@ export class AIEngine {
       config.thinkTime = basePreset.thinkTime;
     }
 
+    // C2: validate and store the optional persona selector. Unknown
+    // values are silently dropped here — the server-side Python
+    // validator also rejects them — so a bad client input cannot make
+    // the AI crash mid-game; it just falls back to the default profile.
+    const normalizedPersona = this.coercePersonaId(profile.personaId);
+    if (normalizedPersona !== undefined) {
+      config.personaId = normalizedPersona;
+    }
+
     this.aiConfigs.set(playerNumber, config);
 
     logger.info('AI player configured from profile', {
@@ -212,7 +232,21 @@ export class AIEngine {
       difficulty,
       aiType,
       mode: config.mode,
+      personaId: config.personaId ?? null,
     });
+  }
+
+  /**
+   * Normalize an external persona string into a {@link PersonaId} or undefined.
+   * Accepts the 4 registered names; rejects everything else (including
+   * casing variants and whitespace) so the wire payload to the Python
+   * service is always one of the canonical forms.
+   */
+  private coercePersonaId(raw: string | undefined): PersonaId | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'string') return undefined;
+    const ALLOWED: readonly PersonaId[] = ['balanced', 'aggressive', 'territorial', 'defensive'];
+    return ALLOWED.includes(raw as PersonaId) ? (raw as PersonaId) : undefined;
   }
 
   /**
@@ -318,7 +352,8 @@ export class AIEngine {
           config.difficulty,
           serviceAIType,
           undefined,
-          options?.token ? { token: options.token } : undefined
+          options?.token ? { token: options.token } : undefined,
+          config.personaId
         );
 
         const normalizedMove = this.normalizeServiceMove(response.move, gameState, playerNumber);

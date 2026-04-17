@@ -282,6 +282,13 @@ export interface AIProfile {
   mode?: AIControlMode;
   /** The underlying tactical engine type (random, heuristic, minimax, mcts). */
   aiType?: AITacticType;
+  /**
+   * Optional C2 persona selector: 'balanced' | 'aggressive' | 'territorial' | 'defensive'.
+   * Kept as a string rather than a tight union at the shared-type layer so
+   * that untrusted client inputs go through explicit server-side validation.
+   * Forwarded to the Python /ai/move service as `persona_id` when set.
+   */
+  personaId?: string;
 }
 
 export interface Player {

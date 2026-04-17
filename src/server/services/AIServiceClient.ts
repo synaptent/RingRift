@@ -210,12 +210,36 @@ export enum AIType {
   IG_GMO = 'ig_gmo',
 }
 
+/**
+ * Four named heuristic personas (C2 / #80) already registered in
+ * `ai-service/app/ai/heuristic_weights.py`.  Each maps to a distinct
+ * set of weight deltas so the same tier plays visibly differently.
+ *
+ * Kept as a string union rather than an enum so the wire shape stays
+ * trivially JSON-serializable and easy to validate on either side.
+ */
+export type PersonaId = 'balanced' | 'aggressive' | 'territorial' | 'defensive';
+
+export const ALLOWED_PERSONA_IDS: readonly PersonaId[] = [
+  'balanced',
+  'aggressive',
+  'territorial',
+  'defensive',
+] as const;
+
 export interface MoveRequest {
   game_state: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
   seed?: number;
+  /**
+   * Optional persona selector forwarded to the Python /ai/move endpoint.
+   * When the Python server has RINGRIFT_PERSONAS_ENABLED on, this
+   * overrides the ladder's default heuristic profile with
+   * `heuristic_v1_<persona>`.  Ignored server-side when the flag is off.
+   */
+  persona_id?: PersonaId;
 }
 
 export interface MoveResponse {
@@ -234,6 +258,12 @@ export interface MoveResponse {
   simulation_budget?: number | null;
   device?: string | null;
   search_stats_summary?: Record<string, unknown> | null;
+  /** The persona that actually served the move, or null when no persona
+   * was requested or the server-side feature flag was off. */
+  persona_id?: PersonaId | null;
+  /** Architecture version of the served NN, mirrored from
+   * X-RingRift-Model-Version header (e.g. "v2.0.0", "v4.0.0"). */
+  nn_model_version?: string | null;
 }
 
 export interface EvaluationRequest {
@@ -560,6 +590,11 @@ export class AIServiceClient {
 
   /**
    * Get AI-selected move for current game state with circuit breaker protection.
+   *
+   * @param personaId Optional C2 persona override. When set, forwarded to
+   *   the Python service as `persona_id`. The Python server ignores it
+   *   unless `RINGRIFT_PERSONAS_ENABLED` is on, so this is safe to pass
+   *   even before the flag flips in production.
    */
   async getAIMove(
     gameState: GameState,
@@ -567,7 +602,8 @@ export class AIServiceClient {
     difficulty: number = 5,
     aiType?: AIType,
     seed?: number,
-    options?: AIServiceRequestOptions
+    options?: AIServiceRequestOptions,
+    personaId?: PersonaId
   ): Promise<MoveResponse> {
     const startTime = performance.now();
     const difficultyLabel = String(difficulty ?? 'n/a');
@@ -620,6 +656,7 @@ export class AIServiceClient {
             difficulty,
             ...(aiType && { ai_type: aiType }),
             ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
+            ...(personaId && { persona_id: personaId }),
           };
 
           logger.info('Requesting AI move', {
