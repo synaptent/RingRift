@@ -2331,14 +2331,33 @@ class OrphanProcessDetectionConfig:
     max_kills_per_cycle: int = 50  # Safety limit
 
     # Patterns to search for
+    # Script-path-anchored patterns so we only match the actual P2P-spawned
+    # scripts, not any python process whose cmdline happens to contain the
+    # word "selfplay" or "gumbel" as a flag argument.  Before this, the
+    # bare word "selfplay" matched --selfplay-budget / --selfplay-randomness
+    # on unrelated standalone services like minimal_alphazero_loop.py,
+    # which was then killed at orphan_threshold_seconds by SIGKILL despite
+    # being a legitimate systemd unit.
     orphan_patterns: list[str] = field(default_factory=lambda: [
-        "selfplay",
-        "gpu_selfplay",
-        "gumbel",
-        "run_self_play",
-        "run_gpu_selfplay",
-        "run_hybrid_selfplay",
+        "scripts/generate_gumbel_selfplay.py",
+        "scripts/run_self_play.py",
+        "scripts/run_gpu_selfplay.py",
+        "scripts/run_hybrid_selfplay.py",
+        "scripts/gpu_selfplay_runner.py",
     ])
+
+    # Cgroup/unit names that MUST NOT be killed even if their PIDs match a
+    # pattern above.  Defense-in-depth against future pattern regressions:
+    # any process whose systemd unit starts with one of these prefixes is
+    # a managed service and not a P2P orphan.  Match is done via
+    # /proc/<pid>/cgroup — the cgroup path contains the unit name.
+    protected_unit_prefixes: tuple[str, ...] = (
+        "ringrift-training",
+        "ringrift-selfplay-worker",
+        "ringrift-p2p",
+        "ringrift-ai",
+        "ringrift-server",
+    )
 
     def __post_init__(self) -> None:
         if self.check_interval_seconds <= 0:
@@ -2384,6 +2403,48 @@ class OrphanProcessDetectionLoop(BaseLoop):
         self._orphans_detected = 0
         self._last_kill_time: float = 0
 
+    @staticmethod
+    def _process_systemd_unit(pid: int) -> str | None:
+        """Return the systemd unit owning this PID, or None if unmanaged.
+
+        Reads /proc/<pid>/cgroup and pulls the unit name out of the slice
+        path (e.g. ``/system.slice/ringrift-training.service`` ->
+        ``ringrift-training.service``).  Used to suppress SIGKILL against
+        processes that are managed by their own systemd unit — they are
+        not P2P orphans.  Returns None if /proc isn't readable, the PID
+        is gone, or the process is not inside a systemd slice (e.g. a
+        user-login shell spawning a script).
+        """
+        try:
+            with open(f"/proc/{pid}/cgroup") as f:
+                for line in f:
+                    line = line.strip()
+                    # Format: "0::/system.slice/ringrift-training.service"
+                    if "/system.slice/" in line:
+                        unit = line.rsplit("/", 1)[-1]
+                        if unit.endswith(".service") or unit.endswith(".scope"):
+                            return unit
+                    elif "/user.slice/" in line and line.endswith(".service"):
+                        return line.rsplit("/", 1)[-1]
+        except (OSError, ValueError):
+            return None
+        return None
+
+    def _is_protected_systemd_process(self, pid: int) -> str | None:
+        """Return unit name if PID belongs to a protected systemd service.
+
+        Prevents the orphan detector from ever SIGKILL'ing a process that
+        systemd is actively supervising — those aren't P2P orphans, they
+        are separate services that happen to share a cmdline token.
+        """
+        unit = self._process_systemd_unit(pid)
+        if not unit:
+            return None
+        for prefix in self.config.protected_unit_prefixes:
+            if unit.startswith(prefix):
+                return unit
+        return None
+
     async def _run_once(self) -> None:
         """Scan for and kill orphan processes."""
         import shutil
@@ -2422,6 +2483,20 @@ class OrphanProcessDetectionLoop(BaseLoop):
                 for pid in pids:
                     # Skip if tracked
                     if pid in tracked_pids:
+                        continue
+
+                    # Skip if the PID belongs to a protected systemd unit
+                    # (e.g. ringrift-training.service running the minimal
+                    # loop as its own service).  Those processes are NOT
+                    # orphans — they are independent services that match
+                    # this pattern only because their cmdline mentions
+                    # "selfplay" or similar as an argument.
+                    protected_unit = self._is_protected_systemd_process(pid)
+                    if protected_unit is not None:
+                        logger.debug(
+                            "[OrphanDetection] Skipping pid %d (protected unit %s, pattern %s)",
+                            pid, protected_unit, pattern,
+                        )
                         continue
 
                     # Get process elapsed time
