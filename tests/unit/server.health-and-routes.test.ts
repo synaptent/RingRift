@@ -77,12 +77,13 @@ jest.mock('../../src/server/middleware/auth', () => {
 
     const [, token] = authHeader.split(' ');
     const userId = token || 'user-1';
+    const role = userId.startsWith('admin-') ? 'ADMIN' : 'USER';
 
     req.user = {
       id: userId,
       email: `${userId}@example.com`,
       username: userId,
-      role: 'USER',
+      role,
     };
 
     return next();
@@ -901,6 +902,71 @@ describe('Game diagnostics session route', () => {
       meta: {
         hasInMemorySession: true,
         sanitized: true,
+      },
+    });
+  });
+
+  it('returns full AI diagnostics including lastMoveTelemetry for admins', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440014';
+    mockPrisma.game.findUnique.mockResolvedValueOnce({
+      id: validGameId,
+      player1Id: 'admin-1',
+      player2Id: null,
+      player3Id: null,
+      player4Id: null,
+      allowSpectators: false,
+    } as any);
+
+    const diagnosticsSnapshot = {
+      sessionStatus: { kind: 'active_turn', currentPlayer: 2, phase: 'movement' },
+      lastAIRequestState: { kind: 'completed', latencyMs: 942 },
+      aiDiagnostics: {
+        rulesServiceFailureCount: 0,
+        rulesShadowErrorCount: 0,
+        aiServiceFailureCount: 1,
+        aiFallbackMoveCount: 1,
+        aiQualityMode: 'fallbackLocalAI',
+        lastMoveTelemetry: {
+          playerNumber: 2,
+          moveType: 'place_ring',
+          source: 'local_heuristic',
+          aiTier: 8,
+          aiType: 'mcts',
+          modelVersion: 'v2.0.0',
+          modelPath: 'models/canonical_square8_2p.pth',
+          latencyMs: 942,
+          fallbackUsed: true,
+          fallbackReason: 'timeout',
+          recordedAt: '2026-04-18T12:00:00.000Z',
+        },
+      },
+      connections: {
+        'admin-1': { state: 'connected' },
+      },
+      hasInMemorySession: true,
+    };
+
+    const wsServerMock = {
+      getGameDiagnosticsForGame: jest.fn().mockReturnValue(diagnosticsSnapshot),
+      broadcastLobbyEvent: jest.fn(),
+    };
+
+    const app = createTestApp(wsServerMock);
+
+    const res = await request(app)
+      .get(`/api/games/${validGameId}/diagnostics/session`)
+      .set('Authorization', 'Bearer admin-1')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({
+      sessionStatus: diagnosticsSnapshot.sessionStatus,
+      lastAIRequestState: diagnosticsSnapshot.lastAIRequestState,
+      aiDiagnostics: diagnosticsSnapshot.aiDiagnostics,
+      connections: diagnosticsSnapshot.connections,
+      meta: {
+        hasInMemorySession: true,
+        sanitized: false,
       },
     });
   });

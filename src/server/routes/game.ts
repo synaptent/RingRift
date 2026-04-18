@@ -2027,6 +2027,10 @@ registerUserGamesRoute(router);
  *       state. Only participants and permitted spectators may access this
  *       endpoint.
  *
+ *       Detailed AI diagnostics are admin-only. When present, `aiDiagnostics`
+ *       may include the last served AI move telemetry for the in-memory
+ *       session, including model identity, latency, and fallback metadata.
+ *
  *       The diagnostics are best-effort and reflect only in-memory sessions;
  *       games that are not currently loaded into memory will return
  *       `hasInMemorySession: false`.
@@ -2066,7 +2070,7 @@ registerUserGamesRoute(router);
  *                     aiDiagnostics:
  *                       type: object
  *                       nullable: true
- *                       description: Per-game AI/rules degraded-mode diagnostics
+ *                       description: Per-game AI/rules degraded-mode diagnostics (admin-only; may include lastMoveTelemetry)
  *                     connections:
  *                       type: object
  *                       additionalProperties:
@@ -2077,6 +2081,9 @@ registerUserGamesRoute(router);
  *                         hasInMemorySession:
  *                           type: boolean
  *                           description: Whether an in-memory GameSession was found on this node
+ *                         sanitized:
+ *                           type: boolean
+ *                           description: True when sensitive AI diagnostics were hidden for a non-admin caller
  *       400:
  *         description: Invalid game ID format
  *         content:
