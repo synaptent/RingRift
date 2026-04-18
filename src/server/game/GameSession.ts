@@ -6,7 +6,13 @@ import { PlayerInteractionManager } from './PlayerInteractionManager';
 import { WebSocketInteractionHandler } from './WebSocketInteractionHandler';
 import { DelegatingInteractionHandler } from './DelegatingInteractionHandler';
 import { AIInteractionHandler } from './ai/AIInteractionHandler';
-import { globalAIEngine, AIDiagnostics } from './ai/AIEngine';
+import {
+  globalAIEngine,
+  AIDiagnostics,
+  type AIMoveResult,
+  type AIMoveTelemetry,
+  type AIMoveTelemetrySource,
+} from './ai/AIEngine';
 import { getOrCreateAIUser } from '../services/AIUserService';
 import { PythonRulesClient } from '../services/PythonRulesClient';
 import { GamePersistenceService } from '../services/GamePersistenceService';
@@ -77,6 +83,26 @@ export interface SessionAIDiagnostics {
   aiServiceFailureCount: number;
   aiFallbackMoveCount: number;
   aiQualityMode: 'normal' | 'fallbackLocalAI' | 'rulesServiceDegraded';
+  lastMoveTelemetry: SessionAIMoveTelemetry | null;
+}
+
+export type SessionAIMoveTelemetrySource =
+  | AIMoveTelemetrySource
+  | 'legacy_uninstrumented'
+  | 'emergency_first_valid_move';
+
+export interface SessionAIMoveTelemetry {
+  playerNumber: number;
+  moveType: MoveType | null;
+  source: SessionAIMoveTelemetrySource;
+  aiTier: number;
+  aiType: string;
+  modelVersion: string | null;
+  modelPath: string | null;
+  latencyMs: number;
+  fallbackUsed: boolean;
+  fallbackReason: string | null;
+  recordedAt: string;
 }
 
 /**
@@ -177,6 +203,7 @@ export class GameSession {
     aiServiceFailureCount: 0,
     aiFallbackMoveCount: 0,
     aiQualityMode: 'normal',
+    lastMoveTelemetry: null,
   };
 
   // Decision phase timeout tracking (per-session, per-active decision)
@@ -743,7 +770,12 @@ export class GameSession {
    * Get aggregated AI diagnostics snapshot (for testing/diagnostics)
    */
   getAIDiagnosticsSnapshotForTesting(): SessionAIDiagnostics {
-    return { ...this.diagnosticsSnapshot };
+    return {
+      ...this.diagnosticsSnapshot,
+      lastMoveTelemetry: this.diagnosticsSnapshot.lastMoveTelemetry
+        ? { ...this.diagnosticsSnapshot.lastMoveTelemetry }
+        : null,
+    };
   }
 
   /**
@@ -797,6 +829,7 @@ export class GameSession {
       aiServiceFailureCount: aiDiag.serviceFailureCount,
       aiFallbackMoveCount: aiDiag.localFallbackCount,
       aiQualityMode: this.computeAIQualityMode(rulesDiag, aiDiag),
+      lastMoveTelemetry: this.diagnosticsSnapshot.lastMoveTelemetry,
     };
   }
 
@@ -1492,7 +1525,7 @@ export class GameSession {
           result = await this.rulesFacade.applyMove(engineMove);
         } else {
           // Get AI move with timeout
-          const aiMove = await this.getAIMoveWithTimeout(
+          const aiMoveResult = await this.getAIMoveResultWithTimeout(
             currentPlayerNumber,
             state,
             this.aiRequestTimeoutMs,
@@ -1500,6 +1533,7 @@ export class GameSession {
               token: this.sessionCancellationSource.token,
             }
           );
+          const aiMove = aiMoveResult.move;
 
           // Check if request was canceled during execution
           if (this.aiAbortController?.signal.aborted) {
@@ -1507,6 +1541,7 @@ export class GameSession {
           }
 
           if (!aiMove) {
+            this.rememberAIMoveTelemetry(currentPlayerNumber, null, aiMoveResult.telemetry);
             await this.handleNoMoveFromService(currentPlayerNumber, state);
             return;
           }
@@ -1514,6 +1549,11 @@ export class GameSession {
           const { id: _id2, timestamp: _timestamp2, moveNumber: _moveNumber2, ...rest } = aiMove;
           const engineMove = rest as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
           appliedMoveType = engineMove.type;
+          this.rememberAIMoveTelemetry(
+            currentPlayerNumber,
+            appliedMoveType,
+            aiMoveResult.telemetry
+          );
 
           result = await this.rulesFacade.applyMove(engineMove);
         }
@@ -1545,6 +1585,7 @@ export class GameSession {
           gameId: this.gameId,
           playerNumber: currentPlayerNumber,
           moveType: appliedMoveType,
+          aiMoveTelemetry: this.diagnosticsSnapshot.lastMoveTelemetry,
           aiDiagnostics: this.diagnosticsSnapshot,
         });
 
@@ -1619,20 +1660,44 @@ export class GameSession {
    * let the caller map it to the explicit `timed_out` terminal state using
    * the existing isDeadlineExceeded/markTimedOut logic.
    */
-  private async getAIMoveWithTimeout(
+  private async getAIMoveResultWithTimeout(
     playerNumber: number,
     state: GameState,
     timeoutMs: number,
     options?: { token?: CancellationToken }
-  ): Promise<Move | null> {
+  ): Promise<AIMoveResult> {
     const result = await runWithTimeout(
-      () =>
-        globalAIEngine.getAIMove(
+      async () => {
+        const telemetryCapableEngine = globalAIEngine as typeof globalAIEngine & {
+          getAIMoveWithTelemetry?: (
+            playerNumber: number,
+            gameState: GameState,
+            rng?: undefined,
+            options?: { token?: CancellationToken }
+          ) => Promise<AIMoveResult>;
+        };
+
+        if (typeof telemetryCapableEngine.getAIMoveWithTelemetry === 'function') {
+          return telemetryCapableEngine.getAIMoveWithTelemetry(
+            playerNumber,
+            state,
+            undefined,
+            options?.token ? { token: options.token } : undefined
+          );
+        }
+
+        const move = await globalAIEngine.getAIMove(
           playerNumber,
           state,
           undefined,
           options?.token ? { token: options.token } : undefined
-        ),
+        );
+
+        return {
+          move,
+          telemetry: this.buildLegacyAIMoveTelemetry(playerNumber, state),
+        };
+      },
       {
         timeoutMs,
         ...(options?.token && { token: options.token }),
@@ -1640,7 +1705,12 @@ export class GameSession {
     );
 
     if (result.kind === 'ok') {
-      return result.value ?? null;
+      return (
+        result.value ?? {
+          move: null,
+          telemetry: this.buildLegacyAIMoveTelemetry(playerNumber, state),
+        }
+      );
     }
 
     if (result.kind === 'timeout') {
@@ -1662,7 +1732,7 @@ export class GameSession {
     // Exhaustiveness guard – TimedOperationOutcome is a closed union. If we
     // land here, the helper's API has changed and this method should be
     // updated accordingly.
-    throw new Error('Unhandled TimedOperationResult outcome in getAIMoveWithTimeout');
+    throw new Error('Unhandled TimedOperationResult outcome in getAIMoveResultWithTimeout');
   }
 
   /**
@@ -1692,6 +1762,16 @@ export class GameSession {
       const result = await this.rulesFacade.applyMove(fallbackMove);
 
       if (result.success) {
+        this.rememberAIMoveTelemetry(
+          playerNumber,
+          fallbackMove.type,
+          this.buildSyntheticFallbackTelemetry(
+            playerNumber,
+            state,
+            'move_rejected',
+            'local_heuristic'
+          )
+        );
         this.aiRequestState = markCompleted(this.aiRequestState);
         getMetricsService().recordAITurnRequestTerminal('completed');
 
@@ -1733,6 +1813,11 @@ export class GameSession {
       const result = await this.rulesFacade.applyMove(fallbackMove);
 
       if (result.success) {
+        this.rememberAIMoveTelemetry(
+          playerNumber,
+          fallbackMove.type,
+          this.buildSyntheticFallbackTelemetry(playerNumber, state, 'no_move', 'local_heuristic')
+        );
         this.aiRequestState = markCompleted(this.aiRequestState);
         getMetricsService().recordAITurnRequestTerminal('completed');
 
@@ -1793,6 +1878,16 @@ export class GameSession {
 
         const result = await this.rulesFacade.applyMove(emergencyMove);
         if (result.success) {
+          this.rememberAIMoveTelemetry(
+            playerNumber,
+            emergencyMove.type,
+            this.buildSyntheticFallbackTelemetry(
+              playerNumber,
+              this.gameEngine.getGameState(),
+              'both_service_and_fallback_failed',
+              'emergency_first_valid_move'
+            )
+          );
           await this.persistAIMove(playerNumber, emergencyMove.type, result);
           await this.broadcastUpdate(result);
 
@@ -1819,6 +1914,96 @@ export class GameSession {
         playerNumber,
         error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
       });
+    }
+  }
+
+  private rememberAIMoveTelemetry(
+    playerNumber: number,
+    moveType: MoveType | null,
+    telemetry: AIMoveTelemetry | SessionAIMoveTelemetry
+  ): void {
+    const snapshot: SessionAIMoveTelemetry =
+      'recordedAt' in telemetry
+        ? { ...telemetry, playerNumber, moveType }
+        : {
+            playerNumber,
+            moveType,
+            source: telemetry.source,
+            aiTier: telemetry.aiTier,
+            aiType: telemetry.aiType,
+            modelVersion: telemetry.modelVersion,
+            modelPath: telemetry.modelPath,
+            latencyMs: telemetry.latencyMs,
+            fallbackUsed: telemetry.fallbackUsed,
+            fallbackReason: telemetry.fallbackReason,
+            recordedAt: new Date().toISOString(),
+          };
+
+    this.diagnosticsSnapshot = {
+      ...this.diagnosticsSnapshot,
+      lastMoveTelemetry: snapshot,
+    };
+  }
+
+  private buildLegacyAIMoveTelemetry(playerNumber: number, state: GameState): AIMoveTelemetry {
+    const config = globalAIEngine.getAIConfig(playerNumber);
+    const aiPlayer = state.players.find((player) => player.playerNumber === playerNumber);
+
+    return {
+      modelVersion: null,
+      modelPath: null,
+      aiTier: config?.difficulty ?? aiPlayer?.aiProfile?.difficulty ?? aiPlayer?.aiDifficulty ?? 0,
+      latencyMs: this.getCurrentAIRequestLatencyMs(),
+      fallbackUsed: false,
+      fallbackReason: null,
+      aiType: String(config?.aiType ?? aiPlayer?.aiProfile?.aiType ?? 'unknown'),
+      source: 'python_service',
+    };
+  }
+
+  private buildSyntheticFallbackTelemetry(
+    playerNumber: number,
+    state: GameState,
+    fallbackReason: string | null,
+    source: SessionAIMoveTelemetrySource,
+    fallbackUsed: boolean = true
+  ): SessionAIMoveTelemetry {
+    const config = globalAIEngine.getAIConfig(playerNumber);
+    const aiPlayer = state.players.find((player) => player.playerNumber === playerNumber);
+    const aiTier =
+      config?.difficulty ?? aiPlayer?.aiProfile?.difficulty ?? aiPlayer?.aiDifficulty ?? 0;
+    const aiType = String(config?.aiType ?? aiPlayer?.aiProfile?.aiType ?? 'unknown');
+
+    return {
+      playerNumber,
+      moveType: null,
+      source,
+      aiTier,
+      aiType,
+      modelVersion: null,
+      modelPath: null,
+      latencyMs: this.getCurrentAIRequestLatencyMs(),
+      fallbackUsed,
+      fallbackReason,
+      recordedAt: new Date().toISOString(),
+    };
+  }
+
+  private getCurrentAIRequestLatencyMs(now: number = Date.now()): number {
+    switch (this.aiRequestState.kind) {
+      case 'queued':
+      case 'in_flight':
+      case 'fallback_local':
+        return Math.max(0, now - this.aiRequestState.requestedAt);
+      case 'completed':
+        return this.aiRequestState.latencyMs ?? 0;
+      case 'timed_out':
+      case 'failed':
+      case 'canceled':
+        return this.aiRequestState.durationMs ?? 0;
+      case 'idle':
+      default:
+        return 0;
     }
   }
 

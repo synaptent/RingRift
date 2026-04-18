@@ -116,7 +116,7 @@ const createMinimalState = (): GameState =>
     timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
   }) as any;
 
-describe('GameSession.getAIMoveWithTimeout branches', () => {
+describe('GameSession.getAIMoveResultWithTimeout branches', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -151,11 +151,11 @@ describe('GameSession.getAIMoveWithTimeout branches', () => {
     });
 
     const state = createMinimalState();
-    const result = await (session as any).getAIMoveWithTimeout(1, state, 1234);
+    const result = await (session as any).getAIMoveResultWithTimeout(1, state, 1234);
 
     // getAIMove signature: (playerNumber, gameState, rng?, options?)
     expect(globalAIEngine.getAIMove).toHaveBeenCalledWith(1, state, undefined, undefined);
-    expect(result).toBe(fakeMove);
+    expect(result.move).toBe(fakeMove);
   });
 
   it('returns move when runWithTimeout resolves with ok value', async () => {
@@ -172,12 +172,84 @@ describe('GameSession.getAIMoveWithTimeout branches', () => {
       thinkTime: 0,
     };
 
-    runWithTimeout.mockResolvedValueOnce({ kind: 'ok', value: fakeMove });
+    runWithTimeout.mockResolvedValueOnce({
+      kind: 'ok',
+      value: {
+        move: fakeMove,
+        telemetry: {
+          modelVersion: null,
+          modelPath: null,
+          aiTier: 5,
+          latencyMs: 100,
+          fallbackUsed: false,
+          fallbackReason: null,
+          aiType: 'unknown',
+          source: 'python_service',
+        },
+      },
+    });
 
     const state = createMinimalState();
-    const result = await (session as any).getAIMoveWithTimeout(1, state, 1000);
+    const result = await (session as any).getAIMoveResultWithTimeout(1, state, 1000);
 
-    expect(result).toBe(fakeMove);
+    expect(result.move).toBe(fakeMove);
+  });
+
+  it('returns move telemetry result when telemetry-capable AIEngine method is available', async () => {
+    const io = createMockIo();
+    const session = new GameSession('game-1', io, {} as any, new Map());
+
+    const fakeMove: Move = {
+      id: 'm1',
+      type: 'place_ring',
+      player: 1,
+      to: { x: 0, y: 0 },
+      moveNumber: 1,
+      timestamp: new Date(),
+      thinkTime: 0,
+    };
+
+    (globalAIEngine as any).getAIMoveWithTelemetry = jest.fn().mockResolvedValueOnce({
+      move: fakeMove,
+      telemetry: {
+        modelVersion: 'v2.0.0',
+        modelPath: 'models/canonical_square8_2p.pth',
+        aiTier: 8,
+        latencyMs: 912,
+        fallbackUsed: false,
+        fallbackReason: null,
+        aiType: 'mcts',
+        source: 'python_service',
+      },
+    });
+
+    runWithTimeout.mockImplementationOnce(async (operation) => ({
+      kind: 'ok',
+      value: await operation(),
+      durationMs: 1,
+    }));
+
+    const state = createMinimalState();
+    const result = await (session as any).getAIMoveResultWithTimeout(1, state, 1000);
+
+    expect((globalAIEngine as any).getAIMoveWithTelemetry).toHaveBeenCalledWith(
+      1,
+      state,
+      undefined,
+      undefined
+    );
+    expect(result).toEqual({
+      move: fakeMove,
+      telemetry: expect.objectContaining({
+        modelVersion: 'v2.0.0',
+        modelPath: 'models/canonical_square8_2p.pth',
+        aiTier: 8,
+        fallbackUsed: false,
+        source: 'python_service',
+      }),
+    });
+
+    delete (globalAIEngine as any).getAIMoveWithTelemetry;
   });
 
   it('returns null when runWithTimeout resolves with ok and null value', async () => {
@@ -187,9 +259,9 @@ describe('GameSession.getAIMoveWithTimeout branches', () => {
     runWithTimeout.mockResolvedValueOnce({ kind: 'ok', value: null });
 
     const state = createMinimalState();
-    const result = await (session as any).getAIMoveWithTimeout(1, state, 1000);
+    const result = await (session as any).getAIMoveResultWithTimeout(1, state, 1000);
 
-    expect(result).toBeNull();
+    expect(result.move).toBeNull();
   });
 
   it('throws timeout error when runWithTimeout reports timeout', async () => {
@@ -200,10 +272,12 @@ describe('GameSession.getAIMoveWithTimeout branches', () => {
 
     const state = createMinimalState();
 
-    await expect((session as any).getAIMoveWithTimeout(1, state, 1000)).rejects.toMatchObject({
-      message: 'AI request timeout',
-      isTimeout: true,
-    });
+    await expect((session as any).getAIMoveResultWithTimeout(1, state, 1000)).rejects.toMatchObject(
+      {
+        message: 'AI request timeout',
+        isTimeout: true,
+      }
+    );
   });
 
   it('throws cancellation error when runWithTimeout reports canceled', async () => {
@@ -217,10 +291,12 @@ describe('GameSession.getAIMoveWithTimeout branches', () => {
 
     const state = createMinimalState();
 
-    await expect((session as any).getAIMoveWithTimeout(1, state, 1000)).rejects.toMatchObject({
-      message: 'AI request canceled',
-      cancellationReason: 'manual',
-    });
+    await expect((session as any).getAIMoveResultWithTimeout(1, state, 1000)).rejects.toMatchObject(
+      {
+        message: 'AI request canceled',
+        cancellationReason: 'manual',
+      }
+    );
   });
 
   it('throws guard error for unexpected TimedOperationResult kind', async () => {
@@ -231,8 +307,8 @@ describe('GameSession.getAIMoveWithTimeout branches', () => {
 
     const state = createMinimalState();
 
-    await expect((session as any).getAIMoveWithTimeout(1, state, 1000)).rejects.toThrow(
-      'Unhandled TimedOperationResult outcome in getAIMoveWithTimeout'
+    await expect((session as any).getAIMoveResultWithTimeout(1, state, 1000)).rejects.toThrow(
+      'Unhandled TimedOperationResult outcome in getAIMoveResultWithTimeout'
     );
   });
 

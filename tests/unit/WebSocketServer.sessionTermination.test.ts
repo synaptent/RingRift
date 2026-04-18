@@ -465,12 +465,12 @@ describe('WebSocketServer.terminateUserSessions', () => {
     // terminateUserSessions can locate it and invoke session.terminate().
     mockGetSession.mockReturnValue(session as any);
 
-    // Spy on getAIMoveWithTimeout to ensure any subsequent AI turn work
+    // Spy on getAIMoveResultWithTimeout to ensure any subsequent AI turn work
     // observes a canceled session token before reaching the AI service
     // layer. In the real implementation, a canceled token causes
     // AIServiceClient to short-circuit HTTP calls via token.throwIfCanceled.
     const recordedTokens: unknown[] = [];
-    const mockGetAIMoveWithTimeout = jest.fn(
+    const mockGetAIMoveResultWithTimeout = jest.fn(
       async (
         _playerNumber: number,
         _state: any,
@@ -486,7 +486,7 @@ describe('WebSocketServer.terminateUserSessions', () => {
         throw new Error('AI request canceled');
       }
     );
-    (session as any).getAIMoveWithTimeout = mockGetAIMoveWithTimeout;
+    (session as any).getAIMoveResultWithTimeout = mockGetAIMoveResultWithTimeout;
 
     // Terminate user sessions, which calls GameSession.terminate and
     // cancels the session-scoped cancellation token.
@@ -497,7 +497,7 @@ describe('WebSocketServer.terminateUserSessions', () => {
     // token should prevent any new AI HTTP calls from being issued.
     await (session as any).maybePerformAITurn();
 
-    expect(mockGetAIMoveWithTimeout).toHaveBeenCalledTimes(1);
+    expect(mockGetAIMoveResultWithTimeout).toHaveBeenCalledTimes(1);
     expect(recordedTokens.length).toBe(1);
     const token = recordedTokens[0] as { isCanceled: boolean };
     expect(token.isCanceled).toBe(true);

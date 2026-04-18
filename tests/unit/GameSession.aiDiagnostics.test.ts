@@ -141,4 +141,58 @@ describe('GameSession AI diagnostics aggregation', () => {
     // and returns a structured object.
     expect(typeof snapshot).toBe('object');
   });
+
+  it('preserves last move telemetry when diagnostics counters are recomputed', () => {
+    const session = makeSession();
+
+    const rulesDiag = {
+      pythonEvalFailures: 0,
+      pythonBackendFallbacks: 0,
+      pythonShadowErrors: 0,
+    };
+
+    (session as any).rulesFacade = {
+      getDiagnostics: jest.fn(() => rulesDiag),
+    };
+
+    (session as any).diagnosticsSnapshot = {
+      rulesServiceFailureCount: 99,
+      rulesShadowErrorCount: 0,
+      aiServiceFailureCount: 99,
+      aiFallbackMoveCount: 99,
+      aiQualityMode: 'fallbackLocalAI',
+      lastMoveTelemetry: {
+        playerNumber: 2,
+        moveType: 'place_ring',
+        source: 'python_service',
+        aiTier: 8,
+        aiType: 'mcts',
+        modelVersion: 'v2.0.0',
+        modelPath: 'models/canonical_square8_2p.pth',
+        latencyMs: 812,
+        fallbackUsed: false,
+        fallbackReason: null,
+        recordedAt: '2026-04-18T00:00:00.000Z',
+      },
+    };
+
+    (globalAIEngine.getDiagnostics as jest.Mock).mockReturnValue({
+      serviceFailureCount: 1,
+      localFallbackCount: 0,
+    });
+
+    (session as any).updateDiagnostics(2);
+
+    const snapshot = session.getAIDiagnosticsSnapshotForTesting();
+
+    expect(snapshot.aiServiceFailureCount).toBe(1);
+    expect(snapshot.lastMoveTelemetry).toEqual(
+      expect.objectContaining({
+        playerNumber: 2,
+        moveType: 'place_ring',
+        modelVersion: 'v2.0.0',
+        fallbackUsed: false,
+      })
+    );
+  });
 });

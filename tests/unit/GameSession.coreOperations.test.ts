@@ -449,6 +449,7 @@ describe('GameSession Core Operations', () => {
           aiServiceFailureCount: 2,
           aiFallbackMoveCount: 1,
           aiQualityMode: 'fallbackLocalAI',
+          lastMoveTelemetry: null,
         };
 
         const result = session.getAIDiagnosticsSnapshotForTesting();
