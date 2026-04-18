@@ -109,6 +109,18 @@ As of April 16, 2026:
 | `gh200-14`        | `square19_2p`   | role-aware systemd  | large-board trainer                  |
 | `vultr-a100-20gb` | evaluator       | role-aware systemd  | evaluation/calibration node          |
 
+### Code Drift On Long-Running Nodes
+
+Long-running trainers and workers may temporarily lag `origin/main` because the
+outer repo HEAD only advances on that node when the service restarts. This is
+normal.
+
+- Do not restart a healthy node just to remove code drift.
+- Let trainers pick up non-critical changes on their next natural restart or
+  planned deploy boundary.
+- Only force an out-of-band restart when the missing commit fixes something
+  relevant to that node's active role or corrects a data-integrity issue.
+
 ## Canary-To-Systemd Migration
 
 Use this path when a canary trainer has proven stable enough that reboot
