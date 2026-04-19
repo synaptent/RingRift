@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from scripts import minimal_alphazero_loop as loop
 
@@ -46,9 +48,11 @@ def _run_loop_once(
     *,
     extra_args: list[str],
     iterations: int = 1,
+    num_players: int = 2,
     existing_npz_markers: list[float] | None = None,
     existing_metrics: list[dict] | None = None,
     supplemental_markers: list[float] | None = None,
+    staged_eval_result: dict | None = None,
 ):
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -154,6 +158,8 @@ def _run_loop_once(
         }
         if promote_threshold_cap is not None:
             result["promote_threshold_cap"] = promote_threshold_cap
+        if staged_eval_result:
+            result.update(staged_eval_result)
         return {
             **result,
         }
@@ -188,7 +194,7 @@ def _run_loop_once(
             "--board-type",
             "hex8",
             "--num-players",
-            "2",
+            str(num_players),
             "--iterations",
             str(iterations),
             "--games-per-iter",
@@ -222,6 +228,32 @@ def _run_loop_once(
         "metrics": metrics_rows,
         "export_markers": export_markers,
     }
+
+
+@pytest.mark.parametrize("win_rate", [0.2, 0.37, 0.5, 0.62, 0.8])
+def test_promotion_elo_delta_matches_legacy_formula_exactly_for_2p(win_rate: float) -> None:
+    legacy = 400.0 * math.log10(win_rate / (1.0 - win_rate))
+
+    assert loop._promotion_elo_delta(win_rate, 2) == legacy
+
+
+@pytest.mark.parametrize(
+    ("num_players", "fair_win_rate", "above_fair", "below_fair"),
+    [
+        (2, 0.5, 0.6, 0.4),
+        (3, 1.0 / 3.0, 0.5, 0.25),
+        (4, 0.25, 0.4, 0.2),
+    ],
+)
+def test_promotion_elo_delta_uses_fair_multiplayer_baseline(
+    num_players: int,
+    fair_win_rate: float,
+    above_fair: float,
+    below_fair: float,
+) -> None:
+    assert loop._promotion_elo_delta(fair_win_rate, num_players) == 0.0
+    assert loop._promotion_elo_delta(above_fair, num_players) > 0.0
+    assert loop._promotion_elo_delta(below_fair, num_players) < 0.0
 
 
 def test_export_npz_requests_heuristics_for_v5_heavy(monkeypatch, tmp_path):
@@ -409,6 +441,37 @@ def test_auto_plateau_relax_arms_next_three_iterations(monkeypatch, tmp_path):
     assert new_metrics[0]["plateau"]["relax_until_iteration"] == 23
     assert new_metrics[1]["iteration"] == 21
     assert new_metrics[1]["evaluation"]["promote_threshold_cap"] == 0.52
+
+
+def test_loop_recomputes_resumed_multiplayer_elo_from_promotion_history(monkeypatch, tmp_path):
+    existing_metrics = [
+        {
+            "iteration": 1,
+            "promoted": True,
+            "estimated_elo": 1500.0,
+            "total_promotions": 1,
+            "evaluation": {"win_rate": 0.5},
+        }
+    ]
+
+    result = _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        iterations=1,
+        num_players=3,
+        existing_npz_markers=[1.0],
+        existing_metrics=existing_metrics,
+        staged_eval_result={"decision": "reject", "win_rate": 1.0 / 3.0},
+        extra_args=[],
+    )
+
+    resumed_metrics = result["metrics"][-1]
+    expected_elo = round(1500.0 + loop._promotion_elo_delta(0.5, 3), 1)
+
+    assert resumed_metrics["iteration"] == 2
+    assert resumed_metrics["promoted"] is False
+    assert resumed_metrics["total_promotions"] == 1
+    assert resumed_metrics["estimated_elo"] == expected_elo
 
 
 def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):

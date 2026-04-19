@@ -51,6 +51,7 @@ BOARD_ENUM = BoardType.HEX8
 NUM_PLAYERS = 2
 MODEL_VERSION = "v2"  # Overridden by --model-version CLI arg
 MAX_MOVES = 800
+INITIAL_ESTIMATED_ELO = 1500.0
 
 BOARD_TYPE_MAP = {
     "hex8": BoardType.HEX8,
@@ -197,6 +198,71 @@ def _truncate_jsonl_to(path: Path, keep_count: int) -> None:
             f.writelines(kept)
     except OSError:
         pass
+
+
+def _promotion_elo_delta(win_rate: float, num_players: int) -> float:
+    """Estimate Elo gain from a promotion against the fair-seat baseline."""
+    if not 0.0 < win_rate < 1.0 or num_players < 2:
+        return 0.0
+
+    # Preserve the legacy 2p arithmetic exactly so existing 2p Elo history
+    # remains stable while multiplayer configs get the fair-baseline correction.
+    if num_players == 2:
+        return 400.0 * math.log10(win_rate / (1.0 - win_rate))
+
+    fair_win_rate = 1.0 / float(num_players)
+    if not 0.0 < fair_win_rate < 1.0:
+        return 0.0
+
+    fair_odds = fair_win_rate / (1.0 - fair_win_rate)
+    odds = win_rate / (1.0 - win_rate)
+    return 400.0 * math.log10(odds / fair_odds)
+
+
+def _extract_metric_win_rate(metric: dict[str, Any]) -> float | None:
+    evaluation = metric.get("evaluation")
+    if not isinstance(evaluation, dict):
+        return None
+    win_rate = evaluation.get("win_rate")
+    if isinstance(win_rate, bool):
+        return None
+    if isinstance(win_rate, (int, float)):
+        return float(win_rate)
+    return None
+
+
+def _recompute_progress_from_metrics(
+    metrics_history: list[dict[str, Any]],
+    num_players: int,
+    *,
+    initial_elo: float = INITIAL_ESTIMATED_ELO,
+) -> tuple[int, float]:
+    """Replay historical promotions so resumed Elo uses the current formula."""
+    promos = 0
+    elo = initial_elo
+    saw_promotion_marker = False
+
+    for metric in metrics_history:
+        if "promoted" in metric:
+            saw_promotion_marker = True
+        if not metric.get("promoted"):
+            continue
+        promos += 1
+        win_rate = _extract_metric_win_rate(metric)
+        if win_rate is None:
+            continue
+        elo += _promotion_elo_delta(win_rate, num_players)
+
+    if saw_promotion_marker or not metrics_history:
+        return promos, elo
+
+    latest = metrics_history[-1]
+    fallback_promos = latest.get("total_promotions")
+    fallback_elo = latest.get("estimated_elo")
+    if isinstance(fallback_promos, int) and isinstance(fallback_elo, (int, float)):
+        return fallback_promos, float(fallback_elo)
+
+    return promos, elo
 
 
 def run_selfplay(model_path: str, n_games: int, out: Path, budget: int,
@@ -884,7 +950,7 @@ def main() -> None:
 
     logf = Path(args.log_file) if args.log_file else wdir / "metrics.jsonl"
     logf.parent.mkdir(parents=True, exist_ok=True)
-    promos, elo = 0, 1500.0
+    promos, elo = 0, INITIAL_ESTIMATED_ELO
     consec_failures = 0  # Circuit breaker: stop after repeated failures
     MAX_CONSEC_FAILURES = 3
     last_error = ""  # Captured for self-healing diagnostics
@@ -899,6 +965,8 @@ def main() -> None:
     # cheaper and correct-by-construction.
     metrics_history: list[dict] = []
     last_metrics_iter = 0
+    logged_promos = promos
+    logged_elo = elo
     if logf.exists():
         for line in logf.read_text().strip().split("\n"):
             if not line.strip():
@@ -912,8 +980,25 @@ def main() -> None:
             it_val = m.get("iteration")
             if isinstance(it_val, int):
                 last_metrics_iter = max(last_metrics_iter, it_val)
-            promos = m.get("total_promotions", promos)
-            elo = m.get("estimated_elo", elo)
+            total_promotions = m.get("total_promotions")
+            if isinstance(total_promotions, int):
+                logged_promos = total_promotions
+            estimated_elo = m.get("estimated_elo")
+            if isinstance(estimated_elo, (int, float)):
+                logged_elo = float(estimated_elo)
+
+    promos, elo = _recompute_progress_from_metrics(metrics_history, NUM_PLAYERS)
+    if metrics_history and (
+        promos != logged_promos or not math.isclose(elo, logged_elo, rel_tol=0.0, abs_tol=0.05)
+    ):
+        logger.info(
+            "Recomputed resume Elo from promotion history "
+            "(logged elo=%.1f -> corrected elo=%.1f, logged promos=%d -> corrected promos=%d)",
+            logged_elo,
+            elo,
+            logged_promos,
+            promos,
+        )
 
     # Resume: the metrics.jsonl line is appended only after training + eval
     # finish, so last_metrics_iter is the authoritative "fully completed"
@@ -1230,7 +1315,7 @@ def main() -> None:
         if promoted:
             shutil.copy2(cpath, best)
             promos += 1
-            eg = 400.0 * math.log10(wr / (1 - wr)) if 0 < wr < 1 else 0
+            eg = _promotion_elo_delta(wr, NUM_PLAYERS)
             elo += eg
             logger.info(f"[5/5] PROMOTED (wr={wr:.1%}, +{eg:.0f} -> ~{elo:.0f} Elo)")
         else:
