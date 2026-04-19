@@ -10,6 +10,7 @@ Usage from minimal_alphazero_loop.py:
     )
 
     tracker = QualityGateTracker()
+    tracker.set_selfplay_baseline({1: sp["p1_wins"], 2: sp["p2_wins"]})
     # inside each eval game, after every move by the candidate:
     tracker.record_move(game_idx, move_number, move, legal_moves, root_value)
     # after all games:
@@ -23,6 +24,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
+
+from scipy.stats import chisquare
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +105,9 @@ class QualityGateTracker:
         # the candidate consistently plays a disadvantaged seat).
         self._seat_wins: dict[int, int] = {}
         self._seat_games: dict[int, int] = {}
+        # The same iteration's selfplay per-seat wins. This is the empirical
+        # null for natural seat asymmetry on the current board/config.
+        self._selfplay_seat_wins: dict[int, int] = {}
 
     def record_move(
         self,
@@ -169,6 +175,20 @@ class QualityGateTracker:
             self._seat_wins[candidate_seat] = self._seat_wins.get(candidate_seat, 0) + 1
         # Game count also advances, in case this is the last signal for the game.
         self._game_count = max(self._game_count, game_idx + 1)
+
+    def set_selfplay_baseline(self, seat_wins: dict[int, int]) -> None:
+        """Store the iteration's selfplay seat-win distribution."""
+        normalized: dict[int, int] = {}
+        for raw_seat, raw_wins in seat_wins.items():
+            try:
+                seat = int(raw_seat)
+                wins = int(raw_wins)
+            except (TypeError, ValueError):
+                continue
+            if seat < 1 or wins < 0:
+                continue
+            normalized[seat] = wins
+        self._selfplay_seat_wins = normalized
 
 
 # ---------------------------------------------------------------------------
@@ -292,13 +312,10 @@ def _check_value_head_health(
 # 4. Seat Fairness Check (multiplayer)
 # ---------------------------------------------------------------------------
 
-# Minimum games per seat before seat-fairness analysis runs.  Below this we
-# cannot distinguish real imbalance from sampling noise.
-SEAT_FAIRNESS_MIN_GAMES_PER_SEAT = 10
-# Ratio of highest per-seat WR to lowest per-seat WR above which we flag an
-# imbalance warning.  A fair model playing all seats should have a ratio close
-# to 1.0; 1.5 captures structural bias without firing on normal seat variance.
-SEAT_FAIRNESS_MAX_RATIO = 1.5
+# Minimum games per seat before seat-fairness analysis runs. Stage-1 eval in
+# 4p only gives ~12 games/seat, which is too little power for a stable test.
+SEAT_FAIRNESS_MIN_GAMES_PER_SEAT = 25
+SEAT_FAIRNESS_P_VALUE_THRESHOLD = 0.05
 
 
 def _check_seat_fairness(
@@ -320,22 +337,25 @@ def _check_seat_fairness(
     details: dict = {}
 
     seat_games = dict(tracker._seat_games)
-    seat_wins = dict(tracker._seat_wins)
 
     if not seat_games:
         details["skipped"] = "no seat outcomes recorded"
         return False, [], details
 
     # Compute per-seat WR
+    observed_seat_wins: dict[int, int] = {}
     seat_wr: dict[int, float] = {}
     for seat, games in sorted(seat_games.items()):
-        wins = seat_wins.get(seat, 0)
+        wins = tracker._seat_wins.get(seat, 0)
+        observed_seat_wins[seat] = wins
         seat_wr[seat] = wins / games if games > 0 else 0.0
     details["seat_games"] = seat_games
+    details["seat_wins"] = observed_seat_wins
     details["seat_wr"] = {s: round(wr, 3) for s, wr in seat_wr.items()}
 
     # Only analyze when every seat has enough samples.  With fewer than
-    # SEAT_FAIRNESS_MIN_GAMES_PER_SEAT per seat, the ratio is noisy.
+    # SEAT_FAIRNESS_MIN_GAMES_PER_SEAT per seat, stage-1 multiplayer evals
+    # become noisy false positives.
     min_games = min(seat_games.values())
     details["min_games_per_seat"] = min_games
     if min_games < SEAT_FAIRNESS_MIN_GAMES_PER_SEAT:
@@ -344,28 +364,70 @@ def _check_seat_fairness(
         )
         return False, [], details
 
-    # Single-seat tracking (2p games where candidate played only seat 1 or 2):
-    # We can still report the WR but cannot compute a ratio.
+    # Single-seat tracking (2p games where candidate played only one seat):
+    # We can still report the WR but cannot run a seat-fairness test.
     if len(seat_wr) < 2:
-        details["note"] = "only one seat observed, ratio N/A"
+        details["note"] = "only one seat observed, chi-square N/A"
         return False, [], details
 
-    # Avoid division by zero when some seat has 0 wins.  Use a small epsilon
-    # that still flags imbalance cleanly.
+    baseline_seat_wins = {
+        seat: tracker._selfplay_seat_wins.get(seat, 0)
+        for seat in sorted(seat_games)
+    }
+    details["selfplay_baseline_seat_wins"] = baseline_seat_wins
+    total_baseline_wins = sum(baseline_seat_wins.values())
+    if total_baseline_wins <= 0:
+        details["skipped"] = "selfplay baseline missing or empty"
+        return False, [], details
+
+    baseline_seat_wr = {
+        seat: wins / total_baseline_wins
+        for seat, wins in baseline_seat_wins.items()
+    }
+    details["selfplay_baseline_seat_wr"] = {
+        seat: round(wr, 3) for seat, wr in baseline_seat_wr.items()
+    }
+
+    total_observed_wins = sum(observed_seat_wins.values())
+    details["total_observed_wins"] = total_observed_wins
+    if total_observed_wins <= 0:
+        details["skipped"] = "no candidate wins recorded"
+        return False, [], details
+
+    expected_seat_wins = {
+        seat: total_observed_wins * baseline_seat_wr[seat]
+        for seat in sorted(seat_games)
+    }
+    details["expected_seat_wins"] = {
+        seat: round(expected, 3) for seat, expected in expected_seat_wins.items()
+    }
+    if any(expected <= 0 for expected in expected_seat_wins.values()):
+        details["skipped"] = "selfplay baseline has zero expected wins for at least one seat"
+        return False, [], details
+
+    # Retain the legacy ratio as a descriptive field for dashboards, but do
+    # not gate on it. Natural seat asymmetry can exceed the old 1.5 threshold.
     min_wr = min(seat_wr.values())
     max_wr = max(seat_wr.values())
     eff_min = max(min_wr, 1e-3)
     ratio = max_wr / eff_min
     details["wr_ratio"] = round(ratio, 3)
 
-    if ratio > SEAT_FAIRNESS_MAX_RATIO:
+    observed = [observed_seat_wins[seat] for seat in sorted(seat_games)]
+    expected = [expected_seat_wins[seat] for seat in sorted(seat_games)]
+    chi_result = chisquare(observed, f_exp=expected)
+    details["chi_square_stat"] = round(float(chi_result.statistic), 4)
+    details["chi_square_p_value"] = round(float(chi_result.pvalue), 4)
+
+    if chi_result.pvalue < SEAT_FAIRNESS_P_VALUE_THRESHOLD:
         seat_str = ", ".join(
-            f"seat{s}={seat_wr[s]:.0%} ({seat_wins.get(s, 0)}/{seat_games[s]})"
+            f"seat{s}={observed_seat_wins[s]}/{seat_games[s]} "
+            f"(wr={seat_wr[s]:.0%}, null={baseline_seat_wr[s]:.0%})"
             for s in sorted(seat_wr)
         )
         warnings.append(
-            f"SEAT_WR_IMBALANCE: max/min per-seat WR ratio "
-            f"{ratio:.2f} > {SEAT_FAIRNESS_MAX_RATIO} ({seat_str})"
+            f"SEAT_WR_IMBALANCE: per-seat wins deviate from selfplay baseline "
+            f"(chi2={chi_result.statistic:.2f}, p={chi_result.pvalue:.3g}; {seat_str})"
         )
 
     return False, warnings, details

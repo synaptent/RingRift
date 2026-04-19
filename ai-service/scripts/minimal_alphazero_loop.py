@@ -1109,6 +1109,10 @@ def main() -> None:
             last_error = "No games completed in selfplay"
             last_error_stage = "selfplay"
             consec_failures += 1; continue
+        selfplay_seat_wins = {
+            seat: int(sp.get(f"p{seat}_wins", 0))
+            for seat in range(1, NUM_PLAYERS + 1)
+        }
 
         _push_heartbeat_s3(node_id, config_key, it, elo, promos,
                            stage="selfplay_done", experiment_params=_static_exp_params)
@@ -1256,6 +1260,8 @@ def main() -> None:
         except OSError:
             pass
         qg_tracker = None if args.skip_quality_gate else QualityGateTracker()
+        if qg_tracker is not None:
+            qg_tracker.set_selfplay_baseline(selfplay_seat_wins)
         relax_active = args.auto_plateau_relax and it <= plateau_relax_until_iter
         promote_threshold_cap = (
             AUTO_PLATEAU_RELAX_PROMOTE_THRESHOLD if relax_active else None

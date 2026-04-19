@@ -14,8 +14,8 @@ from scripts.lib.model_quality_gate import (
     LOW_DIVERSITY_THRESHOLD,
     MODE_COLLAPSE_THRESHOLD,
     OPENING_LENGTH,
-    SEAT_FAIRNESS_MAX_RATIO,
     SEAT_FAIRNESS_MIN_GAMES_PER_SEAT,
+    SEAT_FAIRNESS_P_VALUE_THRESHOLD,
     QualityGateTracker,
     QualityGateVerdict,
     _check_behavioral_diversity,
@@ -475,6 +475,13 @@ def _record_seat_outcomes(
             game_idx += 1
 
 
+def _set_selfplay_baseline(
+    tracker: QualityGateTracker,
+    baseline_wins_by_seat: dict[int, int],
+) -> None:
+    tracker.set_selfplay_baseline(baseline_wins_by_seat)
+
+
 class TestSeatFairness:
     """Verify the seat-fairness diagnostic produces expected signals."""
 
@@ -487,91 +494,96 @@ class TestSeatFairness:
 
     def test_skipped_when_below_min_games(self):
         tracker = QualityGateTracker()
+        _set_selfplay_baseline(tracker, {1: 17, 2: 25, 3: 28, 4: 30})
         # Below the per-seat minimum — any ratio must be ignored.
-        _record_seat_outcomes(tracker, {1: (3, 5), 2: (0, 5), 3: (0, 5)})
+        _record_seat_outcomes(tracker, {1: (3, 5), 2: (0, 5), 3: (0, 5), 4: (1, 5)})
         crit, warns, details = _check_seat_fairness(tracker)
         assert not crit
         assert warns == []
         assert "skipped" in details
         assert details["min_games_per_seat"] == 5
 
-    def test_balanced_3p_no_warning(self):
+    def test_skipped_when_selfplay_baseline_missing(self):
         tracker = QualityGateTracker()
-        # All three seats at ~40% WR — healthy multiplayer candidate.
         _record_seat_outcomes(
             tracker,
-            {1: (8, 20), 2: (8, 20), 3: (8, 20)},
+            {1: (7, 25), 2: (7, 25), 3: (8, 25), 4: (8, 25)},
         )
         crit, warns, details = _check_seat_fairness(tracker)
         assert not crit
         assert warns == []
-        assert details["seat_wr"] == {1: 0.4, 2: 0.4, 3: 0.4}
-        assert details["wr_ratio"] == 1.0
+        assert details["skipped"] == "selfplay baseline missing or empty"
 
-    def test_square8_3p_imbalance_fires_warning(self):
-        """The canonical square8_3p failure mode: seat 1 ~58%, others ~22-28%.
-
-        Max/min ratio 58/22 ≈ 2.6 which should fire the SEAT_WR_IMBALANCE
-        warning without being critical.
-        """
+    def test_matching_selfplay_baseline_does_not_warn_even_with_high_ratio(self):
+        """Natural seat asymmetry should not fire if eval matches selfplay."""
         tracker = QualityGateTracker()
+        _set_selfplay_baseline(tracker, {1: 17, 2: 25, 3: 28, 4: 30})
         _record_seat_outcomes(
             tracker,
-            {1: (29, 50), 2: (11, 50), 3: (14, 50)},
-        )
-        crit, warns, details = _check_seat_fairness(tracker)
-        assert not crit  # diagnostic-only, never blocks promotion
-        assert any("SEAT_WR_IMBALANCE" in w for w in warns)
-        assert details["wr_ratio"] > SEAT_FAIRNESS_MAX_RATIO
-
-    def test_mild_imbalance_within_tolerance(self):
-        """45% vs 35% WR (ratio 1.29) should NOT fire — normal variance."""
-        tracker = QualityGateTracker()
-        _record_seat_outcomes(
-            tracker,
-            {1: (9, 20), 2: (7, 20), 3: (8, 20)},
+            {1: (5, 30), 2: (8, 30), 3: (8, 30), 4: (9, 30)},
         )
         crit, warns, details = _check_seat_fairness(tracker)
         assert not crit
         assert warns == []
-        assert details["wr_ratio"] <= SEAT_FAIRNESS_MAX_RATIO
+        assert details["wr_ratio"] > 1.5
+        assert details["chi_square_p_value"] >= SEAT_FAIRNESS_P_VALUE_THRESHOLD
+        assert details["selfplay_baseline_seat_wr"] == {
+            1: 0.17,
+            2: 0.25,
+            3: 0.28,
+            4: 0.3,
+        }
 
-    def test_zero_wins_handled(self):
-        """One seat with zero wins should not cause divide-by-zero."""
+    def test_statistically_significant_imbalance_fires_warning(self):
         tracker = QualityGateTracker()
+        _set_selfplay_baseline(tracker, {1: 17, 2: 25, 3: 28, 4: 30})
         _record_seat_outcomes(
             tracker,
-            {1: (15, 20), 2: (0, 20), 3: (5, 20)},
+            {1: (18, 25), 2: (3, 25), 3: (3, 25), 4: (6, 25)},
         )
         crit, warns, details = _check_seat_fairness(tracker)
         assert not crit
         assert any("SEAT_WR_IMBALANCE" in w for w in warns)
-        # The epsilon handling should produce a finite ratio.
-        assert details["wr_ratio"] > 0
-        assert details["seat_wr"][2] == 0.0
+        assert details["chi_square_p_value"] < SEAT_FAIRNESS_P_VALUE_THRESHOLD
+
+    def test_false_positive_iter4_row_does_not_fire(self):
+        """Regression: gh200-13 iter 4 row should not warn under new logic."""
+        tracker = QualityGateTracker()
+        _set_selfplay_baseline(tracker, {1: 17, 2: 25, 3: 28, 4: 30})
+        _record_seat_outcomes(
+            tracker,
+            {1: (2, 13), 2: (3, 13), 3: (3, 12), 4: (3, 12)},
+        )
+        crit, warns, details = _check_seat_fairness(tracker)
+        assert not crit
+        assert warns == []
+        assert details["skipped"] == "min 12 games/seat < 25"
 
     def test_single_seat_only_no_ratio(self):
         """Only one seat observed (e.g. 2p where candidate always plays seat 1)."""
         tracker = QualityGateTracker()
-        for g in range(15):
+        _set_selfplay_baseline(tracker, {1: 51, 2: 49})
+        for g in range(30):
             tracker.record_game_outcome(g, 1, candidate_won=(g < 8))
         crit, warns, details = _check_seat_fairness(tracker)
         assert not crit
         assert warns == []
-        assert details.get("note") == "only one seat observed, ratio N/A"
+        assert details.get("note") == "only one seat observed, chi-square N/A"
 
     def test_check_model_quality_surfaces_seat_details(self):
         """Verdict.details should carry the seat_fairness block."""
         tracker = QualityGateTracker()
+        _set_selfplay_baseline(tracker, {1: 17, 2: 25, 3: 28, 4: 30})
         _record_seat_outcomes(
             tracker,
-            {1: (11, 20), 2: (9, 20), 3: (10, 20)},
+            {1: (5, 30), 2: (8, 30), 3: (8, 30), 4: (9, 30)},
         )
         verdict = check_model_quality(tracker)
         assert "seat_fairness" in verdict.details
         assert "seat_wr" in verdict.details["seat_fairness"]
+        assert "selfplay_baseline_seat_wr" in verdict.details["seat_fairness"]
 
     def test_min_games_per_seat_threshold_known(self):
-        """Regression guard: keep the documented default of 10 games/seat."""
-        assert SEAT_FAIRNESS_MIN_GAMES_PER_SEAT == 10
-        assert SEAT_FAIRNESS_MAX_RATIO == 1.5
+        """Regression guard: stage 1 should skip and p-value threshold stays fixed."""
+        assert SEAT_FAIRNESS_MIN_GAMES_PER_SEAT == 25
+        assert SEAT_FAIRNESS_P_VALUE_THRESHOLD == 0.05

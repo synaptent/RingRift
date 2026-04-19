@@ -16,23 +16,24 @@ from scripts.lib.model_quality_gate import QualityGateTracker, check_model_quali
 
 def _populate_balanced_seats(tracker: QualityGateTracker, games_per_seat: int = 20) -> None:
     """Run enough games that the seat-fairness check engages."""
+    tracker.set_selfplay_baseline({1: 17, 2: 25, 3: 28, 4: 30})
     game_idx = 0
-    for seat in (1, 2, 3):
+    win_plan = {1: 5, 2: 8, 3: 8, 4: 9}
+    for seat in (1, 2, 3, 4):
         for i in range(games_per_seat):
-            # Half wins — balanced, below imbalance threshold
-            tracker.record_game_outcome(game_idx, seat, i % 2 == 0)
+            tracker.record_game_outcome(game_idx, seat, i < win_plan[seat])
             game_idx += 1
 
 
 def _populate_imbalanced_seats(tracker: QualityGateTracker) -> None:
-    """Seat 1 wins 90%, seat 2 wins 10% — triggers SEAT_WR_IMBALANCE."""
+    """Strongly skewed wins vs selfplay null should trigger SEAT_WR_IMBALANCE."""
+    tracker.set_selfplay_baseline({1: 17, 2: 25, 3: 28, 4: 30})
     game_idx = 0
-    for i in range(30):
-        tracker.record_game_outcome(game_idx, 1, i < 27)  # 27/30 wins
-        game_idx += 1
-    for i in range(30):
-        tracker.record_game_outcome(game_idx, 2, i < 3)  # 3/30 wins
-        game_idx += 1
+    win_plan = {1: 18, 2: 3, 3: 3, 4: 6}
+    for seat in (1, 2, 3, 4):
+        for i in range(25):
+            tracker.record_game_outcome(game_idx, seat, i < win_plan[seat])
+            game_idx += 1
 
 
 def _serialize_like_loop(quality) -> dict:
@@ -61,7 +62,7 @@ class TestQualityGateSerialization:
 
     def test_balanced_seats_carry_seat_wr_details(self) -> None:
         tracker = QualityGateTracker()
-        _populate_balanced_seats(tracker, games_per_seat=20)
+        _populate_balanced_seats(tracker, games_per_seat=30)
         quality = check_model_quality(tracker)
         record = _serialize_like_loop(quality)
         seat_fairness = record["details"].get("seat_fairness")
@@ -69,21 +70,23 @@ class TestQualityGateSerialization:
         # JSON turns int keys into strings — lock that behaviour explicitly
         seat_wr = seat_fairness.get("seat_wr")
         assert isinstance(seat_wr, dict)
-        assert set(seat_wr.keys()) == {"1", "2", "3"}
+        assert set(seat_wr.keys()) == {"1", "2", "3", "4"}
         for wr in seat_wr.values():
             assert 0.0 <= wr <= 1.0
+        assert "selfplay_baseline_seat_wr" in seat_fairness
+        assert "chi_square_p_value" in seat_fairness
 
-    def test_imbalanced_seats_emit_warning_and_ratio(self) -> None:
+    def test_imbalanced_seats_emit_warning_and_p_value(self) -> None:
         tracker = QualityGateTracker()
         _populate_imbalanced_seats(tracker)
         quality = check_model_quality(tracker)
         record = _serialize_like_loop(quality)
         # Warning should fire
         assert any("SEAT_WR_IMBALANCE" in w for w in record["warnings"]), record["warnings"]
-        # Ratio should be present and > threshold
+        # Chi-square evidence should be present and significant
         seat_fairness = record["details"]["seat_fairness"]
-        assert "wr_ratio" in seat_fairness
-        assert seat_fairness["wr_ratio"] > 1.5
+        assert "chi_square_p_value" in seat_fairness
+        assert seat_fairness["chi_square_p_value"] < 0.05
 
     def test_refresh_script_can_read_serialized_record(self) -> None:
         """Spot-check: refresh_experiment_status.extract_seat_fairness
@@ -117,4 +120,4 @@ class TestQualityGateSerialization:
         extracted = extract_seat_fairness(metric_row)
         assert extracted is not None
         assert "seat_wr" in extracted
-        assert set(extracted["seat_wr"].keys()) == {"1", "2"}
+        assert set(extracted["seat_wr"].keys()) == {"1", "2", "3", "4"}

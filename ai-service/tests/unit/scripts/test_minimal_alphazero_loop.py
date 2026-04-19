@@ -49,6 +49,7 @@ def _run_loop_once(
     extra_args: list[str],
     iterations: int = 1,
     num_players: int = 2,
+    skip_quality_gate: bool = True,
     existing_npz_markers: list[float] | None = None,
     existing_metrics: list[dict] | None = None,
     supplemental_markers: list[float] | None = None,
@@ -82,12 +83,15 @@ def _run_loop_once(
     export_markers: list[float] = []
 
     def fake_run_selfplay(model_path, n_games, out_path, budget, randomness=0.25):
-        return {
+        result = {
             "completed": n_games,
             "elapsed_s": 0.1,
             "budget_used": budget,
             "randomness": randomness,
         }
+        for player in range(1, num_players + 1):
+            result[f"p{player}_wins"] = player
+        return result
 
     def fake_export_npz(jsonl_path, npz_path):
         marker = float(npz_path.stem.split("_")[-1])
@@ -205,7 +209,7 @@ def _run_loop_once(
             str(work_dir),
             "--skip-quality-check",
             "--skip-probes",
-            "--skip-quality-gate",
+            *(["--skip-quality-gate"] if skip_quality_gate else []),
             *(
                 ["--supplemental-data-dir", str(supplemental_dir)]
                 if supplemental_markers
@@ -472,6 +476,32 @@ def test_loop_recomputes_resumed_multiplayer_elo_from_promotion_history(monkeypa
     assert resumed_metrics["promoted"] is False
     assert resumed_metrics["total_promotions"] == 1
     assert resumed_metrics["estimated_elo"] == expected_elo
+
+
+def test_loop_passes_selfplay_seat_baseline_into_quality_gate(monkeypatch, tmp_path):
+    captured: dict[str, dict[int, int]] = {}
+
+    def fake_check_model_quality(tracker):
+        captured["baseline"] = dict(tracker._selfplay_seat_wins)
+        return SimpleNamespace(
+            passed=True,
+            critical=False,
+            warnings=[],
+            summary="quality gate passed",
+            details={},
+        )
+
+    monkeypatch.setattr(loop, "check_model_quality", fake_check_model_quality)
+
+    _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        extra_args=[],
+        num_players=4,
+        skip_quality_gate=False,
+    )
+
+    assert captured["baseline"] == {1: 1, 2: 2, 3: 3, 4: 4}
 
 
 def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):
