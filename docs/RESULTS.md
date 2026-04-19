@@ -19,6 +19,14 @@ operator-reported results that are not yet published here.
 | `hex8_3p`    |    `1500` |          `1500.0` |        `0` | First completed hex multiplayer eval rejected at `35%`                         |
 | `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                                           |
 
+> Multiplayer Elo caveat: pre-`dfb3d20c1` `3p/4p` `estimated_elo` values were
+> logged with a `2p`-only promotion formula. The historical numbers below are
+> preserved as written for provenance and should be recomputed before comparing
+> old multiplayer runs against new post-fix data. `2p` numbers were always
+> correct, and `1500.0` baseline rows remain numerically unchanged because they
+> have no promotions yet. See [Issue
+> #90](https://github.com/synaptent/RingRift/issues/90).
+
 ![Headline results snapshot](assets/results/headline_results.svg)
 
 ## Why These Results Matter
@@ -137,7 +145,11 @@ This result matters because it proves the hex multiplayer path can at least comp
 
 This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, but the corrected seat-fair results remain weak: iteration `19` rejected at `20%`, iteration `21` rejected at `30%`, and the current tail is still below a persuasive threshold.
 
-As of April 17, 2026, the node is on iteration `26` self-play after a restart that deployed A1 per-seat WR tracking (commit `98736c566`). The next completed evaluation will surface a `seat_wr` map in the quality-gate output and, if per-seat WR max/min ratio exceeds `1.5`, a `SEAT_WR_IMBALANCE` warning. Two hypotheses are still live: (1) the candidate is genuinely weak, or (2) evaluation seat assignment is structurally biased despite the rotation fix. Iteration `26` eval will be the first data point under the instrumentation; we will not decide between the two until then.
+The published `1534.9` Elo figure predates commit `dfb3d20c1` and is preserved
+as the contemporaneous trainer estimate, not a retroactively corrected
+multiplayer Elo number.
+
+As of April 17, 2026, the node is on iteration `26` self-play after a restart that deployed A1 per-seat WR tracking (commit `98736c566`). Future completed evaluations will surface a `seat_wr` map in the quality-gate output and compare per-seat wins against the same iteration's selfplay seat distribution rather than a uniform-seat assumption. Two hypotheses are still live: (1) the candidate is genuinely weak, or (2) evaluation seat assignment is structurally biased despite the rotation fix. We will not decide between them until corrected post-fix multiplayer data accumulates.
 
 The result is still not strong enough to claim robust multiplayer progress. What it does show is that the multiplayer path is no longer blocked by the earlier evaluator bug; it now has one promotion under the corrected threshold and seat-fair regime, but it still needs another clean promotion before it should be treated as persuasive evidence.
 

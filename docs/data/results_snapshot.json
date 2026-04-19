@@ -1,5 +1,19 @@
 {
   "as_of": "2026-04-16",
+  "caveats": [
+    {
+      "id": "multiplayer_elo_formula_pre_dfb3d20c1",
+      "added_at": "2026-04-18",
+      "affected_configs": [
+        "square8_3p",
+        "hex8_3p",
+        "square8_4p"
+      ],
+      "affected_metric": "estimated_elo",
+      "note": "Pre-dfb3d20c1 3p/4p estimated_elo values in trainer metrics used a 2-player-only promotion formula. Historical values are preserved as recorded for provenance and should be recomputed before comparing pre-fix multiplayer runs against new data. 2p headline numbers were always correct.",
+      "issue_url": "https://github.com/synaptent/RingRift/issues/90"
+    }
+  ],
   "headline": [
     {
       "config": "hex8_2p",
