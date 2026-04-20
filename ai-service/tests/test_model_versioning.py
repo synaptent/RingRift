@@ -18,6 +18,8 @@ import torch.nn as nn
 
 from app.ai import neural_net as neural_net_mod
 from app.ai.neural_net import RingRiftCNN_v2
+from app.ai.neural_net.v5_heavy import create_v5_heavy_model
+from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 from app.training.model_versioning import (
     RINGRIFT_CNN_V2_VERSION,
     ChecksumMismatchError,
@@ -691,6 +693,67 @@ class TestRingRiftCNN_v2Versioning:
 
         assert nn.model is not None
         assert nn.model.value_fc1.in_features == num_filters + global_features
+
+    @pytest.mark.parametrize(
+        ("in_channels", "expected_encoder_cls"),
+        [
+            (40, HexStateEncoder),
+            (64, HexStateEncoderV3),
+        ],
+    )
+    def test_v5_heavy_hex_runtime_encoder_matches_checkpoint_channels(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: "os.PathLike[str]",
+        in_channels: int,
+        expected_encoder_cls: type,
+    ) -> None:
+        """Hex v5-heavy runtime must pick an encoder that matches conv1 input channels.
+
+        Regression guard for the gh200-11 failure mode where a 64-channel v5-heavy
+        checkpoint was loaded but the legacy runtime still initialized the 40-channel
+        HexStateEncoder, forcing NN eval into heuristic fallback.
+        """
+        monkeypatch.setenv("RINGRIFT_FORCE_CPU", "1")
+
+        base_dir = tmp_path / "ai-service"
+        models_dir = base_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+
+        model = create_v5_heavy_model(
+            "hex8",
+            2,
+            in_channels=in_channels,
+            num_heuristics=49,
+            dropout=0.0,
+        )
+        ckpt_path = models_dir / "test_v5_heavy.pth"
+        torch.save(model.state_dict(), ckpt_path)
+
+        neural_net_mod._MODEL_CACHE.clear()
+
+        from app.ai.neural_net import NeuralNetAI
+        from app.models import AIConfig, BoardType
+
+        cfg = AIConfig(
+            difficulty=6,
+            randomness=0.0,
+            think_time=0,
+            rng_seed=1,
+            use_neural_net=True,
+            nn_model_id="test_v5_heavy",
+            nn_model_version="v5-heavy",
+            allow_fresh_weights=False,
+        )
+        nn = NeuralNetAI(player_number=1, config=cfg)
+        nn._base_dir = str(base_dir)
+        nn._ensure_model_initialized(BoardType.HEX8)
+
+        assert nn.model is not None
+        assert nn.model.conv1.weight.shape[1] == in_channels
+        assert isinstance(nn._hex_encoder, expected_encoder_cls)
+        assert nn._hex_encoder.NUM_CHANNELS * (nn.history_length + 1) == in_channels
+        assert nn.feature_version == 2
 
     def test_ringrift_save_and_load(
         self, manager, ringrift_model, temp_path

@@ -4471,15 +4471,51 @@ class NeuralNetAI(BaseAI):
                     "Set AIConfig.allow_fresh_weights=True to use random weights."
                 )
 
-        # Initialize encoder for v5-heavy (uses v2 encoder with 10 base channels)
-        from app.training.encoding import HexStateEncoder
-        self._hex_encoder = HexStateEncoder(
-            board_size=self.board_size,
-            feature_version=2,
-        )
-        self.encoder = self._hex_encoder  # Also set encoder for compatibility
-        self.history_length = 3
-        self.feature_version = 2
+        # Initialize the hex encoder to match the actual checkpoint contract.
+        #
+        # For hex boards:
+        # - legacy 40-channel v5-heavy checkpoints use the v2 hex encoder
+        # - current 64-channel v5-heavy checkpoints use the v3 hex encoder
+        #
+        # Keep feature_version=2 to match the minimal-loop/jsonl_to_npz export
+        # contract, which uses encoder_version='v3' with feature_version=2.
+        if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+            model_in_channels = int(self.model.conv1.weight.shape[1])
+            feature_version = max(self.feature_version, 2)
+            if model_in_channels == 64:
+                from app.training.encoding import HexStateEncoderV3
+
+                if board_type == BoardType.HEX8:
+                    self._hex_encoder = HexStateEncoderV3(
+                        board_size=HEX8_BOARD_SIZE,
+                        policy_size=POLICY_SIZE_HEX8,
+                        feature_version=feature_version,
+                    )
+                else:
+                    self._hex_encoder = HexStateEncoderV3(
+                        board_size=HEX_BOARD_SIZE,
+                        policy_size=P_HEX,
+                        feature_version=feature_version,
+                    )
+            else:
+                from app.training.encoding import HexStateEncoder
+
+                if board_type == BoardType.HEX8:
+                    self._hex_encoder = HexStateEncoder(
+                        board_size=HEX8_BOARD_SIZE,
+                        policy_size=POLICY_SIZE_HEX8,
+                        feature_version=feature_version,
+                    )
+                else:
+                    self._hex_encoder = HexStateEncoder(
+                        board_size=HEX_BOARD_SIZE,
+                        policy_size=P_HEX,
+                        feature_version=feature_version,
+                    )
+
+            self.encoder = self._hex_encoder  # Also set encoder for compatibility
+            self.history_length = 3
+            self.feature_version = feature_version
 
         self._initialized_board_type = board_type
         logger.info(
