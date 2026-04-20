@@ -157,3 +157,26 @@ Start with option 3 (simplest) and observe whether value target distortion appea
 ---
 
 **Agent sources:** Explore pass by `feature-dev:code-explorer` (agent `ad3cf313bbdb20e5b`); Plan pass by `feature-dev:code-architect` (agent `ac53faf83af38e1b6`). Plan-agent factual errors (gauntlet DBs assumed missing; gh200-14 assumed active) corrected from live-fleet SSH verification.
+
+---
+
+## 2026-04-20 Addendum — Inert-shard correction + pivot
+
+**Contract failure on v5-heavy experiment:** the shard deployed to `gh200-11:/home/ubuntu/ringrift/ai-service/data/minimal_loop_hex8_2p_v5_heavy/supplemental/` was **never consumed by training**. Root cause: gh200-11's live systemd `ExecStart` did not include `--supplemental-data-dir`, and `/etc/ringrift/training.conf` did not set `TRAINING_SUPPLEMENTAL_DATA_DIR`. All 6 completed metrics rows show `supplemental_data_dir=""`. The shard sat inert for ~15 hours. Lesson: **verify the consuming flag is wired, not just that the file exists on disk.**
+
+**More fundamental issue on v5-heavy:** independent of the diversity experiment, every completed iter 1-6 logs `DEAD_VALUE_HEAD: value std=0.000000 across 7315 positions (mean=0.0000)`. Training loss changes across iters (398 → 283 → 463 → 124 → 130 → 92) so weights ARE updating, but the value-head output is identically zero every time. Combined with training losses 20-100× higher than every other config (normal range 3.4-6.3), this is strong evidence of a v5-heavy-specific training pathology (architectural or loss-scaling), NOT a distribution-collapse plateau. Diversity data cannot help a dead value head.
+
+**Actions taken 2026-04-20:**
+
+- Removed inert shard from gh200-11
+- Wired `--supplemental-data-dir ${TRAINING_SUPPLEMENTAL_DATA_DIR}` into gh200-11 systemd ExecStart and `TRAINING_SUPPLEMENTAL_DATA_DIR=data/minimal_loop_hex8_2p_v5_heavy/supplemental` into `/etc/ringrift/training.conf`. `daemon-reload` executed. Service NOT restarted — deferred until (a) iter 7 eval completes cleanly and (b) the value-head pathology diagnosis lands
+- Pivoted primary diversity experiment to **gh200-8 v4** (hex8_2p, 1 promo at 1534.9 Elo, 7-iter rejection streak at 0.44-0.47, healthy loss ~4.4). Deployed 2000-sample gauntlet shard (64ch, no heuristics, `--encoder-version v3`, `--canonical-model` from gh200-8's live best.pth). Shard landed at `/home/ubuntu/ringrift/ai-service/data/minimal_loop_hex8_2p_v4/supplemental/gauntlet_v4_v3noheur_2k.npz`. Next training step (iter 16) will be the first post-ingest data point
+- Verified gh200-9 iter 46 mid-eval WR = 0.477 (above prior 3-iter mean of 0.453). Not rolling back the 1k shard there — will continue observation
+
+**Open:** v5-heavy value-head pathology diagnosis (delegated to Codex, no cluster touch needed; deliverable is `docs/planning/V5_HEAVY_VALUE_HEAD_PATHOLOGY_2026-04-20.md`).
+
+**Updated primary/secondary experiments:**
+
+- Primary: gh200-8 v4 hex8_2p with 2000-sample gauntlet supplement (64ch, no heuristics)
+- Secondary: gh200-9 square8_2p with 1000-sample gauntlet supplement (56ch, no heuristics)
+- v5-heavy: frozen pending pathology diagnosis; service left running only to complete iter 7 eval as a control data point
