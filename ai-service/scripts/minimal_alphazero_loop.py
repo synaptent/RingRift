@@ -1069,6 +1069,7 @@ def main() -> None:
                     model_path=str(best),
                     batch_size=batch_size,
                     selfplay_randomness=args.selfplay_randomness,
+                    model_version=MODEL_VERSION,
                 ))
                 if recovery.recovered:
                     logger.info(f"AUTO-RECOVERY: {recovery.action} - {recovery.message}")

@@ -56,6 +56,11 @@ class FailureContext:
     model_path: str  # path to best.pth
     batch_size: int = 512
     selfplay_randomness: float = 0.25
+    # Model architecture version (e.g. "v2", "v4", "v5-heavy"). When present
+    # and non-v2, the arch-mismatch recovery skips the S3 redownload because
+    # the canonical_{config}.pth in S3 is the v2 family — pulling it would
+    # poison a v4/v5-heavy lane. Left optional for backward compatibility.
+    model_version: str | None = None
 
 
 @dataclass
@@ -272,7 +277,33 @@ def _recover_arch_mismatch(ctx: FailureContext) -> RecoveryResult:
 
     This typically happens when a model checkpoint was corrupted or when
     the training code was updated with a different encoder version.
+
+    Safety: S3 only carries ``canonical_{config_key}.pth`` (v2-family) for
+    each config. For v4/v5-heavy lanes, redownloading that canonical would
+    overwrite a 64-channel checkpoint with a 40-channel one, poisoning
+    the lane into a persistent crash-restart loop. Gh200-11 v5-heavy hit
+    exactly this on 2026-04-21 after iter 1 successfully promoted. If
+    ``ctx.model_version`` is set and not v2, refuse the S3 redownload
+    and let the circuit breaker trip cleanly instead of corrupting state.
     """
+    model_version = (ctx.model_version or "v2").lower()
+    if model_version not in ("v2", ""):
+        logger.warning(
+            "SELF-HEAL [ARCH_MISMATCH]: refusing S3 redownload for model_version=%s; "
+            "canonical_%s.pth on S3 is v2-family and would poison this lane. "
+            "Manual intervention required.",
+            model_version, ctx.config_key,
+        )
+        return RecoveryResult(
+            recovered=False,
+            action="redownload_canonical_skipped",
+            message=(
+                f"Refused S3 canonical redownload for model_version={model_version}: "
+                f"canonical_{ctx.config_key}.pth in S3 is v2-family and would poison "
+                f"this lane. Fix the underlying arch-mismatch before retry."
+            ),
+        )
+
     best_path = Path(ctx.model_path)
     logger.info("SELF-HEAL [ARCH_MISMATCH]: re-downloading canonical model from S3")
     if _download_canonical_from_s3(ctx.config_key, str(best_path)):
