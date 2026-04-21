@@ -506,7 +506,7 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
 
     Returns:
         "v2" for 40-channel models (HexNeuralNet_v2)
-        "v3" for 64-channel models (HexNeuralNet_v3/v4)
+        "v3" for 64-channel hex models (HexNeuralNet_v3/v4/v5-heavy)
         None if detection fails
 
     Raises:
@@ -524,8 +524,9 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         # April 2026: Prefer explicit versioning metadata over channel-count inference.
-        # Exact architecture is ambiguous for some channel families (for example
-        # 64ch hex v3/v4/v5-heavy), so use metadata when present.
+        # This helper returns the ENCODER FAMILY, not the full architecture tag:
+        # all 64-channel hex v3/v4/v5-heavy checkpoints share the same V3-family
+        # encoder contract and must therefore normalize to "v3" here.
         if isinstance(checkpoint, dict):
             meta = checkpoint.get("_versioning_metadata", {})
             arch_ver = meta.get("architecture_version", "")
@@ -536,7 +537,7 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
             elif arch_ver.startswith("v4"):
                 return "v3"  # v4 uses v3 encoder
             elif "v5" in arch_ver:
-                return "v5-heavy"
+                return "v3"  # v5-heavy uses the same 64-channel V3-family encoder
 
         # Fallback: infer from conv1 weight shape
         if isinstance(checkpoint, dict):

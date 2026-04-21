@@ -17,7 +17,11 @@ import torch
 import torch.nn as nn
 
 from app.ai import neural_net as neural_net_mod
-from app.ai.neural_net import RingRiftCNN_v2
+from app.ai.neural_net import HexNeuralNet_v2, RingRiftCNN_v2
+from app.ai.neural_net.architecture_registry import (
+    get_encoder_version_from_checkpoint,
+    get_model_version_from_checkpoint,
+)
 from app.ai.neural_net.v5_heavy import create_v5_heavy_model
 from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 from app.training.model_versioning import (
@@ -754,6 +758,55 @@ class TestRingRiftCNN_v2Versioning:
         assert isinstance(nn._hex_encoder, expected_encoder_cls)
         assert nn._hex_encoder.NUM_CHANNELS * (nn.history_length + 1) == in_channels
         assert nn.feature_version == 2
+
+    def test_v5_heavy_checkpoint_reports_v3_encoder_family_for_training(
+        self,
+        tmp_path: "os.PathLike[str]",
+    ) -> None:
+        """64-channel v5-heavy checkpoints must normalize to the v3 encoder family.
+
+        Regression guard for the gh200-11 training failure on 2026-04-21 where
+        model_factory compared init_weights encoder family against NPZ encoder
+        metadata and treated a valid 64-channel v5-heavy checkpoint as incompatible
+        with 64-channel hex v3-family data.
+        """
+        manager = ModelVersionManager()
+        model = create_v5_heavy_model(
+            "hex8",
+            2,
+            in_channels=64,
+            num_heuristics=49,
+            dropout=0.0,
+        )
+        ckpt_path = tmp_path / "hex8_v5_heavy_versioned.pth"
+        metadata = manager.create_metadata(model)
+        manager.save_checkpoint(model, metadata, str(ckpt_path))
+
+        assert get_encoder_version_from_checkpoint(str(ckpt_path)) == "v3"
+        assert get_model_version_from_checkpoint(str(ckpt_path)) == "v5-heavy"
+
+    def test_hex_v2_checkpoint_still_reports_v2_encoder_family(
+        self,
+        tmp_path: "os.PathLike[str]",
+    ) -> None:
+        """40-channel hex checkpoints must remain classified as v2."""
+        manager = ModelVersionManager()
+        model = HexNeuralNet_v2(
+            board_size=9,
+            hex_radius=4,
+            in_channels=40,
+            global_features=20,
+            num_res_blocks=12,
+            num_filters=192,
+            policy_size=4132,
+            num_players=4,
+        )
+        ckpt_path = tmp_path / "hex8_v2_versioned.pth"
+        metadata = manager.create_metadata(model)
+        manager.save_checkpoint(model, metadata, str(ckpt_path))
+
+        assert get_encoder_version_from_checkpoint(str(ckpt_path)) == "v2"
+        assert get_model_version_from_checkpoint(str(ckpt_path)) == "v2"
 
     def test_ringrift_save_and_load(
         self, manager, ringrift_model, temp_path
