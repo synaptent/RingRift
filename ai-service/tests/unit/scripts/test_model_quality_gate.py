@@ -277,6 +277,22 @@ class TestValueHeadHealth:
         assert not crit
         assert details["value_samples"] == 0
 
+    def test_nonfinite_values_trigger_critical(self):
+        """Non-finite root values should trip the guard instead of propagating NaNs."""
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(5)
+
+        for move_number in range(10):
+            root_value = float("nan") if move_number % 2 == 0 else 0.25
+            tracker.record_move(0, move_number, legal[0], legal, root_value=root_value)
+        tracker.finish_game(0)
+
+        crit, warns, details = _check_value_head_health(tracker)
+        assert crit
+        assert any("NONFINITE_VALUE_HEAD" in w for w in warns)
+        assert details["nonfinite_value_samples"] == 5
+        assert details["value_samples"] == 5
+
 
 # ---------------------------------------------------------------------------
 # Aggregated Quality Verdict tests

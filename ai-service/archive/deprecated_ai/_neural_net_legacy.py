@@ -5794,43 +5794,66 @@ class NeuralNetAI(BaseAI):
 
         with torch.no_grad():
             assert self.model is not None
+
+            def _mark_fp16_failed(reason: str) -> None:
+                logger.warning("%s; disabling FP16 autocast for this model", reason)
+                self._fp16_failed = True
+                if self.loaded_checkpoint_path:
+                    NeuralNetAI._fp16_failed_models[self.loaded_checkpoint_path] = True
+                    logger.info(
+                        "Added %s to FP16 failure cache",
+                        self.loaded_checkpoint_path,
+                    )
+
+            def _run_model_forward(force_fp32: bool = False):
+                if heuristics_input is not None:
+                    if force_fp32:
+                        return self.model(
+                            tensor_input.float(),
+                            globals_input.float(),
+                            heuristics_input.float(),
+                        )
+                    return self.model(tensor_input, globals_input, heuristics_input)
+                if force_fp32:
+                    return self.model(tensor_input.float(), globals_input.float())
+                return self.model(tensor_input, globals_input)
+
+            def _split_model_output(model_out):
+                if isinstance(model_out, tuple) and len(model_out) == 3:
+                    value_out, policy_out, _rank_dist = model_out
+                else:
+                    value_out, policy_out = model_out
+                return value_out, policy_out
+
             # Jan 2026: Add FP32 fallback for models with extreme weights (V4)
             # that overflow FP16 range (±65504) during autocast
             # Feb 2026: Pass heuristics to v5_heavy models
             if use_autocast:
                 try:
                     with torch.amp.autocast('cuda'):
-                        if heuristics_input is not None:
-                            out = self.model(tensor_input, globals_input, heuristics_input)
-                        else:
-                            out = self.model(tensor_input, globals_input)
+                        out = _run_model_forward()
+                    values, policy_logits = _split_model_output(out)
+                    # Some checkpoints do not throw under FP16 autocast but still
+                    # emit NaN/Inf activations on real game states. Retry in FP32
+                    # immediately and cache the failure so future calls skip autocast.
+                    if not torch.isfinite(values).all() or not torch.isfinite(policy_logits).all():
+                        _mark_fp16_failed(
+                            "FP16 autocast produced non-finite outputs"
+                        )
+                        out = _run_model_forward(force_fp32=True)
                 except (RuntimeError, ValueError) as e:
                     # FP16 overflow - fall back to FP32 and remember for future calls
                     error_str = str(e).lower()
                     if "half" in error_str or "overflow" in error_str or "fp16" in error_str:
-                        logger.warning(f"FP16 autocast failed ({e}), disabling for this model")
-                        self._fp16_failed = True
-                        # Jan 2026: Also add to class-level cache so future instances skip FP16
-                        if self.loaded_checkpoint_path:
-                            NeuralNetAI._fp16_failed_models[self.loaded_checkpoint_path] = True
-                            logger.info(f"Added {self.loaded_checkpoint_path} to FP16 failure cache")
-                        if heuristics_input is not None:
-                            out = self.model(tensor_input.float(), globals_input.float(), heuristics_input.float())
-                        else:
-                            out = self.model(tensor_input.float(), globals_input.float())
+                        _mark_fp16_failed(f"FP16 autocast failed ({e})")
+                        out = _run_model_forward(force_fp32=True)
                     else:
                         raise
             else:
-                if heuristics_input is not None:
-                    out = self.model(tensor_input, globals_input, heuristics_input)
-                else:
-                    out = self.model(tensor_input, globals_input)
+                out = _run_model_forward()
             # V3 models return (values, policy_logits, rank_dist). Keep the
             # rank distribution for training-only use and ignore it here.
-            if isinstance(out, tuple) and len(out) == 3:
-                values, policy_logits, _rank_dist = out
-            else:
-                values, policy_logits = out
+            values, policy_logits = _split_model_output(out)
 
             # Apply softmax to logits to get probabilities for MCTS / Descent.
             policy_probs = torch.softmax(policy_logits, dim=1)

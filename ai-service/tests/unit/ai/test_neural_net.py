@@ -10,6 +10,7 @@ Tests cover:
 """
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
@@ -685,6 +686,70 @@ class TestNeuralNetAIGameHistory:
         ai = NeuralNetAI(player_number=1, config=mock_config)
 
         assert ai.history_length == 3
+
+
+class _AutocastNaNModel(torch.nn.Module):
+    """Test double that emits NaNs on the first call and finite outputs on retry."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def forward(self, tensor_input, globals_input, heuristics_input=None):
+        del tensor_input, globals_input, heuristics_input
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                torch.tensor([[float("nan"), 0.0]], dtype=torch.float32),
+                torch.tensor([[float("nan"), 0.0, 1.0]], dtype=torch.float32),
+            )
+        return (
+            torch.tensor([[0.25, -0.25]], dtype=torch.float32),
+            torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32),
+        )
+
+
+class TestNeuralNetAIEvaluateBatch:
+    """Tests for evaluate_batch numerical fallbacks."""
+
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
+    def test_evaluate_batch_retries_fp32_on_nonfinite_autocast_outputs(
+        self,
+        mock_cuda,
+        mock_mps,
+        mock_config,
+    ):
+        """Non-finite CUDA autocast outputs should retry in FP32 and cache the failure."""
+        del mock_cuda, mock_mps
+        from app.ai._neural_net_legacy import NeuralNetAI as LegacyNeuralNetAI
+        from app.ai.neural_net import NeuralNetAI
+
+        ai = NeuralNetAI(player_number=1, config=mock_config)
+        ai.device = torch.device("cuda")
+        ai.model = _AutocastNaNModel()
+        ai.loaded_checkpoint_path = "models/test_fp16_nan_guard.pth"
+        ai._fp16_failed = False
+        LegacyNeuralNetAI._fp16_failed_models.pop(ai.loaded_checkpoint_path, None)
+
+        tensor_input = torch.zeros((1, 1, 1, 1), dtype=torch.float32)
+        globals_input = torch.zeros((1, 1), dtype=torch.float32)
+
+        with patch(
+            "app.ai._neural_net_legacy.torch.amp.autocast",
+            return_value=nullcontext(),
+        ):
+            values, policy = ai.evaluate_batch(
+                [],
+                tensor_input=tensor_input,
+                globals_input=globals_input,
+            )
+
+        assert values == [pytest.approx(0.25)]
+        assert np.isfinite(policy).all()
+        assert ai.model.calls == 2
+        assert ai._fp16_failed is True
+        assert LegacyNeuralNetAI._fp16_failed_models[ai.loaded_checkpoint_path] is True
 
 
 # =============================================================================

@@ -21,6 +21,7 @@ Usage from minimal_alphazero_loop.py:
 
 from __future__ import annotations
 
+import math
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
@@ -98,6 +99,7 @@ class QualityGateTracker:
         self._unique_legal_moves_seen: set[str] = set()
         # Value head outputs
         self._values: list[float] = []
+        self._nonfinite_value_samples: int = 0
         self._game_count: int = 0
         # Per-seat outcome tracking: seat (1..num_players) -> wins/games by candidate
         # when it played that seat.  Used to detect structural seat-fairness bugs
@@ -139,7 +141,15 @@ class QualityGateTracker:
 
         # Track value head output
         if root_value is not None:
-            self._values.append(float(root_value))
+            try:
+                value = float(root_value)
+            except (TypeError, ValueError):
+                self._nonfinite_value_samples += 1
+            else:
+                if math.isfinite(value):
+                    self._values.append(value)
+                else:
+                    self._nonfinite_value_samples += 1
 
         # Auto-track game count from game_idx (finish_game is optional)
         self._game_count = max(self._game_count, game_idx + 1)
@@ -272,6 +282,15 @@ def _check_value_head_health(
     values = tracker._values
     n = len(values)
     details["value_samples"] = n
+    details["nonfinite_value_samples"] = tracker._nonfinite_value_samples
+
+    if tracker._nonfinite_value_samples > 0:
+        critical = True
+        warnings.append(
+            f"NONFINITE_VALUE_HEAD: {tracker._nonfinite_value_samples} non-finite "
+            f"value samples observed"
+        )
+        return critical, warnings, details
 
     if n < MIN_VALUES_FOR_CHECK:
         details["skipped"] = "too few value samples"
