@@ -50,6 +50,7 @@ BOARD_TYPE = "hex8"
 BOARD_ENUM = BoardType.HEX8
 NUM_PLAYERS = 2
 MODEL_VERSION = "v2"  # Overridden by --model-version CLI arg
+FEATURE_VERSION = 2  # Overridden by --feature-version CLI arg; 3 disables placement-validity shortcut (c790d339f)
 MAX_MOVES = 800
 INITIAL_ESTIMATED_ELO = 1500.0
 
@@ -329,6 +330,7 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
            "--input", str(jsonl), "--output", str(npz),
            "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
            "--encoder-version", encoder,
+           "--feature-version", str(FEATURE_VERSION),
            "--gpu-selfplay"]
     if MODEL_VERSION in ("v5", "v5-gnn", "v5-heavy"):
         cmd.append("--include-heuristics")
@@ -816,7 +818,7 @@ def _push_heartbeat_s3(
 
 
 def main() -> None:
-    global BOARD_TYPE, BOARD_ENUM, NUM_PLAYERS, MODEL_VERSION
+    global BOARD_TYPE, BOARD_ENUM, NUM_PLAYERS, MODEL_VERSION, FEATURE_VERSION
 
     ap = argparse.ArgumentParser(description="Minimal AlphaZero loop")
     ap.add_argument("--model", required=True, help="Starting model checkpoint")
@@ -827,6 +829,9 @@ def main() -> None:
     ap.add_argument("--model-version", type=str, default="v2",
                     choices=["v2", "v3", "v4", "v5-heavy"],
                     help="Neural network architecture version (default: v2)")
+    ap.add_argument("--feature-version", type=int, default=2, choices=[1, 2, 3],
+                    help="Hex encoder feature version (default: 2; set 3 to disable "
+                         "placement-validity shortcut for v5-heavy/v4 retries, see c790d339f)")
     ap.add_argument(
         "--profile",
         type=str,
@@ -909,6 +914,7 @@ def main() -> None:
     BOARD_ENUM = BOARD_TYPE_MAP[args.board_type]
     NUM_PLAYERS = args.num_players
     MODEL_VERSION = args.model_version
+    FEATURE_VERSION = args.feature_version
     profile_info = resolve_loop_profile(
         BOARD_TYPE,
         NUM_PLAYERS,

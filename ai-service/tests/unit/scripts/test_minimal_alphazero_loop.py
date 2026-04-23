@@ -286,6 +286,32 @@ def test_export_npz_requests_heuristics_for_v5_heavy(monkeypatch, tmp_path):
     assert "--include-heuristics" in captured["cmd"]
 
 
+def test_export_npz_threads_feature_version_flag(monkeypatch, tmp_path):
+    """FEATURE_VERSION global must reach the jsonl_to_npz subprocess call."""
+    jsonl_path = tmp_path / "games.jsonl"
+    jsonl_path.write_text("{}\n", encoding="utf-8")
+    npz_path = tmp_path / "games.npz"
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, capture_output, text):
+        captured["cmd"] = cmd
+        np.savez_compressed(
+            npz_path,
+            features=np.zeros((1, 64, 9, 9), dtype=np.float32),
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(loop.subprocess, "run", fake_run)
+    monkeypatch.setattr(loop, "MODEL_VERSION", "v5-heavy")
+    monkeypatch.setattr(loop, "BOARD_TYPE", "hex8")
+    monkeypatch.setattr(loop, "NUM_PLAYERS", 2)
+    monkeypatch.setattr(loop, "FEATURE_VERSION", 3)
+
+    assert loop.export_npz(jsonl_path, npz_path) is True
+    assert "--feature-version" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--feature-version") + 1] == "3"
+
+
 def test_loop_records_split_budgets_fixed_lr_and_heartbeat_context(monkeypatch, tmp_path):
     result = _run_loop_once(
         monkeypatch,
