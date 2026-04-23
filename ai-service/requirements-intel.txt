@@ -14,7 +14,7 @@ pydantic==2.10.5
 
 # Utilities
 python-dotenv==1.2.1
-aiohttp==3.13.2
+aiohttp==3.13.3
 redis==7.1.0
 httpx==0.28.1
 prometheus_client==0.23.1
