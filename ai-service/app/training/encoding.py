@@ -727,6 +727,14 @@ class HexStateEncoderV3:
         10-14: Board stats (marker/stack totals and ratios)
         15-16: Chain-capture / forced-elimination flags (feature_version>=2)
         17-19: Reserved for future use
+
+    Feature-version notes:
+        - feature_version <= 2: legacy V3 behavior, including placement-validity
+          channels 14/15.
+        - feature_version >= 3: channels 14/15 are left at zero to preserve the
+          64-channel tensor shape while removing a known shortcut where
+          placement-validity history planes acted as a strong game-progress
+          proxy for hex v3/v4/v5-heavy models.
     """
 
     BOARD_SIZE = HEX_BOARD_SIZE  # 25
@@ -1006,43 +1014,49 @@ class HexStateEncoderV3:
                 features[13, cy, cx] = min(enemy_height_sum / 6.0, 1.0)
 
         # Channel 14/15: Ring placement validity
-        # Indicates cells where rings can legally be placed
-        # Note: pos_key_this was unused - removed
-        for cy in range(self.board_size):
-            for cx in range(self.board_size):
-                if not self._valid_mask[cy, cx]:
-                    continue
-                q = cx - self.radius
-                r = cy - self.radius
-                pos = Position(x=q, y=r)
-                pos_key = pos.to_key()
+        #
+        # Legacy behavior (feature_version <= 2) populated these channels for
+        # every frame. In practice, the history stack let models infer game
+        # progress almost directly from the shrinking placement mask. For
+        # feature_version >= 3 we keep the channels in the tensor shape but
+        # leave them zeroed to remove that shortcut while preserving checkpoint
+        # compatibility via explicit feature_version metadata.
+        if self.feature_version <= 2:
+            for cy in range(self.board_size):
+                for cx in range(self.board_size):
+                    if not self._valid_mask[cy, cx]:
+                        continue
+                    q = cx - self.radius
+                    r = cy - self.radius
+                    pos = Position(x=q, y=r)
+                    pos_key = pos.to_key()
 
-                # Cell is valid for ring placement if:
-                # - No stack exists
-                # - No collapsed space
-                # - Within bounds (already checked by valid_mask)
-                can_place = (
-                    pos_key not in board.stacks
-                    and pos_key not in board.collapsed_spaces
-                )
-
-                if can_place:
-                    # Check neighbor accessibility for strategic value
-                    neighbors = BoardGeometry.get_adjacent_positions(
-                        pos, board.type, board.size
+                    # Cell is valid for ring placement if:
+                    # - No stack exists
+                    # - No collapsed space
+                    # - Within bounds (already checked by valid_mask)
+                    can_place = (
+                        pos_key not in board.stacks
+                        and pos_key not in board.collapsed_spaces
                     )
-                    accessible = sum(
-                        1
-                        for npos in neighbors
-                        if BoardGeometry.is_within_bounds(
-                            npos, board.type, board.size
+
+                    if can_place:
+                        # Check neighbor accessibility for strategic value
+                        neighbors = BoardGeometry.get_adjacent_positions(
+                            pos, board.type, board.size
                         )
-                        and npos.to_key() not in board.collapsed_spaces
-                    )
-                    # Channel 14: valid placement cell (1.0 if can place)
-                    features[14, cy, cx] = 1.0
-                    # Channel 15: accessibility score (normalized by max neighbors)
-                    features[15, cy, cx] = accessible / 6.0
+                        accessible = sum(
+                            1
+                            for npos in neighbors
+                            if BoardGeometry.is_within_bounds(
+                                npos, board.type, board.size
+                            )
+                            and npos.to_key() not in board.collapsed_spaces
+                        )
+                        # Channel 14: valid placement cell (1.0 if can place)
+                        features[14, cy, cx] = 1.0
+                        # Channel 15: accessibility score (normalized by max neighbors)
+                        features[15, cy, cx] = accessible / 6.0
 
         # === GLOBAL FEATURES (20 dims for V3) ===
         globals_vec = np.zeros(self.NUM_GLOBAL_FEATURES, dtype=np.float32)

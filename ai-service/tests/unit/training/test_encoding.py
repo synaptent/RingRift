@@ -449,6 +449,43 @@ class TestHexStateEncoderV3:
         # Channels 10-15: Enhanced features
         assert features.shape[0] == 16
 
+    def test_feature_version_2_preserves_placement_validity_planes(
+        self, empty_hex_game_state
+    ):
+        """Legacy fv2 keeps placement-validity planes populated."""
+        encoder = HexStateEncoderV3(feature_version=2)
+        features, _ = encoder.encode_state(empty_hex_game_state)
+
+        assert np.count_nonzero(features[14]) > 0
+        assert np.count_nonzero(features[15]) > 0
+
+    def test_feature_version_3_zeroes_placement_validity_planes(
+        self, empty_hex_game_state
+    ):
+        """fv3 disables the leaky placement-validity shortcut while preserving shape."""
+        encoder = HexStateEncoderV3(feature_version=3)
+        features, _ = encoder.encode_state(empty_hex_game_state)
+
+        assert features.shape == (16, 25, 25)
+        np.testing.assert_array_equal(features[14], np.zeros((25, 25), dtype=np.float32))
+        np.testing.assert_array_equal(features[15], np.zeros((25, 25), dtype=np.float32))
+
+    def test_feature_version_3_only_changes_placement_planes(
+        self, hex_game_state_with_pieces
+    ):
+        """fv3 should preserve non-placement channels and zero only 14/15."""
+        legacy = HexStateEncoderV3(feature_version=2)
+        fv3 = HexStateEncoderV3(feature_version=3)
+
+        legacy_features, legacy_globals = legacy.encode_state(hex_game_state_with_pieces)
+        fv3_features, fv3_globals = fv3.encode_state(hex_game_state_with_pieces)
+
+        np.testing.assert_allclose(legacy_features[:14], fv3_features[:14])
+        np.testing.assert_array_equal(
+            fv3_features[14:], np.zeros_like(fv3_features[14:])
+        )
+        np.testing.assert_allclose(legacy_globals, fv3_globals)
+
 
 # =============================================================================
 # SquareStateEncoder Tests
