@@ -10,6 +10,8 @@ import pytest
 
 from scripts.lib.training_probes import (
     ProbeResult,
+    _check_probe_value_head_health,
+    _inference_probe,
     _loss_convergence_check,
     _weight_delta_check,
     run_training_probes,
@@ -70,6 +72,36 @@ class TestLossConvergenceCheck:
         assert len(details["parsed_losses"]) == 2
         assert abs(details["parsed_losses"][0] - 0.3456) < 1e-4
         assert abs(details["parsed_losses"][1] - 0.4567) < 1e-4
+
+
+class TestProbeValueHeadHealth:
+    def test_nonfinite_values_are_critical(self):
+        crit, warns, details = _check_probe_value_head_health([0.1, float("nan"), 0.2])
+        assert crit
+        assert any("NONFINITE_VALUE_HEAD" in w for w in warns)
+        assert details["nonfinite_value_samples"] == 1
+
+    def test_dead_value_head_is_critical(self):
+        crit, warns, details = _check_probe_value_head_health([0.5] * 6)
+        assert crit
+        assert any("DEAD_VALUE_HEAD" in w for w in warns)
+        assert details["value_std"] == 0.0
+
+    def test_saturated_probe_values_are_critical(self):
+        crit, warns, details = _check_probe_value_head_health(
+            [-0.999, -0.998, -1.0, 0.999, 1.0, 0.998]
+        )
+        assert crit
+        assert any("SATURATED_VALUE_HEAD" in w for w in warns)
+        assert details["saturated_value_ratio"] >= 0.9
+
+    def test_healthy_probe_values_pass(self):
+        crit, warns, details = _check_probe_value_head_health(
+            [-0.6, -0.2, 0.0, 0.15, 0.3, 0.7]
+        )
+        assert not crit
+        assert warns == []
+        assert details["value_samples"] == 6
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +240,79 @@ class TestRunTrainingProbes:
             mock_inf.assert_not_called()
             assert result.critical
             assert "inference" not in result.details
+
+
+class TestInferenceProbeRootValueHealth:
+    def test_inference_probe_uses_root_value_stats(self):
+        import app.ai.gumbel_mcts_ai as gumbel_module
+        import app.training.env as env_module
+        from app.models import BoardType, GameStatus
+
+        root_values = iter([-0.999, -0.998, -1.0, 0.999, 1.0, 0.998])
+
+        class FakeAI:
+            def __init__(self, _player, _cfg, _board_type):
+                self.player_number = 1
+                self._last_search_actions = []
+                self._last_search_stats = {}
+
+            def select_move(self, _state):
+                self._last_search_actions = [
+                    MagicMock(visit_count=8),
+                    MagicMock(visit_count=4),
+                ]
+                self._last_search_stats = {
+                    "root_value": next(root_values),
+                    "heuristic_fallback": False,
+                }
+                return "move"
+
+        class FakeState:
+            def __init__(self, done=False):
+                self.game_status = GameStatus.COMPLETED if done else GameStatus.ACTIVE
+                self.current_player = 1
+
+        class FakeEnv:
+            def __init__(self):
+                self._steps = 0
+
+            def reset(self, seed=None):
+                return FakeState(done=False)
+
+            def legal_moves(self):
+                return ["move"]
+
+            def step(self, _move):
+                self._steps += 1
+                done = self._steps >= 6
+                return FakeState(done=done), 0.0, done, {}
+
+        def _fake_make_env(_cfg):
+            return FakeEnv()
+
+        def _fake_tmax(_board_type, _num_players):
+            return 100
+
+        class _FakeEnvCfg:
+            def __init__(self, **_kwargs):
+                pass
+
+        with patch.object(gumbel_module, "GumbelMCTSAI", FakeAI), \
+             patch.object(env_module, "make_env", _fake_make_env), \
+             patch.object(env_module, "get_theoretical_max_moves", _fake_tmax), \
+             patch.object(env_module, "TrainingEnvConfig", _FakeEnvCfg):
+            critical, warns, details = _inference_probe(
+                "/tmp/candidate.pth",
+                BoardType.HEX8,
+                2,
+                128,
+                model_version="v5-heavy",
+            )
+
+        assert critical
+        assert any("SATURATED_VALUE_HEAD" in w for w in warns)
+        assert details["value_samples"] == 6
+        assert details["saturated_value_ratio"] >= 0.9
 
 
 # ---------------------------------------------------------------------------

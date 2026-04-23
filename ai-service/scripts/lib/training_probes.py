@@ -18,6 +18,11 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger("training_probes")
 
+PROBE_DEAD_VALUE_STD_THRESHOLD = 0.01
+PROBE_MIN_VALUE_SAMPLES = 5
+PROBE_SATURATED_VALUE_ABS_THRESHOLD = 0.99
+PROBE_SATURATED_VALUE_RATIO_THRESHOLD = 0.9
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -40,6 +45,74 @@ class ProbeResult:
         for w in self.warnings:
             parts.append(w)
         return "; ".join(parts) if parts else "all probes passed"
+
+
+def _check_probe_value_head_health(
+    values: list[float],
+) -> tuple[bool, list[str], dict]:
+    """Check sampled root values for the same failure modes as eval.
+
+    The inference probe only sees a small number of states, so this is not a
+    replacement for the evaluation quality gate. It is an early tripwire for
+    obviously broken candidates: non-finite outputs, dead constant values, or
+    near-binary saturation across the whole short rollout.
+    """
+    import math
+
+    warnings: list[str] = []
+    details: dict = {
+        "value_samples": len(values),
+    }
+    critical = False
+
+    if not values:
+        details["skipped"] = "no root_value samples recorded"
+        return False, [], details
+
+    nonfinite = sum(1 for v in values if not math.isfinite(v))
+    details["nonfinite_value_samples"] = nonfinite
+    if nonfinite > 0:
+        critical = True
+        warnings.append(
+            f"NONFINITE_VALUE_HEAD: {nonfinite} non-finite root_value samples "
+            "during inference probe"
+        )
+        return critical, warnings, details
+
+    n = len(values)
+    if n < PROBE_MIN_VALUE_SAMPLES:
+        details["skipped"] = f"too few value samples ({n} < {PROBE_MIN_VALUE_SAMPLES})"
+        return False, [], details
+
+    mean_val = sum(values) / n
+    var_val = sum((v - mean_val) ** 2 for v in values) / n
+    std_val = var_val ** 0.5
+    saturated = sum(1 for v in values if abs(v) >= PROBE_SATURATED_VALUE_ABS_THRESHOLD)
+    saturated_ratio = saturated / n
+
+    details["value_mean"] = round(mean_val, 4)
+    details["value_std"] = round(std_val, 4)
+    details["saturated_value_samples"] = saturated
+    details["saturated_value_ratio"] = round(saturated_ratio, 3)
+
+    if std_val < PROBE_DEAD_VALUE_STD_THRESHOLD:
+        critical = True
+        warnings.append(
+            f"DEAD_VALUE_HEAD: value std={std_val:.6f} < "
+            f"{PROBE_DEAD_VALUE_STD_THRESHOLD} across {n} probe positions "
+            f"(mean={mean_val:.4f})"
+        )
+        return critical, warnings, details
+
+    if saturated_ratio >= PROBE_SATURATED_VALUE_RATIO_THRESHOLD:
+        critical = True
+        warnings.append(
+            f"SATURATED_VALUE_HEAD: {saturated}/{n} probe root values have "
+            f"|v| >= {PROBE_SATURATED_VALUE_ABS_THRESHOLD} "
+            f"(mean={mean_val:.4f}, std={std_val:.4f})"
+        )
+
+    return critical, warnings, details
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +193,14 @@ def _inference_probe(
 
         # Check for heuristic fallback (no NN evaluation)
         stats = getattr(ai, "_last_search_stats", None)
-        if stats and stats.get("heuristic_fallback"):
-            fallback_count += 1
+        if stats:
+            if stats.get("heuristic_fallback"):
+                fallback_count += 1
+            if stats.get("root_value") is not None:
+                try:
+                    values.append(float(stats["root_value"]))
+                except (TypeError, ValueError):
+                    values.append(float("nan"))
 
         if move not in legal:
             move = legal[0]
@@ -145,9 +224,15 @@ def _inference_probe(
     else:
         warnings.append("No policy entropy data extracted")
 
-    # Check (b): value head produces non-zero values — we rely on the model
-    # having been successfully loaded and run. If it produced moves, the NN
-    # is functional.  The move selection itself proves the value head ran.
+    # Check (b): root values are finite and not obviously collapsed. This uses
+    # the same root_value signal the full evaluation quality gate records.
+    value_crit, value_warns, value_details = _check_probe_value_head_health(values)
+    details.update(value_details)
+    if value_crit:
+        critical = True
+    warnings.extend(value_warns)
+
+    # If it produced moves at all, the model loaded and the search path ran.
     details["inference_ok"] = True
 
     # Check (c): fallback warnings
