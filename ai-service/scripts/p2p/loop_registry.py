@@ -397,6 +397,14 @@ def _register_auto_scaling(
     failed: list[str],
 ) -> int:
     """Register AutoScalingLoop."""
+    # Safety gate: cloud-provider autoscaling is OFF by default to prevent
+    # unapproved instance launches (e.g. 2 orphaned Lambda auto-* instances
+    # found 2026-04-23). Opt in explicitly via RINGRIFT_AUTOSCALING_ENABLED=true.
+    import os
+    if os.environ.get("RINGRIFT_AUTOSCALING_ENABLED", "").lower() != "true":
+        logger.info("[LoopRegistry] AutoScalingLoop disabled (set RINGRIFT_AUTOSCALING_ENABLED=true to enable)")
+        orchestrator._scale_adapter = None
+        return 0
     try:
         from scripts.p2p.adapters.scale_adapters import (
             CompositeScaleAdapter,
