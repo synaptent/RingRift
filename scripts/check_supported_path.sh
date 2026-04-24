@@ -49,6 +49,9 @@ PYTHONPATH=. "${PYTHON:-python3}" -m pytest \
   tests/unit/training/test_train_cli.py \
   -q
 
+echo "==> Python training-contract coverage"
+bash "$ROOT_DIR/scripts/check_python_training_contract_coverage.sh"
+
 if $WITH_PRODUCT; then
   echo "==> Product smoke gate"
   bash "$ROOT_DIR/scripts/product_smoke_test.sh"

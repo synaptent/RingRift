@@ -74,6 +74,12 @@ test:coverage:rules-critical`, then wired the command into
   `scripts/check_supported_path.sh`. This establishes non-zero coverage
   thresholds for the canonical TypeScript rules engine while deliberately
   excluding legacy compatibility files from the reviewer-critical ratchet.
+- Added `scripts/check_python_training_contract_coverage.sh` and `npm run
+test:coverage:training-contracts`, then wired the command into
+  `scripts/check_supported_path.sh`. This uses `coverage run` directly rather
+  than `pytest-cov` because local PyTorch 2.6 import behavior conflicts with
+  pytest-cov source preloading; the ratchet covers the supported encoder,
+  model-versioning, minimal-loop, and probe contract files.
 
 ## Recent Quality Baseline
 
@@ -177,8 +183,8 @@ ClusterCoordinator`-style imports; legacy callers must import
 3. Extend the operational preflight checker to validate private inventory shape
    when `ai-service/config/distributed_hosts.yaml` is present locally, without
    checking in host secrets.
-4. Extend non-zero coverage ratchets into Python training contracts and parity
-   checkpoint-contract modules.
+4. Extend non-zero coverage ratchets into Python parity checkpoint-contract
+   modules beyond the current training-contract slice.
 5. Expand link integrity coverage from the supported-doc path into `tests/` and
    deeper rules/UX docs after resolving their intentionally archived references.
 6. Verify a full production sandbox game to completion and confirm the visible

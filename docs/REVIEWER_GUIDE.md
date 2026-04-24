@@ -54,6 +54,7 @@ python3 scripts/check_reviewer_surface.py
 python3 scripts/build_reviewer_packet.py --clean
 bash scripts/check_supported_path.sh
 npm run test:coverage:rules-critical
+npm run test:coverage:training-contracts
 npm run build
 ```
 
@@ -96,7 +97,7 @@ Highest-signal improvement areas:
 
 1. Keep the public evidence pack current from machine-readable snapshots.
 2. Continue shrinking or archiving non-supported scripts.
-3. Extend non-zero coverage thresholds from the canonical TypeScript rules engine into training-contract modules.
+3. Extend non-zero coverage thresholds beyond the current TypeScript rules engine and Python training-contract ratchets.
 4. Tighten Python typing for parity and checkpoint-contract modules.
 5. Package result artifacts so the headline claims can be audited without private cluster access.
 
