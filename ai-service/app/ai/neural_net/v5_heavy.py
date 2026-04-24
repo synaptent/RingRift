@@ -188,12 +188,13 @@ class HeuristicEncoder(nn.Module):
         self.film_gamma = nn.Linear(output_dim, num_filters)
         self.film_beta = nn.Linear(output_dim, num_filters)
 
-        # Initialize FiLM to identity (gamma=1, beta=0)
-        nn.init.ones_(self.film_gamma.weight.data[:, :output_dim // 2])
-        nn.init.zeros_(self.film_gamma.weight.data[:, output_dim // 2:])
-        nn.init.zeros_(self.film_gamma.bias.data)
-        nn.init.zeros_(self.film_beta.weight.data)
-        nn.init.zeros_(self.film_beta.bias.data)
+        # Initialize FiLM to true identity (gamma=1, beta=0). Non-zero gamma
+        # weights are compounded after every SE block and can saturate fresh
+        # v5-heavy checkpoints before training gets a useful signal.
+        nn.init.zeros_(self.film_gamma.weight)
+        nn.init.zeros_(self.film_gamma.bias)
+        nn.init.zeros_(self.film_beta.weight)
+        nn.init.zeros_(self.film_beta.bias)
 
     def forward(self, heuristics: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Encode heuristics into embedding and FiLM parameters.
