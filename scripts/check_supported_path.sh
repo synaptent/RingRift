@@ -27,6 +27,9 @@ echo "==> Script smoke"
 bash "$ROOT_DIR/scripts/run_proven_experiment.sh" hex8_2p --print-only >/dev/null
 bash "$ROOT_DIR/scripts/run_proven_experiment.sh" square8_2p --print-only >/dev/null
 
+echo "==> GitHub workflow guardrails"
+python3 "$ROOT_DIR/scripts/check_github_workflows.py"
+
 echo "==> Reviewer surface"
 python3 "$ROOT_DIR/scripts/check_reviewer_surface.py"
 

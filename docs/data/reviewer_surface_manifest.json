@@ -57,6 +57,11 @@
   ],
   "trust_commands": [
     {
+      "id": "github_workflows",
+      "command": "python3 scripts/check_github_workflows.py",
+      "purpose": "Validate lightweight GitHub Actions guardrails that catch unsupported local actions and disallowed direct secret references in if expressions."
+    },
+    {
       "id": "reviewer_surface",
       "command": "python3 scripts/check_reviewer_surface.py",
       "purpose": "Validate the reviewer guide, manifest, required docs, and focused local links."

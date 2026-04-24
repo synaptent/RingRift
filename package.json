@@ -58,6 +58,7 @@
     "slo:gate:production": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/slo-gate-check.ts --env production --fail-on-breach",
     "smoke:orchestrator:preflight": "npm run soak:orchestrator:smoke && npm run load:orchestrator:smoke && npm run test:e2e -- tests/e2e/metrics.e2e.spec.ts",
     "smoke:product": "bash scripts/product_smoke_test.sh",
+    "ci:workflow:check": "python3 scripts/check_github_workflows.py",
     "ai:surface:check": "python3 scripts/check_ai_surface.py",
     "reviewer:check": "python3 scripts/check_reviewer_surface.py",
     "reviewer:packet": "python3 scripts/build_reviewer_packet.py --clean",

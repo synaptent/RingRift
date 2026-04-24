@@ -134,6 +134,7 @@ Core code directories:
 Useful validation commands for the supported path:
 
 ```bash
+python3 scripts/check_github_workflows.py
 python3 scripts/check_reviewer_surface.py
 python3 scripts/check_ai_surface.py
 python3 scripts/build_reviewer_packet.py --clean

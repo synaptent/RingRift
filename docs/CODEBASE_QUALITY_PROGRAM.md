@@ -85,6 +85,10 @@ test:coverage:training-contracts`, then wired the command into
   supported-vs-experimental AI/training boundary machine-checkable. The
   supported-path workflow now builds and uploads the reviewer packet artifact
   so outside reviewers can inspect the curated surface without spelunking.
+- Added `scripts/check_github_workflows.py` and `npm run ci:workflow:check`
+  after the broad CI workflow exposed a parse-time defect from referencing
+  `secrets.*` directly in a step `if` expression. The supported-path gate now
+  catches that class before GitHub Actions drops a jobless failed run.
 
 ## Recent Quality Baseline
 
