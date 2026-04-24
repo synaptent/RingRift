@@ -6,8 +6,10 @@ implementation now supports any same-board transfer across 2/3/4 players.
 
 It adapts a checkpoint by:
 1. Loading all shared weights (conv layers, residual blocks, policy head)
-2. Resizing only the per-player value head to the requested player count
+2. Resizing per-player output heads to the requested player count
 3. Keeping transfer metadata so fine-tuning can track where it came from
+4. Strict-loading the result into a fresh target model when the architecture is
+   recognized, so incompatible transfer artifacts fail at generation time
 
 Usage:
     # Transfer 2p -> 4p (backwards-compatible path)
@@ -36,6 +38,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -53,11 +56,144 @@ def infer_source_players(metadata: dict, state_dict: dict[str, torch.Tensor]) ->
     if isinstance(config_players, int) and config_players in (2, 3, 4):
         return config_players
 
-    for key, value in state_dict.items():
-        if "value_fc2" in key and value.ndim in (1, 2) and value.shape[0] in (2, 3, 4):
-            return int(value.shape[0])
+    for final_value_key in ("value_fc3", "value_fc2"):
+        for key, value in state_dict.items():
+            if (
+                final_value_key in key
+                and value.ndim in (1, 2)
+                and value.shape[0] in (2, 3, 4)
+            ):
+                return int(value.shape[0])
+
+    for final_rank_key in ("rank_dist_fc3", "rank_dist_fc2"):
+        for key, value in state_dict.items():
+            if final_rank_key not in key or value.ndim not in (1, 2):
+                continue
+            for players in (2, 3, 4):
+                if value.shape[0] == players * players:
+                    return players
 
     raise ValueError("Could not infer source player count from checkpoint")
+
+
+def _is_final_value_head_key(key: str, value: torch.Tensor, source_players: int) -> bool:
+    return (
+        key.endswith((".weight", ".bias"))
+        and any(name in key for name in ("value_fc3", "value_fc2", "value_head"))
+        and value.ndim in (1, 2)
+        and value.shape[0] == source_players
+    )
+
+
+def _is_rank_distribution_head_key(key: str, value: torch.Tensor, source_players: int) -> bool:
+    return (
+        key.endswith((".weight", ".bias"))
+        and any(name in key for name in ("rank_dist_fc3", "rank_dist_fc2"))
+        and value.ndim in (1, 2)
+        and value.shape[0] == source_players * source_players
+    )
+
+
+def _infer_board_shape(board_type: str) -> tuple[int, int | None]:
+    if board_type == "hex8":
+        return 9, 4
+    if board_type == "hexagonal":
+        return 25, 12
+    if board_type == "square8":
+        return 8, None
+    if board_type == "square19":
+        return 19, None
+    raise ValueError(f"Unsupported board_type={board_type!r}")
+
+
+def _infer_num_res_blocks(state_dict: dict[str, torch.Tensor]) -> int:
+    block_indices: set[int] = set()
+    for key in state_dict:
+        if not key.startswith("res_blocks."):
+            continue
+        parts = key.split(".")
+        if len(parts) > 1 and parts[1].isdigit():
+            block_indices.add(int(parts[1]))
+    return max(block_indices) + 1 if block_indices else 13
+
+
+def _metadata_config(metadata: dict[str, Any]) -> dict[str, Any]:
+    versioning = metadata.get("_versioning_metadata")
+    if isinstance(versioning, dict):
+        config = versioning.get("config", {})
+        if isinstance(config, dict):
+            return dict(config)
+    return {}
+
+
+def _strict_verify_target_model(
+    output_path: str,
+    board_type: str,
+    target_players: int,
+) -> None:
+    """Build the target architecture and strict-load the transferred state."""
+    from app.utils.torch_utils import safe_load_checkpoint
+
+    verify = safe_load_checkpoint(output_path, map_location="cpu")
+    verify_sd = verify["model_state_dict"]
+    config = _metadata_config(verify)
+
+    conv1 = verify_sd.get("conv1.weight")
+    has_v4_heads = (
+        "value_fc3.weight" in verify_sd
+        and "rank_dist_fc3.weight" in verify_sd
+        and conv1 is not None
+        and tuple(conv1.shape[2:]) == (5, 5)
+    )
+    if not has_v4_heads:
+        logger.info("Skipping strict target-model verify for unrecognized architecture")
+        return
+
+    board_size, hex_radius = _infer_board_shape(board_type)
+    num_filters = int(conv1.shape[0])
+    total_in_channels = int(conv1.shape[1])
+    num_res_blocks = int(config.get("num_res_blocks") or _infer_num_res_blocks(verify_sd))
+    global_features = int(config.get("global_features") or 20)
+
+    if board_type in ("hex8", "hexagonal"):
+        from app.ai.neural_net.hex_architectures import HexNeuralNet_v4
+
+        model = HexNeuralNet_v4(
+            in_channels=total_in_channels,
+            global_features=global_features,
+            num_res_blocks=num_res_blocks,
+            num_filters=num_filters,
+            board_size=board_size,
+            hex_radius=hex_radius,
+            policy_size=None,
+            num_players=target_players,
+        )
+    else:
+        from app.ai.neural_net.square_architectures import RingRiftCNN_v4
+
+        history_length = int(config.get("history_length") or 3)
+        if total_in_channels % (history_length + 1) != 0:
+            raise ValueError(
+                f"Cannot infer square base channels from conv1 in_channels={total_in_channels} "
+                f"and history_length={history_length}"
+            )
+        model = RingRiftCNN_v4(
+            board_size=board_size,
+            in_channels=total_in_channels // (history_length + 1),
+            global_features=global_features,
+            num_res_blocks=num_res_blocks,
+            num_filters=num_filters,
+            history_length=history_length,
+            policy_size=None,
+            num_players=target_players,
+        )
+
+    model.load_state_dict(verify_sd, strict=True)
+    logger.info(
+        "Strict target-model verification passed: %s %sp",
+        type(model).__name__,
+        target_players,
+    )
 
 
 def resize_value_head_weight(
@@ -79,7 +215,11 @@ def resize_value_head_weight(
     if target_players < source_players:
         return old_weight[:target_players, :].clone()
 
-    new_weight = torch.randn((target_players, old_weight.shape[1])) * 0.1
+    new_weight = torch.randn(
+        (target_players, old_weight.shape[1]),
+        dtype=old_weight.dtype,
+        device=old_weight.device,
+    ) * 0.1
     new_weight[:source_players, :] = old_weight[:source_players, :]
     avg = old_weight[:source_players, :].mean(dim=0)
     for p in range(source_players, target_players):
@@ -101,12 +241,60 @@ def resize_value_head_bias(
     if target_players < source_players:
         return old_bias[:target_players].clone()
 
-    new_bias = torch.zeros(target_players)
+    new_bias = torch.zeros(target_players, dtype=old_bias.dtype, device=old_bias.device)
     new_bias[:source_players] = old_bias[:source_players]
     avg = old_bias[:source_players].mean()
     for p in range(source_players, target_players):
-        new_bias[p] = avg + torch.randn(1).item() * 0.01
+        new_bias[p] = avg + torch.randn((), dtype=old_bias.dtype, device=old_bias.device) * 0.01
     return new_bias
+
+
+def resize_rank_distribution_weight(
+    old_weight: torch.Tensor,
+    source_players: int,
+    target_players: int,
+) -> torch.Tensor:
+    """Resize flattened rank-distribution weights from N² to target N²."""
+    if source_players == target_players:
+        return old_weight.clone()
+    if old_weight.ndim != 2:
+        raise ValueError(f"Expected 2D rank head weight, got {old_weight.shape}")
+
+    src = old_weight.view(source_players, source_players, old_weight.shape[1])
+    new_weight = torch.empty(
+        (target_players, target_players, old_weight.shape[1]),
+        dtype=old_weight.dtype,
+        device=old_weight.device,
+    )
+    avg = src.mean(dim=(0, 1))
+    new_weight[:] = avg + torch.randn_like(new_weight) * 0.1
+    common = min(source_players, target_players)
+    new_weight[:common, :common, :] = src[:common, :common, :]
+    return new_weight.view(target_players * target_players, old_weight.shape[1])
+
+
+def resize_rank_distribution_bias(
+    old_bias: torch.Tensor,
+    source_players: int,
+    target_players: int,
+) -> torch.Tensor:
+    """Resize flattened rank-distribution bias from N² to target N²."""
+    if source_players == target_players:
+        return old_bias.clone()
+    if old_bias.ndim != 1:
+        raise ValueError(f"Expected 1D rank head bias, got {old_bias.shape}")
+
+    src = old_bias.view(source_players, source_players)
+    new_bias = torch.empty(
+        (target_players, target_players),
+        dtype=old_bias.dtype,
+        device=old_bias.device,
+    )
+    avg = src.mean()
+    new_bias[:] = avg + torch.randn_like(new_bias) * 0.01
+    common = min(source_players, target_players)
+    new_bias[:common, :common] = src[:common, :common]
+    return new_bias.view(target_players * target_players)
 
 
 def transfer_model_players(
@@ -140,32 +328,38 @@ def transfer_model_players(
     source_players = source_players or infer_source_players(metadata, state_dict)
     logger.info(f"Transfer: {source_players}-player -> {target_players}-player")
 
-    value_keys_to_resize: list[str] = []
-    for key, value in state_dict.items():
-        if "value_fc2" in key and "weight" in key and value.shape[0] == source_players:
-            value_keys_to_resize.append(key)
-            logger.info(f"  Found value head: {key} {value.shape}")
+    resized_keys: list[str] = []
+    for key, value in list(state_dict.items()):
+        if _is_final_value_head_key(key, value, source_players):
+            if key.endswith(".weight"):
+                new_value = resize_value_head_weight(value, source_players, target_players)
+            else:
+                new_value = resize_value_head_bias(value, source_players, target_players)
+            state_dict[key] = new_value
+            resized_keys.append(key)
+            logger.info(f"  Resized value head {key}: {value.shape} -> {new_value.shape}")
+        elif _is_rank_distribution_head_key(key, value, source_players):
+            if key.endswith(".weight"):
+                new_value = resize_rank_distribution_weight(value, source_players, target_players)
+            else:
+                new_value = resize_rank_distribution_bias(value, source_players, target_players)
+            state_dict[key] = new_value
+            resized_keys.append(key)
+            logger.info(f"  Resized rank head {key}: {value.shape} -> {new_value.shape}")
 
-    for key in value_keys_to_resize:
-        old_weight = state_dict[key]
-        new_weight = resize_value_head_weight(old_weight, source_players, target_players)
-        for p in range(target_players):
-            if new_weight[p, :].abs().sum() < 1e-6:
-                logger.warning(f"  Player {p+1} weights near zero - adding noise")
-                new_weight[p, :] = torch.randn(new_weight.shape[1]) * 0.1
-        state_dict[key] = new_weight
-        logger.info(f"  Resized {key}: {old_weight.shape} -> {new_weight.shape}")
-        for p in range(target_players):
-            mag = new_weight[p, :].abs().mean().item()
-            logger.info(f"    Player {p+1} weight magnitude: {mag:.4f}")
+    if not resized_keys:
+        raise ValueError(
+            f"No player-count output heads found for source_players={source_players}; "
+            "refusing to save an unmodified transfer checkpoint."
+        )
 
-    for key in list(state_dict.keys()):
-        if "value_fc2" in key and "bias" in key:
-            old_bias = state_dict[key]
-            if old_bias.shape[0] == source_players:
-                new_bias = resize_value_head_bias(old_bias, source_players, target_players)
-                state_dict[key] = new_bias
-                logger.info(f"  Resized {key}: {old_bias.shape} -> {new_bias.shape}")
+    previous_config = _metadata_config(metadata)
+    transfer_config = {
+        **previous_config,
+        "num_players": target_players,
+        "board_type": board_type,
+        "transfer_learning": True,
+    }
 
     new_checkpoint = {
         "model_state_dict": state_dict,
@@ -174,11 +368,7 @@ def transfer_model_players(
         "source_num_players": source_players,
         "num_players": target_players,
         "_versioning_metadata": {
-            "config": {
-                "num_players": target_players,
-                "board_type": board_type,
-                "transfer_learning": True,
-            }
+            "config": transfer_config,
         },
     }
 
@@ -189,9 +379,9 @@ def transfer_model_players(
 
     verify = safe_load_checkpoint(output_path, map_location="cpu")
     verify_sd = verify["model_state_dict"]
-    for key in verify_sd:
-        if "value_fc2" in key:
-            logger.info(f"  Verified {key}: {verify_sd[key].shape}")
+    for key in resized_keys:
+        logger.info(f"  Verified resized {key}: {verify_sd[key].shape}")
+    _strict_verify_target_model(output_path, board_type, target_players)
 
 
 def transfer_2p_to_np(
