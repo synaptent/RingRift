@@ -67,7 +67,8 @@ def _make_ai(player: int, model_path: str, budget: int,
     cfg = AIConfig(difficulty=9, randomness=randomness, use_neural_net=True,
                    gumbel_simulation_budget=budget, nn_model_id=model_path,
                    allow_fresh_weights=False, use_gpu_tree=True,
-                   nn_model_version=MODEL_VERSION if MODEL_VERSION != "v2" else None)
+                   nn_model_version=MODEL_VERSION if MODEL_VERSION != "v2" else None,
+                   feature_version=FEATURE_VERSION)
     return GumbelMCTSAI(player, cfg, BOARD_ENUM)
 
 
@@ -1242,6 +1243,7 @@ def main() -> None:
             probe = run_training_probes(
                 str(cpath), str(best), ti, BOARD_ENUM, NUM_PLAYERS, eval_budget,
                 model_version=MODEL_VERSION,
+                feature_version=FEATURE_VERSION,
             )
             if probe.critical:
                 logger.error(f"TRAINING PROBE FAILED: {probe.summary}")

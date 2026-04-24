@@ -155,6 +155,72 @@ def _env_flag_enabled(name: str) -> bool:
     """
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
+
+def _inspect_runtime_checkpoint_contract(model_path: str | os.PathLike[str]) -> dict[str, int]:
+    """Best-effort checkpoint contract used before eager runtime model init.
+
+    Search AIs can initialize from a board type before a full GameState is
+    available, so ``num_players`` may be unknown. For v4/v5 checkpoints the
+    value head shape is the reliable source of truth; defaulting to 2p causes
+    strict-load failures for 3p/4p candidates during probes and evaluation.
+    """
+    path = os.fspath(model_path)
+    contract: dict[str, int] = {}
+    if not path or not os.path.exists(path):
+        return contract
+
+    try:
+        checkpoint = safe_load_checkpoint(path, map_location="cpu", warn_on_unsafe=False)
+    except TypeError:
+        checkpoint = safe_load_checkpoint(path, map_location="cpu")
+    except Exception as exc:  # noqa: BLE001 - metadata peeks must not mask load errors
+        logger.warning("Could not inspect checkpoint contract for %s: %s", path, exc)
+        return contract
+
+    if not isinstance(checkpoint, dict):
+        return contract
+
+    metadata = checkpoint.get("_versioning_metadata")
+    if isinstance(metadata, dict):
+        config = metadata.get("config", {})
+    else:
+        config = getattr(metadata, "config", {}) if metadata is not None else {}
+    if not isinstance(config, dict):
+        config = {}
+
+    for key in ("num_players", "feature_version"):
+        if config.get(key) is not None:
+            try:
+                contract[key] = int(config[key])
+            except (TypeError, ValueError):
+                pass
+
+    state_dict_obj = (
+        checkpoint.get("model_state_dict")
+        or checkpoint.get("state_dict")
+        or checkpoint
+    )
+    if not isinstance(state_dict_obj, dict):
+        return contract
+
+    state_dict = _strip_module_prefix(state_dict_obj)
+    conv1 = state_dict.get("conv1.weight")
+    if conv1 is not None and hasattr(conv1, "shape") and len(conv1.shape) == 4:
+        contract["in_channels"] = int(conv1.shape[1])
+
+    # V4/V5 use value_fc3 as output; older v2/v3 use value_fc2. Check fc3
+    # first because v4's value_fc2 is an intermediate 256x256 layer.
+    for value_key in ("value_fc3.weight", "value_fc2.weight"):
+        value_weight = state_dict.get(value_key)
+        if value_weight is None or not hasattr(value_weight, "shape"):
+            continue
+        candidate_players = int(value_weight.shape[0])
+        if candidate_players in (2, 3, 4):
+            contract["num_players"] = candidate_players
+            break
+
+    return contract
+
 # Import all constants from canonical SSoT module to avoid duplication.
 # Use importlib to load constants.py directly, bypassing neural_net/__init__.py
 # which would create a circular import (it imports from this module).
@@ -4375,10 +4441,26 @@ class NeuralNetAI(BaseAI):
             )
 
         logger.info("V5-Heavy model path: %s", model_path)
+        checkpoint_contract = _inspect_runtime_checkpoint_contract(model_path)
 
         # Create the model
         board_name_str = board_type.name.lower()
-        players = num_players or 2
+        players = num_players or checkpoint_contract.get("num_players") or 2
+        if num_players is None and checkpoint_contract.get("num_players"):
+            logger.info(
+                "V5-Heavy checkpoint value head indicates num_players=%d",
+                players,
+            )
+
+        if (
+            getattr(self.config, "feature_version", None) is None
+            and checkpoint_contract.get("feature_version") is not None
+        ):
+            self.feature_version = int(checkpoint_contract["feature_version"])
+            logger.info(
+                "V5-Heavy checkpoint metadata indicates feature_version=%d",
+                self.feature_version,
+            )
 
         # Inspect the checkpoint (if present) and build the model with
         # matching input channels. Previously this hardcoded 40ch, which
@@ -4387,30 +4469,12 @@ class NeuralNetAI(BaseAI):
         # v5-heavy, and the runtime would then refuse the 64ch checkpoint
         # at strict load_state_dict. Falling back to 40ch when no
         # checkpoint exists preserves the pre-existing default.
-        in_channels = 40  # default when no checkpoint is available
-        if os.path.exists(model_path):
-            try:
-                from ..utils.torch_utils import safe_load_checkpoint
-                _peek_ckpt = safe_load_checkpoint(model_path, map_location="cpu")
-                _peek_sd = (
-                    _peek_ckpt.get("model_state_dict")
-                    or _peek_ckpt.get("state_dict")
-                    or _peek_ckpt
-                )
-                _peek_sd = _strip_module_prefix(_peek_sd)
-                _conv1 = _peek_sd.get("conv1.weight")
-                if _conv1 is not None and len(_conv1.shape) == 4:
-                    in_channels = int(_conv1.shape[1])
-                    logger.info(
-                        "V5-Heavy checkpoint conv1 indicates in_channels=%d",
-                        in_channels,
-                    )
-            except Exception as exc:  # noqa: BLE001 — never block on metadata peek
-                logger.warning(
-                    "Could not inspect V5-Heavy checkpoint for in_channels "
-                    "(falling back to %d): %s",
-                    in_channels, exc,
-                )
+        in_channels = checkpoint_contract.get("in_channels", 40)
+        if checkpoint_contract.get("in_channels") is not None:
+            logger.info(
+                "V5-Heavy checkpoint conv1 indicates in_channels=%d",
+                in_channels,
+            )
 
         if variant == "large":
             self.model = create_v5_heavy_large(
@@ -4740,10 +4804,16 @@ class NeuralNetAI(BaseAI):
             )
 
         logger.info("V4 model path: %s", model_path)
+        checkpoint_contract = _inspect_runtime_checkpoint_contract(model_path)
 
         # Get board configuration
         board_size = get_spatial_size_for_board(board_type)
-        players = num_players or 2
+        players = num_players or checkpoint_contract.get("num_players") or 2
+        if num_players is None and checkpoint_contract.get("num_players"):
+            logger.info(
+                "V4 checkpoint value head indicates num_players=%d",
+                players,
+            )
 
         # Determine hex_radius from board_size
         hex_radius = (board_size - 1) // 2

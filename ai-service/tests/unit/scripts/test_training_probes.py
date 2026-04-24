@@ -418,7 +418,7 @@ class TestWeightDeltaEdgeCases:
 # architectures.
 
 
-def _run_probes_with_stub_ai(model_version):
+def _run_probes_with_stub_ai(model_version, feature_version=None):
     """Invoke run_training_probes with stubbed AI/env and return the
     AIConfig that _inference_probe constructed.
 
@@ -491,21 +491,18 @@ def _run_probes_with_stub_ai(model_version):
             # this test is supposed to exercise.
             torch.save({"layer.weight": torch.randn(4, 4)}, c)
             torch.save({"layer.weight": torch.randn(4, 4)}, b)
-            if model_version is _UNSET:
-                tp.run_training_probes(
-                    c, b,
-                    {"last_epoch_line": "Epoch 1, Train Loss: 0.5"},
-                    MagicMock(),
-                    2, 16,
-                )
-            else:
-                tp.run_training_probes(
-                    c, b,
-                    {"last_epoch_line": "Epoch 1, Train Loss: 0.5"},
-                    MagicMock(),
-                    2, 16,
-                    model_version=model_version,
-                )
+            kwargs = {}
+            if model_version is not _UNSET:
+                kwargs["model_version"] = model_version
+            if feature_version is not None:
+                kwargs["feature_version"] = feature_version
+            tp.run_training_probes(
+                c, b,
+                {"last_epoch_line": "Epoch 1, Train Loss: 0.5"},
+                MagicMock(),
+                2, 16,
+                **kwargs,
+            )
 
     return captured.get("config")
 
@@ -551,3 +548,9 @@ class TestModelVersionPropagation:
         cfg = _run_probes_with_stub_ai(_UNSET)
         assert cfg is not None
         assert getattr(cfg, "nn_model_version", None) is None
+
+    def test_feature_version_threads_to_aiconfig(self):
+        cfg = _run_probes_with_stub_ai("v5-heavy", feature_version=3)
+        assert cfg is not None
+        assert getattr(cfg, "nn_model_version", None) == "v5-heavy"
+        assert getattr(cfg, "feature_version", None) == 3

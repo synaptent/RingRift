@@ -341,6 +341,27 @@ def test_train_model_threads_feature_version_flag(monkeypatch, tmp_path):
     assert captured["cmd"][captured["cmd"].index("--feature-version") + 1] == "3"
 
 
+def test_make_ai_threads_feature_version_to_runtime_config(monkeypatch):
+    """FEATURE_VERSION must also reach live MCTS inference, not just export/train."""
+    captured: dict = {}
+
+    class FakeGumbelMCTSAI:
+        def __init__(self, player, cfg, board_type):
+            captured["player"] = player
+            captured["cfg"] = cfg
+            captured["board_type"] = board_type
+
+    monkeypatch.setattr(loop, "GumbelMCTSAI", FakeGumbelMCTSAI)
+    monkeypatch.setattr(loop, "MODEL_VERSION", "v5-heavy")
+    monkeypatch.setattr(loop, "FEATURE_VERSION", 3)
+
+    loop._make_ai(1, "models/candidate.pth", 32)
+
+    assert captured["player"] == 1
+    assert captured["cfg"].nn_model_version == "v5-heavy"
+    assert captured["cfg"].feature_version == 3
+
+
 def test_loop_records_split_budgets_fixed_lr_and_heartbeat_context(monkeypatch, tmp_path):
     result = _run_loop_once(
         monkeypatch,

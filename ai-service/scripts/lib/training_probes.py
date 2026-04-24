@@ -125,6 +125,7 @@ def _inference_probe(
     num_players: int,
     budget: int,
     model_version: str | None = None,
+    feature_version: int | None = None,
 ) -> tuple[bool, list[str], dict]:
     """Load candidate, play 10 moves from start, check policy/value sanity.
 
@@ -151,6 +152,7 @@ def _inference_probe(
         allow_fresh_weights=False,
         use_gpu_tree=True,
         nn_model_version=model_version if model_version and model_version != "v2" else None,
+        feature_version=feature_version,
     )
 
     try:
@@ -378,6 +380,7 @@ def run_training_probes(
     num_players: int,
     budget: int,
     model_version: str | None = None,
+    feature_version: int | None = None,
 ) -> ProbeResult:
     """Run all training probes and return aggregated result.
 
@@ -415,6 +418,7 @@ def run_training_probes(
             crit, warns, details = _inference_probe(
                 candidate_path, board_type, num_players, budget,
                 model_version=model_version,
+                feature_version=feature_version,
             )
             result.details["inference"] = details
             if crit:

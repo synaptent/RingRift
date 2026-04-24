@@ -575,6 +575,15 @@ class AIConfig(BaseModel):
             "non-v2 architecture checkpoints (e.g., v5-heavy models)."
         ),
     )
+    feature_version: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Optional feature-encoding contract version for neural-network-backed "
+            "runtime inference. Training/self-play harnesses set this when a "
+            "checkpoint requires a non-default encoder variant, such as hex fv3."
+        ),
+    )
     nn_state_dict: Optional[dict] = Field(
         default=None,
         description=(
