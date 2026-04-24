@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-04-24",
+  "purpose": "Machine-readable boundary between the supported RingRift AI/training surface and historical, diagnostic, or experimental tooling. This keeps outside review focused on code paths that are current and defended by tests.",
+  "supported_ai_surfaces": [
+    {
+      "path": "ai-service/app/rules",
+      "role": "Canonical Python phase/move contracts and history validators."
+    },
+    {
+      "path": "ai-service/app/game_engine",
+      "role": "Python replay mirror of the TypeScript rules engine."
+    },
+    {
+      "path": "ai-service/app/training",
+      "role": "Supported encoding, checkpoint-contract, model-versioning, and training modules."
+    },
+    {
+      "path": "ai-service/scripts/minimal_alphazero_loop.py",
+      "role": "Supported AlphaZero-style self-play/train/eval proof harness."
+    },
+    {
+      "path": "ai-service/scripts/generate_canonical_selfplay.py",
+      "role": "Canonical self-play generator with parity and history gates."
+    },
+    {
+      "path": "ai-service/scripts/check_ts_python_replay_parity.py",
+      "role": "TypeScript↔Python replay parity harness."
+    },
+    {
+      "path": "ai-service/scripts/check_canonical_phase_history.py",
+      "role": "Canonical phase-history validator for replay databases."
+    },
+    {
+      "path": "ai-service/scripts/export_replay_dataset.py",
+      "role": "Preferred replay database to NPZ export path."
+    },
+    {
+      "path": "ai-service/scripts/jsonl_to_npz.py",
+      "role": "Policy self-play JSONL to NPZ converter used by the minimal loop."
+    },
+    {
+      "path": "ai-service/scripts/fleet_health_check.py",
+      "role": "Read-only fleet health diagnostics."
+    },
+    {
+      "path": "ai-service/scripts/deploy_minimal_loops.sh",
+      "role": "Supported minimal-loop canary deployment entrypoint."
+    }
+  ],
+  "experimental_or_diagnostic_surfaces": [
+    {
+      "path": "ai-service/scripts/experiments",
+      "role": "Active experiments and prototypes. Not public proof-path code unless promoted into the supported surface."
+    },
+    {
+      "path": "docs/planning",
+      "role": "Investigation notes, hypotheses, and future plans."
+    },
+    {
+      "path": "ai-service/scripts/analyze_*",
+      "role": "Ad hoc analysis helpers."
+    },
+    {
+      "path": "ai-service/scripts/benchmark_*",
+      "role": "Performance probes and comparison harnesses."
+    },
+    {
+      "path": "ai-service/scripts/cluster_*",
+      "role": "Cluster operations and migration tooling."
+    }
+  ],
+  "historical_surfaces": [
+    {
+      "path": "archive",
+      "role": "Top-level historical code and plans."
+    },
+    {
+      "path": "docs/archive",
+      "role": "Archived documentation and completed plans."
+    },
+    {
+      "path": "ai-service/archive",
+      "role": "Deprecated AI implementations and compatibility references."
+    },
+    {
+      "path": "ai-service/scripts/archive",
+      "role": "Archived scripts retained for incident history or reference."
+    }
+  ],
+  "promotion_rule": "A script or AI module becomes supported only after it is listed here, linked from a current runbook or reviewer doc, covered by a focused test or gate, and clear about canonical-vs-legacy data assumptions.",
+  "publication_rule": "Do not cite experimental or historical surfaces as public evidence unless the claim is explicitly marked experimental and its artifacts are mirrored in docs/data/results_evidence_manifest.json."
+}

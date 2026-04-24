@@ -24,6 +24,8 @@ For the full evidence and caveats, see [docs/RESULTS.md](/docs/RESULTS.md). For 
 
 If you are reviewing the repository cold, start with [docs/REVIEWER_GUIDE.md](/docs/REVIEWER_GUIDE.md). It separates the supported product/research path from historical and operational surfaces.
 
+The machine-readable boundary for AI/training review is [docs/data/ai_surface_manifest.json](/docs/data/ai_surface_manifest.json). It marks which Python modules and scripts are supported, experimental, or historical so a reviewer does not have to infer that from file count alone.
+
 ## What The Game Looks Like
 
 ![Live hex8 sandbox board](docs/assets/readme/hex8-sandbox-live.png)
@@ -133,9 +135,13 @@ Useful validation commands for the supported path:
 
 ```bash
 python3 scripts/check_reviewer_surface.py
+python3 scripts/check_ai_surface.py
+python3 scripts/build_reviewer_packet.py --clean
 bash scripts/check_supported_path.sh
 npm run results:refresh
 ```
+
+The `Supported Path` GitHub workflow runs the same core gate and publishes the reviewer packet as a CI artifact.
 
 ## What To Ignore At First
 
@@ -145,7 +151,8 @@ Treat these as secondary or historical until you need them:
 
 - `archive/`
 - `docs/archive/`
+- `ai-service/archive/`
 - legacy coordinator and daemon paths under `ai-service/app/coordination`
-- many ops and cluster scripts under `ai-service/scripts`
+- experimental, diagnostic, and broad ops scripts under `ai-service/scripts`
 
 The shortest, most defensible story is: novel game, canonical engine, parity-checked Python mirror, and a minimal loop that really did make at least some models stronger.

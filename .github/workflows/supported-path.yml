@@ -18,6 +18,7 @@ on:
       - 'docs/data/results_snapshot.json'
       - 'docs/data/results_evidence_manifest.json'
       - 'docs/data/reviewer_surface_manifest.json'
+      - 'docs/data/ai_surface_manifest.json'
       - 'DOCUMENTATION_INDEX.md'
       - 'package.json'
       - 'package-lock.json'
@@ -32,6 +33,7 @@ on:
       - 'scripts/check_reviewer_surface.py'
       - 'scripts/build_reviewer_packet.py'
       - 'scripts/check_results_evidence.py'
+      - 'scripts/check_ai_surface.py'
       - 'scripts/check_python_training_contract_coverage.sh'
       - 'scripts/refresh_results_artifacts.py'
       - 'ai-service/scripts/minimal_alphazero_loop.py'
@@ -64,6 +66,7 @@ on:
       - 'docs/data/results_snapshot.json'
       - 'docs/data/results_evidence_manifest.json'
       - 'docs/data/reviewer_surface_manifest.json'
+      - 'docs/data/ai_surface_manifest.json'
       - 'DOCUMENTATION_INDEX.md'
       - 'package.json'
       - 'package-lock.json'
@@ -78,6 +81,7 @@ on:
       - 'scripts/check_reviewer_surface.py'
       - 'scripts/build_reviewer_packet.py'
       - 'scripts/check_results_evidence.py'
+      - 'scripts/check_ai_surface.py'
       - 'scripts/check_python_training_contract_coverage.sh'
       - 'scripts/refresh_results_artifacts.py'
       - 'ai-service/scripts/minimal_alphazero_loop.py'
@@ -124,3 +128,13 @@ jobs:
 
       - name: Run supported path checks
         run: npm run test:fast
+
+      - name: Build reviewer packet
+        run: npm run reviewer:packet
+
+      - name: Upload reviewer packet
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-packet
+          path: dist/reviewer_packet
+          if-no-files-found: error

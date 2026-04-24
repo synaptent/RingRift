@@ -20,6 +20,7 @@ EXTRA_PACKET_FILES = (
     "docs/assets/results/headline_results.svg",
     "docs/assets/results/square8_2p_progression.svg",
     "docs/assets/readme/hex8-sandbox-live.png",
+    "docs/data/ai_surface_manifest.json",
 )
 
 
@@ -70,6 +71,7 @@ def _write_index(manifest: dict[str, Any], copied_files: list[str], output_dir: 
             "",
             "- Public result claims are copied from `docs/data/results_snapshot.json`.",
             "- Claim provenance is copied from `docs/data/results_evidence_manifest.json`.",
+            "- Supported-vs-experimental AI boundaries are copied from `docs/data/ai_surface_manifest.json`.",
             "- External artifacts remain referenced from `docs/REPRODUCIBILITY.md`.",
         ]
     )

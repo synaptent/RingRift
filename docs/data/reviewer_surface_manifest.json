@@ -11,6 +11,7 @@
     "docs/RESULTS.md",
     "docs/REPRODUCIBILITY.md",
     "docs/ARCHITECTURE_OVERVIEW.md",
+    "docs/data/ai_surface_manifest.json",
     "docs/LESSONS_LEARNED.md"
   ],
   "supported_code_surfaces": [
@@ -64,6 +65,11 @@
       "id": "reviewer_packet",
       "command": "python3 scripts/build_reviewer_packet.py --clean",
       "purpose": "Build a compact packet of supported docs, result snapshots, evidence manifest, and result visuals for outside review."
+    },
+    {
+      "id": "ai_surface",
+      "command": "python3 scripts/check_ai_surface.py",
+      "purpose": "Validate the supported-vs-experimental AI surface boundary."
     },
     {
       "id": "supported_path",

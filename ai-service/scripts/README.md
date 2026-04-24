@@ -4,6 +4,8 @@ This directory contains hundreds of scripts. Only a small subset is part of the 
 
 If you are new to the codebase, start with the scripts below and treat most `analyze_*`, `benchmark_*`, and `debug_*` files as investigative tools rather than supported entrypoints.
 
+The machine-readable support boundary is [`docs/data/ai_surface_manifest.json`](/docs/data/ai_surface_manifest.json). A script is not part of the public proof path merely because it exists here.
+
 ## Essential Scripts
 
 ### Fleet runtime

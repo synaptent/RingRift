@@ -80,6 +80,11 @@ test:coverage:training-contracts`, then wired the command into
   than `pytest-cov` because local PyTorch 2.6 import behavior conflicts with
   pytest-cov source preloading; the ratchet covers the supported encoder,
   model-versioning, minimal-loop, and probe contract files.
+- Added [docs/data/ai_surface_manifest.json](data/ai_surface_manifest.json),
+  `scripts/check_ai_surface.py`, and `npm run ai:surface:check` to make the
+  supported-vs-experimental AI/training boundary machine-checkable. The
+  supported-path workflow now builds and uploads the reviewer packet artifact
+  so outside reviewers can inspect the curated surface without spelunking.
 
 ## Recent Quality Baseline
 
@@ -178,16 +183,19 @@ ClusterCoordinator`-style imports; legacy callers must import
 1. Refresh `docs/RESULTS.md`, `docs/data/results_snapshot.json`, and
    `docs/data/results_evidence_manifest.json` after the newest training
    promotions have durable metrics/log artifacts checked in or referenced.
-2. Continue reducing the remaining `20` direct-unimported `app.*` candidates
+2. Keep `docs/data/ai_surface_manifest.json` honest: promote experimental AI
+   scripts only after they have tests, current runbook links, and explicit
+   canonical-vs-legacy data assumptions.
+3. Continue reducing the remaining `20` direct-unimported `app.*` candidates
    after confirming dynamic-entrypoint use.
-3. Extend the operational preflight checker to validate private inventory shape
+4. Extend the operational preflight checker to validate private inventory shape
    when `ai-service/config/distributed_hosts.yaml` is present locally, without
    checking in host secrets.
-4. Extend non-zero coverage ratchets into Python parity checkpoint-contract
+5. Extend non-zero coverage ratchets into Python parity checkpoint-contract
    modules beyond the current training-contract slice.
-5. Expand link integrity coverage from the supported-doc path into `tests/` and
+6. Expand link integrity coverage from the supported-doc path into `tests/` and
    deeper rules/UX docs after resolving their intentionally archived references.
-6. Verify a full production sandbox game to completion and confirm the visible
+7. Verify a full production sandbox game to completion and confirm the visible
    VictoryModal stats path.
 
 ## Reassessment Triggers

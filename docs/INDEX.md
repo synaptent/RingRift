@@ -59,6 +59,7 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 | -------------------------------------------------------------------------- | ----------------------------------------------------- |
 | [CODEBASE_QUALITY_PROGRAM.md](CODEBASE_QUALITY_PROGRAM.md)                 | Durable cleanup log and next seams                    |
 | [data/reviewer_surface_manifest.json](data/reviewer_surface_manifest.json) | Machine-readable reviewer surface map                 |
+| [data/ai_surface_manifest.json](data/ai_surface_manifest.json)             | Supported vs experimental AI/training surface map     |
 | [LOAD_TEST_RESULTS.md](LOAD_TEST_RESULTS.md)                               | Current checked-in load-test snapshot                 |
 | [SECRET_ROTATION_CHECKLIST.md](SECRET_ROTATION_CHECKLIST.md)               | Security remediation checklist retained for operators |
 

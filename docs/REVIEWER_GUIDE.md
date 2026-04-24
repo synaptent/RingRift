@@ -33,6 +33,9 @@ Then inspect these code surfaces:
 4. [ai-service/app/rules](/ai-service/app/rules) - Python rules contracts.
 5. [ai-service/scripts/minimal_alphazero_loop.py](/ai-service/scripts/minimal_alphazero_loop.py) - supported training loop.
 
+For AI and training code, use [docs/data/ai_surface_manifest.json](/docs/data/ai_surface_manifest.json)
+as the explicit supported-vs-experimental boundary.
+
 ## Evidence Boundary
 
 The public result claims are intentionally narrower than live operator context.
@@ -51,6 +54,7 @@ Run these before deeper review:
 
 ```bash
 python3 scripts/check_reviewer_surface.py
+python3 scripts/check_ai_surface.py
 python3 scripts/build_reviewer_packet.py --clean
 bash scripts/check_supported_path.sh
 npm run test:coverage:rules-critical
@@ -106,6 +110,9 @@ Highest-signal improvement areas:
 The machine-readable map for this guide is
 [docs/data/reviewer_surface_manifest.json](/docs/data/reviewer_surface_manifest.json).
 It is validated by [scripts/check_reviewer_surface.py](/scripts/check_reviewer_surface.py).
+The AI/training support boundary is
+[docs/data/ai_surface_manifest.json](/docs/data/ai_surface_manifest.json) and is
+validated by [scripts/check_ai_surface.py](/scripts/check_ai_surface.py).
 To copy the supported docs, result snapshots, evidence manifest, and result
 visuals into a compact local packet, run
 [scripts/build_reviewer_packet.py](/scripts/build_reviewer_packet.py).
