@@ -91,7 +91,7 @@ npm run smoke:product
 Run the supported-path validation:
 
 ```bash
-cd ai-service && PYTHONPATH=. python scripts/check_supported_path.py
+bash scripts/check_supported_path.sh
 ```
 
 Run the Python AI inference smoke directly:
@@ -125,6 +125,7 @@ Root test entry points:
 ```bash
 npm test
 npm run test:core
+npm run test:coverage:rules-critical
 npm run test:e2e
 ```
 

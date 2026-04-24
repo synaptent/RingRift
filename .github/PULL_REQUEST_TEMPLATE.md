@@ -34,3 +34,4 @@ This runs:
 
 - [ ] Tests pass locally for the areas I changed (or I have explained why not).
 - [ ] I have updated relevant documentation (rules/architecture/test meta-docs) where needed.
+- [ ] If I changed supported-path, reviewer, result-evidence, or canonical rules files, I ran `bash scripts/check_supported_path.sh`.

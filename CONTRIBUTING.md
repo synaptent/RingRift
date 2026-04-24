@@ -113,6 +113,7 @@ Usually enough:
 
 ```bash
 git diff --check
+python3 scripts/check_reviewer_surface.py
 ```
 
 ### TypeScript product or rules-engine changes
@@ -122,6 +123,7 @@ Core checks:
 ```bash
 npm run test:ts-rules-engine
 npm run test:orchestrator-parity
+npm run test:coverage:rules-critical
 ```
 
 If you touched rules, AI integration, WebSocket lifecycle, or backend turn execution, run the heavier gate:
@@ -155,6 +157,7 @@ Good PRs in this repo are narrow and explicit.
 - State whether the change affects canonical rules, parity, training, or only docs/UI.
 - List the exact validation you ran.
 - If the behavior is non-obvious, link the relevant rules or architecture docs.
+- For supported-path or reviewer-facing changes, run `bash scripts/check_supported_path.sh`.
 
 ## Documentation And Reader Experience
 
