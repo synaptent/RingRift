@@ -59,6 +59,7 @@
     "smoke:orchestrator:preflight": "npm run soak:orchestrator:smoke && npm run load:orchestrator:smoke && npm run test:e2e -- tests/e2e/metrics.e2e.spec.ts",
     "smoke:product": "bash scripts/product_smoke_test.sh",
     "reviewer:check": "python3 scripts/check_reviewer_surface.py",
+    "reviewer:packet": "python3 scripts/build_reviewer_packet.py --clean",
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "vite build",

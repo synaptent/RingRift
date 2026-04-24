@@ -61,6 +61,11 @@
       "purpose": "Validate the reviewer guide, manifest, required docs, and focused local links."
     },
     {
+      "id": "reviewer_packet",
+      "command": "python3 scripts/build_reviewer_packet.py --clean",
+      "purpose": "Build a compact packet of supported docs, result snapshots, evidence manifest, and result visuals for outside review."
+    },
+    {
       "id": "supported_path",
       "command": "bash scripts/check_supported_path.sh",
       "purpose": "Run the supported rules and minimal-loop gates."

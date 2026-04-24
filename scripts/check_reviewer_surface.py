@@ -120,6 +120,18 @@ def _check_paths(manifest: dict[str, Any], errors: list[str]) -> None:
         if not _repo_path(path).exists():
             errors.append(f"supported code surface missing: {path}")
 
+    for item in manifest.get("trust_commands", []):
+        if not isinstance(item, dict):
+            errors.append(f"trust_commands item is not an object: {item!r}")
+            continue
+        command = item.get("command")
+        if not isinstance(command, str) or not command:
+            errors.append(f"trust_commands item missing command: {item!r}")
+            continue
+        for script in re.findall(r"(scripts/[A-Za-z0-9_./-]+)", command):
+            if not _repo_path(script).exists():
+                errors.append(f"trust command references missing script: {script}")
+
 
 def _check_guide(errors: list[str]) -> None:
     guide = ROOT / "docs" / "REVIEWER_GUIDE.md"
@@ -150,6 +162,8 @@ def _check_discoverability(errors: list[str]) -> None:
         errors.append("docs/INDEX.md must link REVIEWER_GUIDE.md")
     if scripts.get("reviewer:check") != "python3 scripts/check_reviewer_surface.py":
         errors.append("package.json must expose reviewer:check")
+    if scripts.get("reviewer:packet") != "python3 scripts/build_reviewer_packet.py --clean":
+        errors.append("package.json must expose reviewer:packet")
 
 
 def main() -> int:

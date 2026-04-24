@@ -51,6 +51,7 @@ Run these before deeper review:
 
 ```bash
 python3 scripts/check_reviewer_surface.py
+python3 scripts/build_reviewer_packet.py --clean
 bash scripts/check_supported_path.sh
 npm run build
 ```
@@ -103,3 +104,6 @@ Highest-signal improvement areas:
 The machine-readable map for this guide is
 [docs/data/reviewer_surface_manifest.json](/docs/data/reviewer_surface_manifest.json).
 It is validated by [scripts/check_reviewer_surface.py](/scripts/check_reviewer_surface.py).
+To copy the supported docs, result snapshots, evidence manifest, and result
+visuals into a compact local packet, run
+[scripts/build_reviewer_packet.py](/scripts/build_reviewer_packet.py).
