@@ -421,6 +421,7 @@ def train_model(
                "--data-path", str(npz), "--save-path", str(out),
                "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
                "--model-version", MODEL_VERSION,
+               "--feature-version", str(FEATURE_VERSION),
                "--epochs", str(epochs),
                "--batch-size", str(b), "--learning-rate", str(lr),
                "--init-weights", str(init), "--no-auto-tune-batch-size",

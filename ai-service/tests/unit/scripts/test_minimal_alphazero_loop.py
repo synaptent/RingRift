@@ -312,6 +312,35 @@ def test_export_npz_threads_feature_version_flag(monkeypatch, tmp_path):
     assert captured["cmd"][captured["cmd"].index("--feature-version") + 1] == "3"
 
 
+def test_train_model_threads_feature_version_flag(monkeypatch, tmp_path):
+    """FEATURE_VERSION global must reach the app.training.train subprocess call."""
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, capture_output, text, timeout):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="val_loss=0.1\n", stderr="")
+
+    monkeypatch.setattr(loop.subprocess, "run", fake_run)
+    monkeypatch.setattr(loop, "BOARD_TYPE", "hex8")
+    monkeypatch.setattr(loop, "NUM_PLAYERS", 2)
+    monkeypatch.setattr(loop, "MODEL_VERSION", "v5-heavy")
+    monkeypatch.setattr(loop, "FEATURE_VERSION", 3)
+
+    result = loop.train_model(
+        tmp_path / "train.npz",
+        tmp_path / "candidate.pth",
+        tmp_path / "init.pth",
+        epochs=2,
+        bs=64,
+        lr=5e-5,
+        train_lr_scheduler="none",
+    )
+
+    assert "error" not in result
+    assert "--feature-version" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--feature-version") + 1] == "3"
+
+
 def test_loop_records_split_budgets_fixed_lr_and_heartbeat_context(monkeypatch, tmp_path):
     result = _run_loop_once(
         monkeypatch,
