@@ -13,6 +13,7 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | [../README.md](../README.md)                 | Fastest external-facing overview of the game and training result |
 | [../QUICKSTART.md](../QUICKSTART.md)         | Local setup for the supported path                               |
+| [REVIEWER_GUIDE.md](REVIEWER_GUIDE.md)       | Cold-review path through the supported surface                   |
 | [RESULTS.md](RESULTS.md)                     | Checked-in evidence, caveats, and charts                         |
 | [REPRODUCIBILITY.md](REPRODUCIBILITY.md)     | Exact training commands, hardware, and artifact locations        |
 | [LESSONS_LEARNED.md](LESSONS_LEARNED.md)     | Engineering retrospective on what failed, what worked, and why   |
@@ -54,11 +55,12 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 
 ## Maintainer Notes
 
-| Document                                                     | Why it matters                                        |
-| ------------------------------------------------------------ | ----------------------------------------------------- |
-| [CODEBASE_QUALITY_PROGRAM.md](CODEBASE_QUALITY_PROGRAM.md)   | Durable cleanup log and next seams                    |
-| [LOAD_TEST_RESULTS.md](LOAD_TEST_RESULTS.md)                 | Current checked-in load-test snapshot                 |
-| [SECRET_ROTATION_CHECKLIST.md](SECRET_ROTATION_CHECKLIST.md) | Security remediation checklist retained for operators |
+| Document                                                                   | Why it matters                                        |
+| -------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [CODEBASE_QUALITY_PROGRAM.md](CODEBASE_QUALITY_PROGRAM.md)                 | Durable cleanup log and next seams                    |
+| [data/reviewer_surface_manifest.json](data/reviewer_surface_manifest.json) | Machine-readable reviewer surface map                 |
+| [LOAD_TEST_RESULTS.md](LOAD_TEST_RESULTS.md)                               | Current checked-in load-test snapshot                 |
+| [SECRET_ROTATION_CHECKLIST.md](SECRET_ROTATION_CHECKLIST.md)               | Security remediation checklist retained for operators |
 
 ## Archived Material
 

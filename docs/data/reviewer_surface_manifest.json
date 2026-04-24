@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-04-24",
+  "purpose": "Machine-readable map of the supported RingRift review surface. This keeps outside-reviewer entrypoints focused on the product, canonical rules, parity, and minimal training proof path.",
+  "reviewer_entrypoint": "docs/REVIEWER_GUIDE.md",
+  "must_read": [
+    "README.md",
+    "QUICKSTART.md",
+    "docs/REVIEWER_GUIDE.md",
+    "docs/PROJECT_BRIEF.md",
+    "docs/RESULTS.md",
+    "docs/REPRODUCIBILITY.md",
+    "docs/ARCHITECTURE_OVERVIEW.md",
+    "docs/LESSONS_LEARNED.md"
+  ],
+  "supported_code_surfaces": [
+    {
+      "path": "src/shared/engine",
+      "role": "Canonical TypeScript rules engine"
+    },
+    {
+      "path": "src/client",
+      "role": "Playable React client"
+    },
+    {
+      "path": "src/server",
+      "role": "Backend host and WebSocket surface"
+    },
+    {
+      "path": "ai-service/app/rules",
+      "role": "Python phase and move contracts"
+    },
+    {
+      "path": "ai-service/app/game_engine",
+      "role": "Python replay mirror of the rules"
+    },
+    {
+      "path": "ai-service/app/training",
+      "role": "Supported trainer-side code"
+    },
+    {
+      "path": "ai-service/scripts/minimal_alphazero_loop.py",
+      "role": "Supported AlphaZero-style proof harness"
+    },
+    {
+      "path": "scripts/run_proven_experiment.sh",
+      "role": "Curated local experiment wrapper"
+    }
+  ],
+  "secondary_or_historical_surfaces": [
+    "archive",
+    "docs/archive",
+    "docs/planning",
+    "ai-service/app/coordination",
+    "ai-service/scripts outside the supported entrypoints"
+  ],
+  "trust_commands": [
+    {
+      "id": "reviewer_surface",
+      "command": "python3 scripts/check_reviewer_surface.py",
+      "purpose": "Validate the reviewer guide, manifest, required docs, and focused local links."
+    },
+    {
+      "id": "supported_path",
+      "command": "bash scripts/check_supported_path.sh",
+      "purpose": "Run the supported rules and minimal-loop gates."
+    },
+    {
+      "id": "result_refresh_dry_run",
+      "command": "npm run results:refresh -- --dry-run",
+      "purpose": "Verify checked-in result snapshots can be regenerated from available local metrics."
+    }
+  ],
+  "claim_boundaries": [
+    {
+      "claim_type": "public_result",
+      "source": "docs/data/results_snapshot.json",
+      "provenance": "docs/data/results_evidence_manifest.json"
+    },
+    {
+      "claim_type": "live_cluster_status",
+      "source": "operator logs and metrics.jsonl on GH200 nodes",
+      "publication_rule": "Do not promote into public docs until artifacts are mirrored or recorded in the evidence manifest."
+    }
+  ]
+}

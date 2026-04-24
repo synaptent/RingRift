@@ -59,6 +59,17 @@ April 16, 2026 follow-up:
 - Added `ai-service/tests/unit/scripts/test_validate_training_fleet_docs.py` so
   the validator itself is part of the Python unit gate.
 
+April 24, 2026 follow-up:
+
+- Added [docs/REVIEWER_GUIDE.md](REVIEWER_GUIDE.md) and
+  [docs/data/reviewer_surface_manifest.json](data/reviewer_surface_manifest.json)
+  to give cold outside reviewers a focused path through the supported product,
+  rules, parity, and minimal-loop surfaces.
+- Added `scripts/check_reviewer_surface.py` and wired it into
+  `scripts/check_supported_path.sh` plus `npm run reviewer:check` so the
+  reviewer surface remains discoverable and does not drift back into historical
+  or archive-first navigation.
+
 ## Recent Quality Baseline
 
 - Python gate: `cd ai-service && PYTHONPATH=. python3 -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120` passed with `33508 passed`, `8 skipped`, and `3 warnings`.

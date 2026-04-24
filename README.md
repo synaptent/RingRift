@@ -22,6 +22,8 @@ The honest caveat is that the proof is still concentrated in 2-player runs. Mult
 
 For the full evidence and caveats, see [docs/RESULTS.md](/docs/RESULTS.md). For the exact commands, hyperparameters, and archived artifacts, see [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md). For the engineering retrospective on what broke and what actually worked, see [docs/LESSONS_LEARNED.md](/docs/LESSONS_LEARNED.md).
 
+If you are reviewing the repository cold, start with [docs/REVIEWER_GUIDE.md](/docs/REVIEWER_GUIDE.md). It separates the supported product/research path from historical and operational surfaces.
+
 ## What The Game Looks Like
 
 ![Live hex8 sandbox board](docs/assets/readme/hex8-sandbox-live.png)
@@ -110,11 +112,12 @@ If you want the shortest path to understanding the project, use this order:
 
 1. [README.md](/README.md)
 2. [QUICKSTART.md](/QUICKSTART.md)
-3. [docs/RESULTS.md](/docs/RESULTS.md)
-4. [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md)
-5. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
-6. [docs/GAME_RULES.md](/docs/GAME_RULES.md)
-7. [docs/rules/HUMAN_RULES.md](/docs/rules/HUMAN_RULES.md)
+3. [docs/REVIEWER_GUIDE.md](/docs/REVIEWER_GUIDE.md)
+4. [docs/RESULTS.md](/docs/RESULTS.md)
+5. [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md)
+6. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
+7. [docs/GAME_RULES.md](/docs/GAME_RULES.md)
+8. [docs/rules/HUMAN_RULES.md](/docs/rules/HUMAN_RULES.md)
 
 Core code directories:
 
@@ -129,6 +132,7 @@ Core code directories:
 Useful validation commands for the supported path:
 
 ```bash
+python3 scripts/check_reviewer_surface.py
 bash scripts/check_supported_path.sh
 npm run results:refresh
 ```
