@@ -349,6 +349,8 @@ jobs:
     runs-on: ubuntu-latest
     # CI Safety: Security scans should complete quickly
     timeout-minutes: 15
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
     steps:
       - name: Checkout code
@@ -364,10 +366,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Run Snyk security scan
-        if: ${{ secrets.SNYK_TOKEN != '' }}
+        if: ${{ env.SNYK_TOKEN != '' }}
         uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
 
