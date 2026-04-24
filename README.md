@@ -150,7 +150,6 @@ RingRift is historically layered. If you are evaluating whether it is interestin
 
 Treat these as secondary or historical until you need them:
 
-- `archive/`
 - `docs/archive/`
 - `ai-service/archive/`
 - legacy coordinator and daemon paths under `ai-service/app/coordination`

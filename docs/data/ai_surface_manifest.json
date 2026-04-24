@@ -72,10 +72,6 @@
   ],
   "historical_surfaces": [
     {
-      "path": "archive",
-      "role": "Top-level historical code and plans."
-    },
-    {
       "path": "docs/archive",
       "role": "Archived documentation and completed plans."
     },
