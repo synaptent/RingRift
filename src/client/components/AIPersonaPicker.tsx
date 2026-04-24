@@ -13,7 +13,7 @@
  * plan/AI_QUALITY_STRENGTH_DIVERSITY_PLAN_2026-04-16.md item C3.
  */
 
-import { useId } from 'react';
+import { type ReactElement, useId } from 'react';
 
 import { ALL_PERSONAS, PERSONA_COPY, type PersonaId } from '../config/aiQuickPlay';
 
@@ -57,7 +57,7 @@ export function AIPersonaPicker({
   disabled = false,
   forceVisible = false,
   featureEnabled,
-}: AIPersonaPickerProps): JSX.Element | null {
+}: AIPersonaPickerProps): ReactElement | null {
   // All hooks must be called unconditionally before any early return
   // (Rules of Hooks). Caller-driven flag flips cause the same mount
   // to switch between returning JSX and returning null; calling
@@ -128,7 +128,7 @@ function PersonaOption({
   detail,
   selected,
   onSelect,
-}: PersonaOptionProps): JSX.Element {
+}: PersonaOptionProps): ReactElement {
   return (
     <button
       type="button"

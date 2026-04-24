@@ -11,8 +11,8 @@ uvicorn[standard]==0.38.0
 pydantic==2.10.5
 
 # Utilities
-python-dotenv==1.2.1
-aiohttp==3.13.2
+python-dotenv==1.2.2
+aiohttp==3.13.4
 aiohttp-socks==0.10.1  # SOCKS proxy for userspace Tailscale in containers (Vast.ai, RunPod)
 redis==7.1.0
 httpx==0.28.1
@@ -21,15 +21,15 @@ sdnotify==0.3.2  # Systemd watchdog notifications for P2P orchestrator
 
 # Dashboard server
 flask==3.1.3
-flask-cors==5.0.0
+flask-cors==6.0.0
 
 # Development tools (Wave 3-A tooling stack validated with pytest 9.x)
-pytest==9.0.1
+pytest==9.0.3
 pytest-asyncio==1.3.0
 pytest-timeout==2.4.0  # Global test timeout for CI safety
 pytest-cov==7.0.0  # Coverage reporting with pytest
 hypothesis==6.116.0
-black==25.12.0
+black==26.3.1
 flake8==7.3.0
 mypy==1.13.0  # Static type checking for Python/TS parity
 vulture==2.14  # Dead code detection
