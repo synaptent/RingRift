@@ -135,6 +135,7 @@
     "orchestrator:gating": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/run-orchestrator-gating.ts",
     "dev:doctor": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/dev_doctor.ts",
     "results:refresh": "python3 scripts/refresh_results_artifacts.py",
+    "results:check": "python3 scripts/check_results_evidence.py",
     "results:visuals": "python3 scripts/generate_results_visuals.py"
   },
   "keywords": [

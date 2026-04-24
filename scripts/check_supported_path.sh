@@ -33,6 +33,9 @@ python3 "$ROOT_DIR/scripts/check_reviewer_surface.py"
 echo "==> Results artifact refresh"
 python3 "$ROOT_DIR/scripts/refresh_results_artifacts.py" --dry-run >/dev/null
 
+echo "==> Results evidence"
+python3 "$ROOT_DIR/scripts/check_results_evidence.py"
+
 echo "==> TypeScript supported-path gates"
 cd "$ROOT_DIR"
 npm run test:ts-rules-engine

@@ -37,6 +37,19 @@
       "public_docs": ["README.md", "docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
     },
     {
+      "claim_id": "square8_3p_headline_1534_9",
+      "statement": "square8_3p improved from 1500.0 to 1534.9 Elo with 1 promotion in the checked-in snapshot.",
+      "primary_source": "docs/data/results_snapshot.json",
+      "evidence_source": "Historical trainer metrics summarized in docs/RESULTS.md; multiplayer Elo caveat applies for pre-dfb3d20c1 estimates.",
+      "fields": {
+        "config": "square8_3p",
+        "start_elo": 1500.0,
+        "best_elo": 1534.9,
+        "promotions": 1
+      },
+      "public_docs": ["docs/RESULTS.md", "docs/RESEARCH_SNAPSHOT.md", "docs/PROJECT_BRIEF.md"]
+    },
+    {
       "claim_id": "square8_2p_iter34_promote",
       "statement": "square8_2p iteration 34 promoted at 62.0% over 50 games to an estimated 1697.3 Elo.",
       "primary_source": "docs/data/results_snapshot.json",
