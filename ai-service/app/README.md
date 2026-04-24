@@ -52,4 +52,4 @@ Active code should import from `app.*` only.
 
 - [`../README.md`](/ai-service/README.md) for the AI service overview.
 - [`../scripts/README.md`](/ai-service/scripts/README.md) for the supported operational scripts.
-- [`../TRAINING_DATA_REGISTRY.md`](/ai-service/TRAINING_DATA_REGISTRY.md) for canonical vs legacy data provenance.
+- [`../../docs/REPRODUCIBILITY.md`](/docs/REPRODUCIBILITY.md) and [`../../docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json) for checked-in data and result provenance.

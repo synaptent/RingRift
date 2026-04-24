@@ -52,15 +52,15 @@ These are the docs most likely to be shared externally. Only the first three sho
 
 ## Automation & Agent Instructions
 
-| Document                                                 | Purpose                                    |
-| -------------------------------------------------------- | ------------------------------------------ |
-| [AGENTS.md](AGENTS.md)                                   | Root agent instructions (repo-wide)        |
-| [src/AGENTS.md](src/AGENTS.md)                           | Agent instructions for `src/**`            |
-| [ai-service/AGENTS.md](ai-service/AGENTS.md)             | Agent instructions for `ai-service/**`     |
-| [CLAUDE.md](CLAUDE.md)                                   | Internal LLM notes (legacy Claude prompts) |
-| [CLAUDE.local.md](CLAUDE.local.md)                       | Local-only LLM notes (do not share)        |
-| [ai-service/CLAUDE.md](ai-service/CLAUDE.md)             | AI-service LLM notes (legacy)              |
-| [ai-service/CLAUDE.local.md](ai-service/CLAUDE.local.md) | AI-service local LLM notes                 |
+| Document                                              | Purpose                                    |
+| ----------------------------------------------------- | ------------------------------------------ |
+| [AGENTS.md](AGENTS.md)                                | Root agent instructions (repo-wide)        |
+| [src/AGENTS.md](src/AGENTS.md)                        | Agent instructions for `src/**`            |
+| [ai-service/AGENTS.md](ai-service/AGENTS.md)          | Agent instructions for `ai-service/**`     |
+| [CLAUDE.md](CLAUDE.md)                                | Internal LLM notes (legacy Claude prompts) |
+| `CLAUDE.local.md` (local-only, gitignored)            | Local-only LLM notes (do not share)        |
+| [ai-service/CLAUDE.md](ai-service/CLAUDE.md)          | AI-service LLM notes (legacy)              |
+| `ai-service/CLAUDE.local.md` (local-only, gitignored) | AI-service local LLM notes                 |
 
 ## Core Documentation (Root)
 
@@ -469,7 +469,7 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | -------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | `ai-service/docs/archive/status_reports/TRAINING_PIPELINE_STATUS_2025_12_12.md` (local-only, gitignored) | Training pipeline status update |
 | [ai-service/AI_ASSESSMENT_REPORT.md](ai-service/AI_ASSESSMENT_REPORT.md)                                 | AI service technical assessment |
-| [ai-service/docs/archive/status_reports/README.md](ai-service/docs/archive/status_reports/README.md)     | Historical operational reports  |
+| `ai-service/docs/archive/status_reports/README.md` (local-only, gitignored)                              | Historical operational reports  |
 | [ai-service/AI_IMPROVEMENT_PLAN.md](ai-service/AI_IMPROVEMENT_PLAN.md)                                   | AI service improvement roadmap  |
 
 ---

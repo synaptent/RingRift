@@ -76,7 +76,7 @@ If you are new to the codebase, start with the scripts below and treat most `ana
 - [`check_sync_health.py`](/ai-service/scripts/check_sync_health.py)
   - Sync-path sanity check for data/model distribution.
 
-- [`cluster_health_cli.py`](/ai-service/scripts/cluster_health_cli.py)
+- [`fleet_health_check.py`](/ai-service/scripts/fleet_health_check.py)
   - Operator-facing health summary for cluster state.
 
 - [`cleanup_selfplay_data.sh`](/ai-service/scripts/cleanup_selfplay_data.sh)
