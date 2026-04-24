@@ -69,6 +69,11 @@ April 24, 2026 follow-up:
   `scripts/check_supported_path.sh` plus `npm run reviewer:check` so the
   reviewer surface remains discoverable and does not drift back into historical
   or archive-first navigation.
+- Added `jest.rules-coverage.config.js` and `npm run
+test:coverage:rules-critical`, then wired the command into
+  `scripts/check_supported_path.sh`. This establishes non-zero coverage
+  thresholds for the canonical TypeScript rules engine while deliberately
+  excluding legacy compatibility files from the reviewer-critical ratchet.
 
 ## Recent Quality Baseline
 
@@ -172,9 +177,11 @@ ClusterCoordinator`-style imports; legacy callers must import
 3. Extend the operational preflight checker to validate private inventory shape
    when `ai-service/config/distributed_hosts.yaml` is present locally, without
    checking in host secrets.
-4. Expand link integrity coverage from the supported-doc path into `tests/` and
+4. Extend non-zero coverage ratchets into Python training contracts and parity
+   checkpoint-contract modules.
+5. Expand link integrity coverage from the supported-doc path into `tests/` and
    deeper rules/UX docs after resolving their intentionally archived references.
-5. Verify a full production sandbox game to completion and confirm the visible
+6. Verify a full production sandbox game to completion and confirm the visible
    VictoryModal stats path.
 
 ## Reassessment Triggers

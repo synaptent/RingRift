@@ -40,6 +40,7 @@ echo "==> TypeScript supported-path gates"
 cd "$ROOT_DIR"
 npm run test:ts-rules-engine
 npm run test:orchestrator-parity
+npm run test:coverage:rules-critical
 
 echo "==> Python minimal-loop gates"
 cd "$AI_DIR"
