@@ -24,6 +24,15 @@ from scripts.run_cmaes_optimization import (  # type: ignore
     evaluate_fitness_over_boards,
 )
 
+RUN_MULTI_BOARD_EVAL_TESTS = os.environ.get("RUN_MULTI_BOARD_EVAL_TESTS") == "1"
+skip_expensive_multi_board_in_ci = pytest.mark.skipif(
+    os.environ.get("CI") and not RUN_MULTI_BOARD_EVAL_TESTS,
+    reason=(
+        "Full multi-board CMA-ES game evaluation is intentionally excluded from "
+        "core CI; set RUN_MULTI_BOARD_EVAL_TESTS=1 for the dedicated slow gate."
+    ),
+)
+
 
 class MultiBoardEvaluationTest(unittest.TestCase):
     def test_single_board_aggregate_matches_per_board(self) -> None:
@@ -48,7 +57,9 @@ class MultiBoardEvaluationTest(unittest.TestCase):
         self.assertGreaterEqual(agg, 0.0)
         self.assertLessEqual(agg, 1.0)
 
+    @pytest.mark.slow
     @pytest.mark.timeout(300)
+    @skip_expensive_multi_board_in_ci
     def test_zero_profile_is_worse_than_baseline_across_boards(self) -> None:
         """
         Sanity-check that the multi-board fitness helper meaningfully
