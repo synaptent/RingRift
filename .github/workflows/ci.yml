@@ -409,7 +409,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [python-core, python-dependency-audit]
     # CI Safety: AI-service Docker build + minimal runtime smoke test
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -426,7 +426,10 @@ jobs:
           push: false
           tags: ringrift-ai-service:test
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # The ai-service image installs the full AI stack; exporting the full
+          # build cache can consume several minutes after a successful build.
+          # Keep CI signal focused on buildability + Torch import smoke.
+          cache-to: type=gha,mode=min
 
       - name: Smoke test Torch/TorchVision inside ai-service image
         run: |
