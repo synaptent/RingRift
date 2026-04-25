@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import warnings
 
-from app.ai._deprecated_ig_gmo import IGGMO as IGGMO  # re-export
+from app.ai._deprecated_ig_gmo import (
+    GNNStateEncoder as GNNStateEncoder,
+    IGGMO as IGGMO,
+    IGGMOConfig as IGGMOConfig,
+    SoftLegalityPredictor as SoftLegalityPredictor,
+)
 
 warnings.warn(
     (
@@ -23,4 +28,9 @@ warnings.warn(
     stacklevel=2,
 )
 
-__all__ = ["IGGMO"]
+__all__ = [
+    "GNNStateEncoder",
+    "IGGMO",
+    "IGGMOConfig",
+    "SoftLegalityPredictor",
+]

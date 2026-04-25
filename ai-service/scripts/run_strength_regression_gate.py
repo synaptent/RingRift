@@ -589,7 +589,17 @@ def main(argv: list[str] | None = None) -> int:
             threshold=matchup.threshold,
         )
 
+        skipped = not pools_report
+        skip_reason = "no_eval_pools_available" if skipped else None
+        # The repository does not ship the large evaluation-pool JSONLs used by
+        # the real strength gate. In CI mode, make that absence explicit and
+        # non-blocking instead of failing a zero-game "regression" result. The
+        # nightly preset remains strict so scheduled runs with expected data
+        # still fail when pools are missing.
         passes = bool(gate["passes"])
+        if skipped and args.mode == "ci":
+            passes = True
+
         if matchup.blocking:
             overall_pass = overall_pass and passes
 
@@ -604,10 +614,12 @@ def main(argv: list[str] | None = None) -> int:
                 "max_moves": matchup.max_moves,
                 "think_time_ms": matchup.think_time_ms,
                 "use_neural_net": matchup.use_neural_net,
-                },
+            },
             "gate": gate,
             "by_pool": pools_report,
             "passes": passes,
+            "skipped": skipped,
+            "skip_reason": skip_reason,
         }
 
     report: dict[str, Any] = {

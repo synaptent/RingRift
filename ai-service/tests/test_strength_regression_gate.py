@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from scripts import run_strength_regression_gate as gate  # type: ignore[import]
 
 
@@ -40,3 +42,88 @@ def test_compute_gate_all_draws_fails_significance_gate() -> None:
     assert summary["win_rate"] == 0.5
     assert summary["passes"] is False
 
+
+def test_ci_mode_skips_blocking_matchup_when_all_eval_pools_missing(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(
+        gate,
+        "_default_matchups",
+        lambda _mode: [
+            gate.MatchupSpec(
+                name="heuristic_vs_random",
+                candidate="heuristic",
+                opponent="random",
+                pools=["missing_pool"],
+                max_scenarios=1,
+                games_per_scenario=1,
+                max_moves=20,
+                think_time_ms=1,
+                use_neural_net=False,
+                heuristic_move_sample_limit=None,
+                heuristic_eval_mode=None,
+                threshold=gate.GateThreshold(
+                    min_win_rate=0.55,
+                    require_significance=False,
+                    confidence=0.95,
+                ),
+                blocking=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(gate, "_pool_exists", lambda _pool_name: False)
+
+    output = tmp_path / "report.json"
+    code = gate.main(["--mode", "ci", "--output-json", str(output)])
+    report = json.loads(output.read_text())
+
+    assert code == 0
+    matchup = report["matchups"]["heuristic_vs_random"]
+    assert matchup["passes"] is True
+    assert matchup["skipped"] is True
+    assert matchup["skip_reason"] == "no_eval_pools_available"
+    assert report["overall_pass"] is True
+
+
+def test_nightly_mode_fails_blocking_matchup_when_all_eval_pools_missing(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(
+        gate,
+        "_default_matchups",
+        lambda _mode: [
+            gate.MatchupSpec(
+                name="heuristic_vs_random",
+                candidate="heuristic",
+                opponent="random",
+                pools=["missing_pool"],
+                max_scenarios=1,
+                games_per_scenario=1,
+                max_moves=20,
+                think_time_ms=1,
+                use_neural_net=False,
+                heuristic_move_sample_limit=None,
+                heuristic_eval_mode=None,
+                threshold=gate.GateThreshold(
+                    min_win_rate=0.55,
+                    require_significance=False,
+                    confidence=0.95,
+                ),
+                blocking=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(gate, "_pool_exists", lambda _pool_name: False)
+
+    output = tmp_path / "report.json"
+    code = gate.main(["--mode", "nightly", "--output-json", str(output)])
+    report = json.loads(output.read_text())
+
+    assert code == 1
+    matchup = report["matchups"]["heuristic_vs_random"]
+    assert matchup["passes"] is False
+    assert matchup["skipped"] is True
+    assert matchup["skip_reason"] == "no_eval_pools_available"
+    assert report["overall_pass"] is False

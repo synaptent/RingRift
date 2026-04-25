@@ -18,6 +18,8 @@ Usage:
         --epochs 30
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import time
@@ -25,7 +27,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
@@ -43,7 +44,7 @@ except ImportError:
     HAS_PYG = False
     logger.error("PyTorch Geometric required. Install with: pip install torch-geometric")
 
-from app.ai.neural_net.gnn_policy import GNNPolicyNet, create_gnn_policy
+from app.ai.neural_net.gnn_policy import GNNPolicyNet
 
 
 class GraphPolicyDataset(Dataset):
