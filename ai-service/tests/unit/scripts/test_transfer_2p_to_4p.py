@@ -5,7 +5,9 @@ from __future__ import annotations
 import torch
 
 from app.ai.neural_net.hex_architectures import HexNeuralNet_v4
+from app.training import player_count_transfer
 from app.utils.torch_utils import safe_load_checkpoint
+import scripts.transfer_2p_to_4p as transfer_wrapper
 from scripts.transfer_2p_to_4p import (
     infer_source_players,
     resize_rank_distribution_bias,
@@ -27,6 +29,11 @@ def _small_hex_v4(num_players: int) -> HexNeuralNet_v4:
         policy_size=None,
         num_players=num_players,
     )
+
+
+def test_script_wrapper_reexports_app_transfer_api():
+    assert transfer_wrapper.transfer_model_players is player_count_transfer.transfer_model_players
+    assert transfer_wrapper.transfer_2p_to_np is player_count_transfer.transfer_2p_to_np
 
 
 def test_infer_source_players_uses_top_level_metadata_first():

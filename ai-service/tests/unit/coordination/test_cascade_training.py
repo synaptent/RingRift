@@ -481,6 +481,38 @@ class TestTriggerTransfer:
             await orchestrator._trigger_transfer("hex8", 2, 3)
             mock_emit.assert_not_called()
 
+    def test_run_transfer_sync_honors_source_players(
+        self,
+        orchestrator: CascadeTrainingOrchestrator,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cascade 3p→4p must not force the historical 2p source path."""
+        calls: dict[str, object] = {}
+
+        def fake_transfer_model_players(**kwargs: object) -> None:
+            calls.update(kwargs)
+
+        monkeypatch.setattr(
+            "app.training.player_count_transfer.transfer_model_players",
+            fake_transfer_model_players,
+        )
+
+        orchestrator._run_transfer_sync(
+            source_path="models/hex8_3p.pth",
+            output_path="models/hex8_4p.pth",
+            board_type="hex8",
+            source_players=3,
+            target_players=4,
+        )
+
+        assert calls == {
+            "source_path": "models/hex8_3p.pth",
+            "output_path": "models/hex8_4p.pth",
+            "board_type": "hex8",
+            "source_players": 3,
+            "target_players": 4,
+        }
+
 
 # =============================================================================
 # Module-level Function Tests

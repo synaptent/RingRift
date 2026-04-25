@@ -17,10 +17,6 @@ _IMPORT_RE = re.compile(r"^\s*(from|import)\s+scripts(\.|\\b)")
 # debt cannot remain normalized in the baseline.
 _ALLOWED_EXISTING_VIOLATIONS = {
     (
-        "app/coordination/cascade_training.py",
-        "from scripts.transfer_2p_to_4p import transfer_2p_to_np",
-    ),
-    (
         "app/coordination/cluster_resilience_orchestrator.py",
         "from scripts.p2p.health_coordinator import (",
     ),

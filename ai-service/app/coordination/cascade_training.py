@@ -252,6 +252,7 @@ class CascadeTrainingOrchestrator(HandlerBase):
                 source_model,
                 str(output_path),
                 board_type,
+                source_players,
                 target_players,
             )
 
@@ -298,15 +299,17 @@ class CascadeTrainingOrchestrator(HandlerBase):
         source_path: str,
         output_path: str,
         board_type: str,
+        source_players: int,
         target_players: int,
     ) -> None:
         """Run the transfer synchronously (for executor)."""
-        from scripts.transfer_2p_to_4p import transfer_2p_to_np
+        from app.training.player_count_transfer import transfer_model_players
 
-        transfer_2p_to_np(
+        transfer_model_players(
             source_path=source_path,
             output_path=output_path,
             board_type=board_type,
+            source_players=source_players,
             target_players=target_players,
         )
 
