@@ -30,12 +30,10 @@ from .config import (
     # Constants are also available directly
     DEFAULT_PORT,
     GPU_POWER_RANKINGS,
-    HEARTBEAT_INTERVAL,
-    LEADER_LEASE_DURATION,
-    PEER_TIMEOUT,
     P2PConfig,
     get_p2p_config,
 )
+from .constants import HEARTBEAT_INTERVAL, LEADER_LEASE_DURATION, PEER_TIMEOUT
 from .models import (
     JobStatus,
     JobType,

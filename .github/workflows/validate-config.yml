@@ -153,16 +153,16 @@ jobs:
           sed -i "s|/etc/prometheus/alerts.yml|/config/alerts.yml|g" /tmp/prometheus-check/prometheus.yml
 
           echo "Validating Prometheus config..."
-          docker run --rm -v /tmp/prometheus-check:/config:ro prom/prometheus:latest \
-            promtool check config /config/prometheus.yml
+          docker run --rm --entrypoint promtool -v /tmp/prometheus-check:/config:ro prom/prometheus:latest \
+            check config /config/prometheus.yml
 
           echo "✅ Prometheus config validation passed"
 
       - name: Validate Prometheus alert rules with promtool
         run: |
           echo "Validating Prometheus alert rules..."
-          docker run --rm -v $(pwd)/monitoring/prometheus:/config:ro prom/prometheus:latest \
-            promtool check rules /config/alerts.yml
+          docker run --rm --entrypoint promtool -v $(pwd)/monitoring/prometheus:/config:ro prom/prometheus:latest \
+            check rules /config/alerts.yml
 
           echo "✅ Prometheus alert rules validation passed"
 
@@ -172,8 +172,8 @@ jobs:
           docker pull prom/alertmanager:latest
 
           echo "Validating Alertmanager config..."
-          docker run --rm -v $(pwd)/monitoring/alertmanager:/config:ro prom/alertmanager:latest \
-            amtool check-config /config/alertmanager.yml
+          docker run --rm --entrypoint amtool -v $(pwd)/monitoring/alertmanager:/config:ro prom/alertmanager:latest \
+            check-config /config/alertmanager.yml
 
           echo "✅ Alertmanager config validation passed"
 

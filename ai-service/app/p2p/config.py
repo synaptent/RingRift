@@ -16,6 +16,15 @@ from app.config.ports import GOSSIP_PORT, P2P_DEFAULT_PORT
 # Jan 22, 2026: Canonical timeout values live in app.p2p.constants.
 # Previously hardcoded values (30s/90s) conflicted with constants.py (15s/120s),
 # causing 30-second disagreement between modules and split-brain conditions.
+from app.p2p.constants import (  # noqa: F401 - compatibility re-exports
+    ELECTION_TIMEOUT,
+    HEARTBEAT_INTERVAL,
+    LEADER_LEASE_DURATION,
+    PEER_RETIRE_AFTER_SECONDS,
+    PEER_TIMEOUT,
+    PEER_TIMEOUT_FAST,
+    PEER_TIMEOUT_NAT_BLOCKED,
+)
 
 # Network Configuration
 # NOTE: Using canonical port constants from app/config/ports.py
