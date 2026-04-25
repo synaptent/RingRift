@@ -61,17 +61,18 @@ Repeated failed logins trigger a temporary lockout and a `429 AUTH_LOGIN_LOCKED_
 
 ### User (`/api/users`)
 
-| Method | Endpoint                | Description                        | Auth Required |
-| ------ | ----------------------- | ---------------------------------- | ------------- |
-| GET    | `/users/profile`        | Get current user's profile         | ✅            |
-| PUT    | `/users/profile`        | Update current user's profile      | ✅            |
-| GET    | `/users/stats`          | Get current user's game statistics | ✅            |
-| GET    | `/users/games`          | Get current user's game history    | ✅            |
-| GET    | `/users/search`         | Search users by username           | ✅            |
-| GET    | `/users/leaderboard`    | Get leaderboard rankings           | ✅            |
-| GET    | `/users/:userId/rating` | Get rating and rank for a user     | ✅            |
-| DELETE | `/users/me`             | Delete current user's account      | ✅            |
-| GET    | `/users/me/export`      | Export current user's data (GDPR)  | ✅            |
+| Method | Endpoint                        | Description                                        | Auth Required |
+| ------ | ------------------------------- | -------------------------------------------------- | ------------- |
+| GET    | `/users/profile`                | Get current user's profile                         | ✅            |
+| PUT    | `/users/profile`                | Update current user's profile                      | ✅            |
+| GET    | `/users/stats`                  | Get current user's game statistics                 | ✅            |
+| GET    | `/users/games`                  | Get current user's game history                    | ✅            |
+| GET    | `/users/search`                 | Search users by username                           | ✅            |
+| GET    | `/users/leaderboard`            | Get leaderboard rankings                           | ✅            |
+| GET    | `/users/:userId/rating`         | Get rating and rank for a user                     | ✅            |
+| GET    | `/users/:userId/public-profile` | Get public profile, public stats, and recent games | ✅            |
+| DELETE | `/users/me`                     | Delete current user's account                      | ✅            |
+| GET    | `/users/me/export`              | Export current user's data (GDPR)                  | ✅            |
 
 ### Games (`/api/games`)
 
@@ -88,6 +89,9 @@ Repeated failed logins trigger a temporary lockout and a `429 AUTH_LOGIN_LOCKED_
 | GET    | `/games/:gameId/history`             | Get structured move history       | ✅            |
 | GET    | `/games/:gameId/diagnostics/session` | Get in-memory session diagnostics | ✅            |
 | GET    | `/games/lobby/available`             | List available games to join      | ✅            |
+| GET    | `/games/invite/:inviteCode`          | Look up a game by invite code     | ✅            |
+| POST   | `/games/invite/:inviteCode/join`     | Join a game via invite code       | ✅            |
+| GET    | `/games/matchmaking/stats`           | Get matchmaking queue statistics  | ✅            |
 | GET    | `/games/user/:userId`                | Get games for a specific user     | ✅            |
 
 #### Create game request body
@@ -214,12 +218,11 @@ Notes:
 | ------ | ---------------- | ----------------------------------- | ------------- |
 | GET    | `/`              | API info and available endpoints    | ❌            |
 | GET    | `/health`        | Liveness probe (`/healthz` alias)   | ❌            |
-| GET    | `/ready`         | Readiness probe (`/readyz` alias)   | ❌            |
 | POST   | `/client-errors` | Report client-side errors (for SPA) | ❌            |
 
-> Health and readiness probes are root-level (not under `/api`) and are only
-> registered when `ENABLE_HEALTH_CHECKS=true` (default). When disabled, these
-> endpoints return 404.
+> Root-level health probes are not under `/api` and are only registered when
+> `ENABLE_HEALTH_CHECKS=true` (default). Use `/internal/health/ready` for the
+> documented API readiness probe.
 
 ### Internal / Test harness APIs
 

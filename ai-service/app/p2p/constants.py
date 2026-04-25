@@ -19,9 +19,7 @@ from pathlib import Path
 # Import unified timeout profile
 try:
     from app.config.timeout_profile import (
-        get_timeout_profile,
         get_jittered_timeout,
-        get_jittered_peer_timeout as _profile_jittered_peer_timeout,
     )
     _TIMEOUT_PROFILE_AVAILABLE = True
 except ImportError:
@@ -405,7 +403,6 @@ DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
 try:
     from app.config.thresholds import (
         DISK_CRITICAL_PERCENT as _DISK_CRITICAL,
-        DISK_PRODUCTION_HALT_PERCENT as _DISK_HALT,
         DISK_SYNC_TARGET_PERCENT as _DISK_SYNC,
     )
     DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", str(_DISK_CRITICAL)) or _DISK_CRITICAL)

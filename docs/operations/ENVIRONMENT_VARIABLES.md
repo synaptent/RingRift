@@ -1692,6 +1692,57 @@ Maximum upload file size in bytes.
 
 ## Email
 
+### `EMAIL_PROVIDER`
+
+| Property | Value                 |
+| -------- | --------------------- |
+| Type     | `ses`, `smtp`, `mock` |
+| Default  | `mock`                |
+| Required | No                    |
+
+Email delivery provider. Use `mock` for local/test environments, `smtp` for
+legacy SMTP delivery, or `ses` for AWS SES.
+
+### `EMAIL_FROM`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Email sender address. Preferred over the legacy `SMTP_FROM` variable.
+
+### `AWS_SES_REGION`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+AWS SES region. Required when `EMAIL_PROVIDER=ses`.
+
+### `AWS_ACCESS_KEY_ID`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+AWS access key ID used for SES email delivery.
+
+### `AWS_SECRET_ACCESS_KEY`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+AWS secret access key used for SES email delivery.
+
 ### `SMTP_HOST`
 
 | Property | Value    |
@@ -1750,7 +1801,7 @@ Enable TLS for SMTP.
 | Default  | None     |
 | Required | No       |
 
-Email sender address.
+Legacy email sender address. Prefer `EMAIL_FROM` for new deployments.
 
 ---
 

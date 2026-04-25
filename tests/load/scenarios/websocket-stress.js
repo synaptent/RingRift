@@ -44,7 +44,23 @@ const wsConnectionDuration = new Trend('websocket_connection_duration_ms');
 const wsHandshakeSuccess = new Rate('websocket_handshake_success_rate');
 const wsProtocolErrors = new Counter('websocket_protocol_errors');
 
- // Test configuration - stress test for connection limits
+// Threshold configuration derived from thresholds.json. These constants must be
+// initialized before `options` because k6 evaluates thresholds at module load.
+const THRESHOLD_ENV = __ENV.THRESHOLD_ENV || 'staging';
+const perfEnv =
+  thresholdsConfig.environments[THRESHOLD_ENV] || thresholdsConfig.environments.staging;
+const loadTestEnv =
+  thresholdsConfig.load_tests[THRESHOLD_ENV] || thresholdsConfig.load_tests.staging;
+const connectionStability = perfEnv.websocket_gameplay.connection_stability;
+const websocketLoad = loadTestEnv.websocket;
+const trueErrorRateTarget =
+  loadTestEnv &&
+  loadTestEnv.true_errors &&
+  typeof loadTestEnv.true_errors.rate === 'number'
+    ? loadTestEnv.true_errors.rate
+    : 0.005;
+
+// Test configuration - stress test for connection limits
 export const options = {
   scenarios: {
     websocket_stress: {
@@ -66,11 +82,7 @@ export const options = {
     // Connection success rate - should remain high even at scale. Use the
     // environment-specific target from thresholds.json.
     'websocket_connection_success_rate': [
-      `rate>${(
-        (thresholdsConfig.environments[__ENV.THRESHOLD_ENV || 'staging'] ||
-          thresholdsConfig.environments.staging
-        ).websocket_gameplay.connection_stability.connection_success_rate_percent / 100
-      ).toFixed(4)}`,
+      `rate>${(connectionStability.connection_success_rate_percent / 100).toFixed(4)}`,
     ],
     
     // Handshake success rate (Socket.IO protocol level). There is no explicit
@@ -80,18 +92,12 @@ export const options = {
     // Connection errors should be minimal; derive maximum counts from the
     // load_tests.websocket subsection for the current environment.
     'websocket_connection_errors': [
-      `count<=${(
-        thresholdsConfig.load_tests[__ENV.THRESHOLD_ENV || 'staging'] ||
-        thresholdsConfig.load_tests.staging
-      ).websocket.connection_errors_max}`,
+      `count<=${websocketLoad.connection_errors_max}`,
     ],
     
     // Protocol errors (message parse failures) should be zero or extremely rare.
     'websocket_protocol_errors': [
-      `count<=${(
-        thresholdsConfig.load_tests[__ENV.THRESHOLD_ENV || 'staging'] ||
-        thresholdsConfig.load_tests.staging
-      ).websocket.protocol_errors_max}`,
+      `count<=${websocketLoad.protocol_errors_max}`,
     ],
     
     // Message latency - real-time feel (kept as explicit transport SLOs).
@@ -105,22 +111,13 @@ export const options = {
 
     // Classification counters.
     contract_failures_total: [
-      `count<=${(
-        thresholdsConfig.load_tests[__ENV.THRESHOLD_ENV || 'staging'] ||
-        thresholdsConfig.load_tests.staging
-      ).contract_failures_total.max}`,
+      `count<=${loadTestEnv.contract_failures_total.max}`,
     ],
     id_lifecycle_mismatches_total: [
-      `count<=${(
-        thresholdsConfig.load_tests[__ENV.THRESHOLD_ENV || 'staging'] ||
-        thresholdsConfig.load_tests.staging
-      ).id_lifecycle_mismatches_total.max}`,
+      `count<=${loadTestEnv.id_lifecycle_mismatches_total.max}`,
     ],
     capacity_failures_total: [
-      `rate<${(
-        thresholdsConfig.load_tests[__ENV.THRESHOLD_ENV || 'staging'] ||
-        thresholdsConfig.load_tests.staging
-      ).capacity_failures_total.rate}`,
+      `rate<${loadTestEnv.capacity_failures_total.rate}`,
     ],
     true_errors_total: [`rate<${trueErrorRateTarget}`],
   },
@@ -128,7 +125,7 @@ export const options = {
   tags: {
     scenario: 'websocket-stress',
     test_type: 'stress',
-    environment: __ENV.THRESHOLD_ENV || 'staging'
+    environment: THRESHOLD_ENV
   }
 };
 
@@ -153,21 +150,6 @@ const TARGET_SESSION_DURATION_MS = Number(__ENV.TARGET_SESSION_DURATION_MS || 36
 
 // Interval between diagnostic ping events used for latency measurement.
 const DIAGNOSTIC_PING_INTERVAL_MS = Number(__ENV.DIAGNOSTIC_PING_INTERVAL_MS || 5000);
-
-// Threshold configuration derived from thresholds.json
-const THRESHOLD_ENV = __ENV.THRESHOLD_ENV || 'staging';
-const perfEnv =
-  thresholdsConfig.environments[THRESHOLD_ENV] || thresholdsConfig.environments.staging;
-const loadTestEnv =
-  thresholdsConfig.load_tests[THRESHOLD_ENV] || thresholdsConfig.load_tests.staging;
-const connectionStability = perfEnv.websocket_gameplay.connection_stability;
-const websocketLoad = loadTestEnv.websocket;
-const trueErrorRateTarget =
-  loadTestEnv &&
-  loadTestEnv.true_errors &&
-  typeof loadTestEnv.true_errors.rate === 'number'
-    ? loadTestEnv.true_errors.rate
-    : 0.005;
 
 /**
  * Engine.IO packet types (prefix character)
