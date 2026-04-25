@@ -424,6 +424,7 @@ jobs:
           context: ai-service
           file: ai-service/Dockerfile
           push: false
+          load: true
           tags: ringrift-ai-service:test
           cache-from: type=gha
           # The ai-service image installs the full AI stack; exporting the full
