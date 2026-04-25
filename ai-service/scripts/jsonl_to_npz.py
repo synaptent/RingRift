@@ -350,6 +350,71 @@ def _compute_multi_player_values_from_winner(winner: int, num_players: int) -> l
     return values
 
 
+@dataclass(frozen=True)
+class _GpuSelfplayValueTargets:
+    """Value targets inferred for a GPU selfplay game record."""
+
+    values_vec: np.ndarray
+    final_state: GameState | None = None
+
+    @property
+    def rank_aware(self) -> bool:
+        return self.final_state is not None
+
+
+def _compute_gpu_selfplay_value_targets(
+    initial_state: GameState,
+    moves: list[Move],
+    winner: int,
+    num_players: int,
+) -> _GpuSelfplayValueTargets:
+    """Compute GPU selfplay targets, using final rankings for 3p/4p games.
+
+    The older GPU export path only wrote a winner field, which made every
+    non-winner in multiplayer games a -1 target. For 3p/4p this is materially
+    harsher than the standard replay exporter, so replay the moves once and use
+    the final eliminated-ring ranking when it is available. If replay is not
+    clean, keep the legacy winner-only fallback instead of dropping the record.
+    """
+
+    fallback = _GpuSelfplayValueTargets(
+        values_vec=np.array(
+            _compute_multi_player_values_from_winner(winner, num_players),
+            dtype=np.float32,
+        ),
+    )
+    if num_players <= 2 or winner in (None, 0):
+        return fallback
+
+    final_state = initial_state
+    for move in moves:
+        try:
+            final_state = GameEngine.apply_move(final_state, move, trace_mode=True)
+        except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
+            return fallback
+
+    return _GpuSelfplayValueTargets(
+        values_vec=np.array(
+            compute_multi_player_values(final_state, num_players),
+            dtype=np.float32,
+        ),
+        final_state=final_state,
+    )
+
+
+def _gpu_selfplay_scalar_value(
+    targets: _GpuSelfplayValueTargets,
+    winner: int,
+    perspective: int,
+    num_players: int,
+) -> float:
+    """Return the scalar target for one training sample perspective."""
+
+    if targets.rank_aware and targets.final_state is not None:
+        return value_from_final_ranking(targets.final_state, perspective, num_players)
+    return _value_from_winner(winner, perspective, num_players)
+
+
 def _process_gpu_selfplay_record(
     record: dict[str, Any],
     encoder: NeuralNetAI,
@@ -450,11 +515,13 @@ def _process_gpu_selfplay_record(
     move_dicts = moves_list  # Keep original for mcts_policy
     total_moves = len(moves)
 
-    # Compute value targets from winner field directly
-    values_vec = np.array(
-        _compute_multi_player_values_from_winner(winner, num_players),
-        dtype=np.float32,
+    value_targets = _compute_gpu_selfplay_value_targets(
+        initial_state,
+        moves,
+        winner,
+        num_players,
     )
+    values_vec = value_targets.values_vec
 
     # Replay game and extract features with proper policy targets
     current_state = initial_state
@@ -512,7 +579,12 @@ def _process_gpu_selfplay_record(
                 continue
 
             # Value from perspective of current player
-            value = _value_from_winner(winner, current_state.current_player, num_players)
+            value = _gpu_selfplay_scalar_value(
+                value_targets,
+                winner,
+                current_state.current_player,
+                num_players,
+            )
 
             # Phase string
             phase_str = (
