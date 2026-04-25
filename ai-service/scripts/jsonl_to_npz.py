@@ -355,11 +355,56 @@ class _GpuSelfplayValueTargets:
     """Value targets inferred for a GPU selfplay game record."""
 
     values_vec: np.ndarray
+    scalar_values_by_player: dict[int, float] | None = None
     final_state: GameState | None = None
 
     @property
     def rank_aware(self) -> bool:
-        return self.final_state is not None
+        return self.scalar_values_by_player is not None
+
+
+def _rank_aware_targets_from_final_state(
+    final_state: GameState,
+    num_players: int,
+) -> _GpuSelfplayValueTargets:
+    scalar_values = {
+        p: value_from_final_ranking(final_state, p, num_players)
+        for p in range(1, num_players + 1)
+    }
+    values_vec = np.array(
+        [scalar_values.get(p, 0.0) if p <= num_players else 0.0 for p in range(1, 5)],
+        dtype=np.float32,
+    )
+    return _GpuSelfplayValueTargets(
+        values_vec=values_vec,
+        scalar_values_by_player=scalar_values,
+        final_state=final_state,
+    )
+
+
+def _final_state_from_gpu_record(record: dict[str, Any] | None) -> GameState | None:
+    """Load final_state metadata when the JSONL writer provides it."""
+
+    if not isinstance(record, dict):
+        return None
+    raw_final_state = record.get("final_state") or record.get("finalState")
+    if raw_final_state is None:
+        return None
+    if isinstance(raw_final_state, GameState):
+        return raw_final_state
+    try:
+        return deserialize_game_state(raw_final_state)
+    except (TypeError, ValueError, RuntimeError, KeyError, IndexError, AttributeError) as exc:
+        logger.warning(
+            "GPU selfplay final_state metadata could not be deserialized; "
+            "falling back to replay/winner-only targets",
+            extra={
+                "game_id": record.get("game_id") or record.get("id"),
+                "exception_type": type(exc).__name__,
+                "exception": str(exc),
+            },
+        )
+        return None
 
 
 def _compute_gpu_selfplay_value_targets(
@@ -367,6 +412,7 @@ def _compute_gpu_selfplay_value_targets(
     moves: list[Move],
     winner: int,
     num_players: int,
+    record: dict[str, Any] | None = None,
 ) -> _GpuSelfplayValueTargets:
     """Compute GPU selfplay targets, using final rankings for 3p/4p games.
 
@@ -386,20 +432,34 @@ def _compute_gpu_selfplay_value_targets(
     if num_players <= 2 or winner in (None, 0):
         return fallback
 
+    final_state_from_record = _final_state_from_gpu_record(record)
+    if final_state_from_record is not None:
+        return _rank_aware_targets_from_final_state(final_state_from_record, num_players)
+
     final_state = initial_state
-    for move in moves:
+    for move_idx, move in enumerate(moves):
         try:
             final_state = GameEngine.apply_move(final_state, move, trace_mode=True)
-        except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
+        except (ValueError, RuntimeError, KeyError, IndexError, AttributeError) as exc:
+            logger.warning(
+                "GPU selfplay rank-aware replay failed; using winner-only value targets",
+                extra={
+                    "game_id": record.get("game_id") if isinstance(record, dict) else None,
+                    "board_type": record.get("board_type") if isinstance(record, dict) else None,
+                    "num_players": num_players,
+                    "winner": winner,
+                    "move_index": move_idx,
+                    "move_count": len(moves),
+                    "move_type": getattr(getattr(move, "type", None), "value", str(getattr(move, "type", None))),
+                    "move_player": getattr(move, "player", None),
+                    "move_phase": getattr(move, "phase", None),
+                    "exception_type": type(exc).__name__,
+                    "exception": str(exc),
+                },
+            )
             return fallback
 
-    return _GpuSelfplayValueTargets(
-        values_vec=np.array(
-            compute_multi_player_values(final_state, num_players),
-            dtype=np.float32,
-        ),
-        final_state=final_state,
-    )
+    return _rank_aware_targets_from_final_state(final_state, num_players)
 
 
 def _gpu_selfplay_scalar_value(
@@ -410,7 +470,9 @@ def _gpu_selfplay_scalar_value(
 ) -> float:
     """Return the scalar target for one training sample perspective."""
 
-    if targets.rank_aware and targets.final_state is not None:
+    if targets.scalar_values_by_player is not None:
+        return targets.scalar_values_by_player.get(perspective, 0.0)
+    if targets.final_state is not None:
         return value_from_final_ranking(targets.final_state, perspective, num_players)
     return _value_from_winner(winner, perspective, num_players)
 
@@ -520,6 +582,7 @@ def _process_gpu_selfplay_record(
         moves,
         winner,
         num_players,
+        record=record,
     )
     values_vec = value_targets.values_vec
 
@@ -943,6 +1006,15 @@ def parse_position(pos_data: dict[str, Any] | list | None) -> Position | None:
     )
 
 
+def _get_field(data: dict[str, Any], *names: str, default: Any = None) -> Any:
+    """Return the first present field, preserving falsey values."""
+
+    for name in names:
+        if name in data:
+            return data[name]
+    return default
+
+
 def parse_move(move_dict: dict[str, Any]) -> Move:
     """Parse move dict from JSONL to Move object.
 
@@ -991,9 +1063,9 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
         move_type = gpu_type_map[move_type]
 
     # Parse positions
-    from_pos = parse_position(move_dict.get("from_pos") or move_dict.get("from"))
-    to_pos = parse_position(move_dict.get("to_pos") or move_dict.get("to"))
-    capture_target = parse_position(move_dict.get("captureTarget") or move_dict.get("capture_target"))
+    from_pos = parse_position(_get_field(move_dict, "from_pos", "fromPos", "from"))
+    to_pos = parse_position(_get_field(move_dict, "to_pos", "toPos", "to"))
+    capture_target = parse_position(_get_field(move_dict, "captureTarget", "capture_target"))
 
     # Infer capture_target for capture moves if missing (GPU selfplay may not record it)
     # The capture target is the midpoint between from and to (the stack being jumped over)
@@ -1057,13 +1129,13 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
         from_pos=from_pos,
         to=to_pos,
         capture_target=capture_target,
-        captured_stacks=move_dict.get("captured_stacks"),
-        capture_chain=move_dict.get("capture_chain"),
-        overtaken_rings=move_dict.get("overtaken_rings"),
-        placed_on_stack=move_dict.get("placed_on_stack", False),
-        placement_count=move_dict.get("placement_count"),
-        stack_moved=move_dict.get("stack_moved"),
-        minimum_distance=move_dict.get("minimum_distance"),
+        captured_stacks=_get_field(move_dict, "captured_stacks", "capturedStacks"),
+        capture_chain=_get_field(move_dict, "capture_chain", "captureChain"),
+        overtaken_rings=_get_field(move_dict, "overtaken_rings", "overtakenRings"),
+        placed_on_stack=_get_field(move_dict, "placed_on_stack", "placedOnStack", default=False),
+        placement_count=_get_field(move_dict, "placement_count", "placementCount"),
+        stack_moved=_get_field(move_dict, "stack_moved", "stackMoved"),
+        minimum_distance=_get_field(move_dict, "minimum_distance", "minimumDistance"),
         formed_lines=formed_lines,
         collapsed_markers=collapsed_markers,
         disconnected_regions=disconnected_regions,
@@ -1071,6 +1143,7 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
         timestamp=move_dict.get("timestamp") or "1970-01-01T00:00:00Z",
         thinkTime=move_dict.get("think_time", move_dict.get("thinkTime", 0)),
         moveNumber=move_dict.get("move_number", move_dict.get("moveNumber", 0)),
+        phase=move_dict.get("phase"),
     )
 
 

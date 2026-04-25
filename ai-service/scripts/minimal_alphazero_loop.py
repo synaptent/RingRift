@@ -141,6 +141,7 @@ def _play_game(env, ai_players: dict[int, GumbelMCTSAI], idx: int, seed: int):
             "num_players": NUM_PLAYERS, "winner": winner,
             "status": state.game_status.value, "num_moves": mc,
             "moves": moves, "initial_state": init,
+            "final_state": state.model_dump(by_alias=True, exclude_none=True, mode="json"),
             "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
