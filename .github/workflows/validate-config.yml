@@ -149,9 +149,11 @@ jobs:
           mkdir -p /tmp/prometheus-check
           cp monitoring/prometheus/prometheus.yml /tmp/prometheus-check/
           cp monitoring/prometheus/alerts.yml /tmp/prometheus-check/
+          cp monitoring/prometheus/alerting-rules.yaml /tmp/prometheus-check/
 
           # Update rule_files path for container context
           sed -i "s|/etc/prometheus/alerts.yml|/config/alerts.yml|g" /tmp/prometheus-check/prometheus.yml
+          sed -i "s|/etc/prometheus/alerting-rules.yaml|/config/alerting-rules.yaml|g" /tmp/prometheus-check/prometheus.yml
 
           echo "Validating Prometheus config..."
           docker run --rm --entrypoint promtool -v /tmp/prometheus-check:/config:ro prom/prometheus:latest \
@@ -164,6 +166,8 @@ jobs:
           echo "Validating Prometheus alert rules..."
           docker run --rm --entrypoint promtool -v $(pwd)/monitoring/prometheus:/config:ro prom/prometheus:latest \
             check rules /config/alerts.yml
+          docker run --rm --entrypoint promtool -v $(pwd)/monitoring/prometheus:/config:ro prom/prometheus:latest \
+            check rules /config/alerting-rules.yaml
 
           echo "✅ Prometheus alert rules validation passed"
 
