@@ -49,6 +49,11 @@ deprecated/
 
 # Test files
 tests/
+!tests/
+!tests/fixtures/
+!tests/fixtures/contract-vectors/
+!tests/fixtures/contract-vectors/v2/
+!tests/fixtures/contract-vectors/v2/*.vectors.json
 ai-service/tests/
 *.test.ts
 *.spec.ts

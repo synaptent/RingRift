@@ -34,12 +34,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.config.coordination_defaults import PromotionGameDefaults
-from app.config.thresholds import AUTO_PROMOTION_MIN_QUALITY
 from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
 from app.utils.game_discovery import count_games_for_config
-from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
 
@@ -1412,10 +1410,7 @@ class AutoPromotionDaemon(HandlerBase):
 
             # Try to get quality score if available
             try:
-                from app.training.data_quality import (
-                    DatabaseQualityChecker,
-                    get_database_quality_score,
-                )
+                from app.training.data_quality import get_database_quality_score
 
                 quality_score = get_database_quality_score(str(db_path))
                 if quality_score < self.config.min_quality_score:
@@ -2185,9 +2180,7 @@ class AutoPromotionDaemon(HandlerBase):
         """
         try:
             import asyncio
-            from pathlib import Path
-
-            from scripts.model_lineage import register_model, update_performance
+            from app.model_lineage import register_model, update_performance
 
             # Parse config key
             parts = candidate.config_key.rsplit("_", 1)
@@ -2312,8 +2305,6 @@ class AutoPromotionDaemon(HandlerBase):
                 - last_promotion_time: When last promotion occurred
                 - thresholds: Current promotion thresholds
         """
-        from datetime import datetime
-
         candidate_details = {}
         for config_key, candidate in self._candidates.items():
             candidate_details[config_key] = {

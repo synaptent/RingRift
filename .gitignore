@@ -394,6 +394,9 @@ monitoring/prometheus.yml
 
 # Training data and parity failure logs (generated locally)
 data/
+!docs/data/
+!docs/data/*.json
+!docs/data/**/*.json
 parity_failures/
 parity_failures_v2/
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if app/ imports from scripts/ outside the approved legacy baseline."""
+"""Fail if app/ imports from scripts/ outside the explicit legacy allowlist."""
 
 from __future__ import annotations
 
@@ -13,12 +13,9 @@ from pathlib import Path
 _IMPORT_RE = re.compile(r"^\s*(from|import)\s+scripts(\.|\\b)")
 
 # Existing app -> scripts imports predate this guard. Keep them explicit so CI
-# blocks new layer violations without pretending the historical debt is gone.
+# blocks new layer violations, and fail on stale allowlist entries so resolved
+# debt cannot remain normalized in the baseline.
 _ALLOWED_EXISTING_VIOLATIONS = {
-    (
-        "app/coordination/auto_promotion_daemon.py",
-        "from scripts.model_lineage import register_model, update_performance",
-    ),
     (
         "app/coordination/cascade_training.py",
         "from scripts.transfer_2p_to_4p import transfer_2p_to_np",
@@ -97,19 +94,31 @@ def main() -> int:
     app_root = ai_service_root / "app"
     violations = _find_layer_violations(app_root)
     unexpected: list[tuple[Path, int, str]] = []
+    observed_allowed: set[tuple[str, str]] = set()
 
     for path, lineno, module in violations:
         rel_path = path.relative_to(ai_service_root)
-        if (rel_path.as_posix(), module) not in _ALLOWED_EXISTING_VIOLATIONS:
+        violation_key = (rel_path.as_posix(), module)
+        if violation_key in _ALLOWED_EXISTING_VIOLATIONS:
+            observed_allowed.add(violation_key)
+        else:
             unexpected.append((path, lineno, module))
 
-    if not unexpected:
+    stale_allowed = sorted(_ALLOWED_EXISTING_VIOLATIONS - observed_allowed)
+
+    if not unexpected and not stale_allowed:
         return 0
 
-    print("New layer violations detected (app -> scripts):")
-    for path, lineno, module in sorted(unexpected):
-        rel_path = path.relative_to(ai_service_root)
-        print(f"- {rel_path}:{lineno}: {module}")
+    if unexpected:
+        print("New layer violations detected (app -> scripts):")
+        for path, lineno, module in sorted(unexpected):
+            rel_path = path.relative_to(ai_service_root)
+            print(f"- {rel_path}:{lineno}: {module}")
+
+    if stale_allowed:
+        print("Stale layer-violation allowlist entries detected:")
+        for rel_path, module in stale_allowed:
+            print(f"- {rel_path}: {module}")
     return 1
 
 
