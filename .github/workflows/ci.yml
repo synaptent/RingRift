@@ -496,7 +496,7 @@ jobs:
         run: python -m pytest tests/parity/test_rules_parity_fixtures.py
 
   python-core:
-    name: Python Core Tests (bounded non-parity)
+    name: Python Core Tests (non-parity)
     runs-on: ubuntu-latest
     needs: [lint-and-typecheck]
     # CI Safety: bounded top-level Python suite. The full ai-service/tests tree
