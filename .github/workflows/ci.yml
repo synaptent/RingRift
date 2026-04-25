@@ -522,6 +522,8 @@ jobs:
 
       - name: Run bounded Python core suite
         working-directory: ai-service
+        env:
+          PYTHONPATH: .
         run: |
           python -m pytest tests/test_*.py -m "not slow and not integration and not gpu and not mcts"
 

@@ -443,6 +443,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         multi_player=use_multi_player,
         num_players=num_players,
         model_version=args.model_version,
+        skip_freshness_check=args.demo,
     )
 
     created_at = datetime.now(timezone.utc).isoformat()

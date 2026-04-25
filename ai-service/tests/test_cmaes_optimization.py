@@ -339,6 +339,7 @@ class TestCMAESIntegration:
             weights_to_array(BASE_V1_BALANCED_WEIGHTS).tolist(),
         ]
 
+        cma_mock.CMAEvolutionStrategy.reset_mock()
         cma_mock.CMAEvolutionStrategy.return_value = mock_es_instance
 
         with tempfile.TemporaryDirectory() as tmp_dir:

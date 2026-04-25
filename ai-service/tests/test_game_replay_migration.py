@@ -383,6 +383,8 @@ class TestV2FieldStorage:
             final_state=final_state,
             moves=create_test_moves(),
             metadata={"source": "test"},
+            store_history_entries=False,
+            snapshot_interval=0,
         )
 
         # Now manually update the move to add engine eval
@@ -428,6 +430,8 @@ class TestV2FieldStorage:
                     "source": "test",
                     "termination_reason": "ring_elimination" if i < 3 else "territory",
                 },
+                store_history_entries=False,
+                snapshot_interval=0,
             )
 
         # Test counts
@@ -452,6 +456,8 @@ class TestV2FieldStorage:
             final_state=final,
             moves=create_test_moves(),
             metadata={"source": "test"},
+            store_history_entries=False,
+            snapshot_interval=0,
         )
 
         game = db.get_game_with_players("player-test")
