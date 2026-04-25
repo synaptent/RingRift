@@ -32,7 +32,26 @@ The machine-readable boundary for AI/training review is [docs/data/ai_surface_ma
 
 This is a live `hex8` sandbox position from the public web client: compact hex board, stack-building ring placement, local AI opponent, and the sidecar HUD showing turn, score, and ring inventory. It is the most distinctive part of the project, and it already works end to end in the browser.
 
+## Two-Minute Demo
+
+The fastest way to see the product is the no-account Human-vs-AI sandbox:
+
+```bash
+git clone https://github.com/synaptent/RingRift.git
+cd RingRift
+npm install
+npm run play
+```
+
+That opens `http://localhost:5173/sandbox?preset=hex8-1h-1ai`, matching the screenshot above. It does not require Docker, Postgres, Redis, or the Python AI service; if backend AI is unavailable, the browser sandbox uses the local AI fallback. To boot the local backend and database too, use:
+
+```bash
+npm run play:full
+```
+
 ## Quick Start: Play The Game
+
+For first contact, prefer `npm run play` above. For the full local development stack:
 
 ```bash
 git clone https://github.com/synaptent/RingRift.git

@@ -8,6 +8,10 @@ For Python training/runtime operations inside `ai-service`, also read [ai-servic
 
 ### Development and local setup
 
+- [`play_local_demo.sh`](/scripts/play_local_demo.sh)
+  Opens the fastest reviewer demo: anonymous Human-vs-AI sandbox via `npm run play`.
+  Use `npm run play:full` to include Postgres, Redis, and the backend.
+
 - [`bootstrap_ai.sh`](/scripts/bootstrap_ai.sh)
   Bootstraps the local AI-service environment and common prerequisites.
 

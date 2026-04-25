@@ -16,7 +16,35 @@ For the current research evidence, see [docs/RESULTS.md](/docs/RESULTS.md).
 - Python `3.10+` (`3.11` recommended)
 - Docker and Docker Compose for local Postgres and Redis
 
+## Two-minute product demo
+
+This is the fastest way to see RingRift as a reviewer: it opens the anonymous
+Human-vs-AI sandbox directly and does not require Docker, Postgres, Redis, or the
+Python AI service.
+
+```bash
+git clone https://github.com/synaptent/RingRift.git
+cd RingRift
+npm install
+npm run play
+```
+
+The command opens:
+
+- Demo: `http://localhost:5173/sandbox?preset=hex8-1h-1ai`
+
+The sandbox uses service-backed AI when available and falls back to browser-local
+AI when backend AI is unavailable. If you want the backend and local database
+running as well, use:
+
+```bash
+npm run play:full
+```
+
 ## Run the web app
+
+Use this path when you want the full local development stack instead of only the
+browser sandbox demo.
 
 ```bash
 git clone https://github.com/synaptent/RingRift.git

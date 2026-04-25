@@ -7,6 +7,8 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "TS_NODE_PROJECT=tsconfig.server.json nodemon --exec ts-node src/server/index.ts",
     "dev:client": "vite",
+    "play": "bash scripts/play_local_demo.sh",
+    "play:full": "bash scripts/play_local_demo.sh --full-stack",
     "dev:sandbox:diagnostics": "bash scripts/dev-sandbox-diagnostics.sh",
     "dev:free-port": "kill-port 3000",
     "dev:free-all": "kill-port 3000 3001 5173",

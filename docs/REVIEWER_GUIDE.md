@@ -16,6 +16,17 @@ Everything else is secondary until the supported path is understood.
 
 ## Ten-Minute Review Path
 
+If you want to see the product before reading, run:
+
+```bash
+npm install
+npm run play
+```
+
+This opens the no-account Human-vs-AI sandbox at
+`http://localhost:5173/sandbox?preset=hex8-1h-1ai`. It is the fastest way to
+verify that RingRift is a playable game, not only a rules and training codebase.
+
 Read these in order:
 
 1. [README.md](/README.md)
