@@ -347,10 +347,12 @@ class TestCircuitBreakerTransitions:
         for _ in range(10):
             with patch.object(transport, "_transfer_via_tailscale") as mock_ts, \
                  patch.object(transport, "_transfer_via_ssh") as mock_ssh, \
-                 patch.object(transport, "_transfer_via_base64") as mock_b64:
+                 patch.object(transport, "_transfer_via_base64") as mock_b64, \
+                 patch.object(transport, "_transfer_via_http") as mock_http:
                 mock_ts.return_value = TransportResult(success=False, error="fail")
                 mock_ssh.return_value = TransportResult(success=False, error="fail")
                 mock_b64.return_value = TransportResult(success=False, error="fail")
+                mock_http.return_value = TransportResult(success=False, error="fail")
 
                 await transport.transfer_file(
                     local_path=temp_file,

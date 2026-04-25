@@ -1,4 +1,5 @@
 #!/usr/bin/env ts-node
+/* eslint-disable no-console */
 /**
  * Orchestrator soak & invariant harness.
  *
@@ -373,7 +374,6 @@ function extractFamilyFromPath(bundlePath: string): string {
 
 function logVerbose(config: SoakConfig, message: string): void {
   if (config.verbose) {
-    // eslint-disable-next-line no-console
     console.log(`[VERBOSE] ${message}`);
   }
 }
@@ -441,6 +441,12 @@ function createBackendHost(gameId: string, boardType: BoardType, gameSeed: numbe
   }
 
   return engine;
+}
+
+function disposeBackendHost(engine: GameEngine): void {
+  // Soak games often stop at maxTurns, not terminal victory. The backend
+  // engine starts player clock timers; clear them so CLI runs can exit.
+  (engine as any).clockManager?.stopAllTimers?.();
 }
 
 // NOTE: Sandbox host support is intentionally disabled in this harness for now.
@@ -925,6 +931,8 @@ async function runSingleGame(
     logVerbose(config, `Game ${gameId} hit max turns (${maxTurns})`);
   }
 
+  disposeBackendHost(engine);
+
   return {
     boardType,
     hostMode,
@@ -1335,6 +1343,8 @@ async function runVectorSeededGame(
     logVerbose(config, `[${vector.id}] Game hit max turns (${maxTurns})`);
   }
 
+  disposeBackendHost(engine);
+
   return {
     boardType,
     hostMode: 'backend',
@@ -1375,7 +1385,6 @@ async function run(): Promise<void> {
   if (config.enableTraceDebug) {
     const current = (process as any).env?.RINGRIFT_TRACE_DEBUG;
     if (!current) {
-      // eslint-disable-next-line no-console
       console.log('Enabling RINGRIFT_TRACE_DEBUG=1 for orchestrator soak run (--debug).');
       (process as any).env.RINGRIFT_TRACE_DEBUG = '1';
     }
@@ -1729,20 +1738,16 @@ async function run(): Promise<void> {
   }
 
   if (allViolations.length > 0) {
-    // eslint-disable-next-line no-console
     console.log('');
-    // eslint-disable-next-line no-console
     console.log('Invariant violations detected during orchestrator soak:');
     const preview = allViolations.slice(0, 5);
     for (const v of preview) {
-      // eslint-disable-next-line no-console
       console.log(
         `- [${v.id}] board=${v.boardType} host=${v.hostMode} game=${v.gameId} ` +
           `turn=${v.turnIndex} S=${v.sInvariant} status=${v.gameStatus} :: ${v.message}`
       );
     }
     if (allViolations.length > preview.length) {
-      // eslint-disable-next-line no-console
       console.log(
         `  (+ ${allViolations.length - preview.length} additional violation(s) in summary JSON)`
       );
@@ -1784,7 +1789,6 @@ async function run(): Promise<void> {
   if (config.failOnViolation && overall.invariantViolations > 0) {
     // Signal failure to automated harnesses without throwing; we rely on
     // process.exitCode so any finally/cleanup logic above still runs.
-    // eslint-disable-next-line no-console
     console.log('Failing with non-zero exit code due to invariant violations.');
 
     process.exitCode = 1;

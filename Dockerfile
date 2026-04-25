@@ -6,6 +6,8 @@ WORKDIR /app
 
 # Copy package and config files
 COPY package*.json ./
+COPY prisma.config.ts ./
+COPY prisma ./prisma
 COPY tsconfig*.json ./
 COPY vite.config.ts ./
 COPY postcss.config.mjs ./
@@ -14,9 +16,8 @@ COPY tailwind.config.js ./
 # Install dependencies (including devDependencies for build tools)
 RUN npm ci && npm cache clean --force
 
-# Copy source code and Prisma schema/migrations for runtime migrations
+# Copy source code
 COPY src/ ./src/
-COPY prisma ./prisma
 
 # Generate Prisma client before build (required for TypeScript compilation)
 RUN npx prisma generate
