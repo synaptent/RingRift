@@ -389,7 +389,6 @@ ai-service/archive/deprecated_scripts/cluster_monitor_daemon.py
 ai-service/scripts/deploy_persona_tournament.py
 ai-service/scripts/launch_distributed_elo_tournament.py
 ai-service/scripts/monitor_gpu_mcts_jobs.py
-ai-service/scripts/unified_ai_loop.py
 monitoring/prometheus.yml
 
 # Training data and parity failure logs (generated locally)
