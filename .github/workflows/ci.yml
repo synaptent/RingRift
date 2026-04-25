@@ -496,10 +496,11 @@ jobs:
         run: python -m pytest tests/parity/test_rules_parity_fixtures.py
 
   python-core:
-    name: Python Core Tests (non-parity)
+    name: Python Core Tests (bounded non-parity)
     runs-on: ubuntu-latest
     needs: [lint-and-typecheck]
-    # CI Safety: Core Python tests, excluding parity/fixture generation
+    # CI Safety: bounded top-level Python suite. The full ai-service/tests tree
+    # collects ~38k cases and belongs in targeted/nightly lanes, not the push gate.
     timeout-minutes: 20
 
     steps:
@@ -519,10 +520,10 @@ jobs:
           python scripts/check_layer_violations.py
           python scripts/check_daemon_reference_integrity.py
 
-      - name: Run Python core test suite (excluding parity)
+      - name: Run bounded Python core suite
         working-directory: ai-service
         run: |
-          python -m pytest tests --ignore=tests/parity
+          python -m pytest tests/test_*.py -m "not slow and not integration and not gpu and not mcts"
 
   python-ai-healthcheck:
     name: Python AI Self-Play Healthcheck
