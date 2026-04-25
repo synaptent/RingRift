@@ -258,9 +258,30 @@ class DaemonManagerLifecycleMixin:
         import time
 
         poll_interval = getattr(self.config, "dependency_poll_interval", 0.5)
+        waitable_states = {
+            DaemonState.STARTING,
+            DaemonState.RUNNING,
+            DaemonState.RESTARTING,
+        }
+        terminal_states = {
+            DaemonState.STOPPED,
+            DaemonState.FAILED,
+            DaemonState.IMPORT_FAILED,
+            DaemonState.DEGRADED,
+        }
+
+        info = self._daemons.get(daemon_type)
+        if info is None:
+            return False
+        if info.state not in waitable_states:
+            return False
 
         start_time = time.time()
         while time.time() - start_time < timeout:
+            info = self._daemons.get(daemon_type)
+            if info is None or info.state in terminal_states:
+                return False
+
             if self.is_running(daemon_type):
                 # Check health if the daemon supports it
                 try:
