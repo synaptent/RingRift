@@ -326,9 +326,9 @@ def _complete_remaining_phases(
     return state
 
 
-def _value_from_winner(winner: int, perspective: int, num_players: int) -> float:
+def _value_from_winner(winner: int | None, perspective: int, num_players: int) -> float:
     """Compute value from winner field directly (for GPU selfplay)."""
-    if winner == 0:  # Draw
+    if winner in (None, 0):  # Draw, timeout, or incomplete game
         return 0.0
     if winner == perspective:
         return 1.0
@@ -339,7 +339,7 @@ def _value_from_winner(winner: int, perspective: int, num_players: int) -> float
         return -1.0
 
 
-def _compute_multi_player_values_from_winner(winner: int, num_players: int) -> list[float]:
+def _compute_multi_player_values_from_winner(winner: int | None, num_players: int) -> list[float]:
     """Compute value vector for all players from winner field."""
     values = []
     for p in range(1, 5):  # Always 4 slots
@@ -363,14 +363,88 @@ class _GpuSelfplayValueTargets:
         return self.scalar_values_by_player is not None
 
 
+def _player_attr(player: Any, snake_name: str, camel_name: str, default: Any = 0) -> Any:
+    if isinstance(player, dict):
+        return player.get(snake_name, player.get(camel_name, default))
+    return getattr(player, snake_name, getattr(player, camel_name, default))
+
+
+def _rank_values_by_player(final_state: GameState, num_players: int) -> dict[int, float]:
+    """Compute rank-aware scalar values from final player scores.
+
+    This intentionally works for completed games and budget-cutoff games. The
+    minimal loop can stop at max moves with ``winner=None`` while still having
+    meaningful eliminated-ring and territory-space scores. Winner-only fallback
+    makes those multiplayer records toxic, so use the recorded final scores
+    whenever they are available.
+    """
+
+    if num_players <= 1:
+        return {p: 0.0 for p in range(1, num_players + 1)}
+
+    winner = getattr(final_state, "winner", None)
+    players = getattr(final_state, "players", []) or []
+    scores_by_player: dict[int, tuple[int, int]] = {}
+    for player in players:
+        try:
+            player_number = int(_player_attr(player, "player_number", "playerNumber"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= player_number <= num_players:
+            continue
+        eliminated_rings = int(_player_attr(player, "eliminated_rings", "eliminatedRings", 0) or 0)
+        territory_spaces = int(_player_attr(player, "territory_spaces", "territorySpaces", 0) or 0)
+        scores_by_player[player_number] = (eliminated_rings, territory_spaces)
+
+    if not scores_by_player:
+        return {p: 0.0 for p in range(1, num_players + 1)}
+
+    ranked_scores: list[tuple[int, tuple[int, int, int]]] = []
+    for player_number in range(1, num_players + 1):
+        if player_number in scores_by_player:
+            eliminated_rings, territory_spaces = scores_by_player[player_number]
+            ranked_scores.append(
+                (
+                    player_number,
+                    (
+                        1 if winner == player_number else 0,
+                        eliminated_rings,
+                        territory_spaces,
+                    ),
+                )
+            )
+        else:
+            # If a player is absent from final_state.players, treat them as
+            # eliminated/worst-ranked while still producing a value for the slot.
+            ranked_scores.append((player_number, (-1, -1, -1)))
+
+    ranked_scores.sort(key=lambda item: item[1], reverse=True)
+
+    ranks: dict[int, float] = {}
+    index = 0
+    while index < len(ranked_scores):
+        score = ranked_scores[index][1]
+        end = index + 1
+        while end < len(ranked_scores) and ranked_scores[end][1] == score:
+            end += 1
+        # Average rank for ties. This makes a true all-player tie produce 0.0
+        # for every player instead of arbitrary player-number ordering.
+        average_rank = (index + 1 + end) / 2.0
+        for tied_index in range(index, end):
+            ranks[ranked_scores[tied_index][0]] = average_rank
+        index = end
+
+    return {
+        player_number: float(1.0 - 2.0 * (ranks[player_number] - 1.0) / (num_players - 1))
+        for player_number in range(1, num_players + 1)
+    }
+
+
 def _rank_aware_targets_from_final_state(
     final_state: GameState,
     num_players: int,
 ) -> _GpuSelfplayValueTargets:
-    scalar_values = {
-        p: value_from_final_ranking(final_state, p, num_players)
-        for p in range(1, num_players + 1)
-    }
+    scalar_values = _rank_values_by_player(final_state, num_players)
     values_vec = np.array(
         [scalar_values.get(p, 0.0) if p <= num_players else 0.0 for p in range(1, 5)],
         dtype=np.float32,
@@ -429,12 +503,26 @@ def _compute_gpu_selfplay_value_targets(
             dtype=np.float32,
         ),
     )
-    if num_players <= 2 or winner in (None, 0):
+    if num_players <= 2:
         return fallback
 
     final_state_from_record = _final_state_from_gpu_record(record)
     if final_state_from_record is not None:
         return _rank_aware_targets_from_final_state(final_state_from_record, num_players)
+
+    if winner in (None, 0):
+        logger.warning(
+            "GPU selfplay multiplayer record has no winner and no usable final_state; "
+            "using neutral value targets",
+            extra={
+                "game_id": record.get("game_id") if isinstance(record, dict) else None,
+                "board_type": record.get("board_type") if isinstance(record, dict) else None,
+                "num_players": num_players,
+                "winner": winner,
+                "move_count": len(moves),
+            },
+        )
+        return fallback
 
     final_state = initial_state
     for move_idx, move in enumerate(moves):
@@ -1179,29 +1267,7 @@ def value_from_final_ranking(
     num_players: int,
 ) -> float:
     """Compute value from final ranking (rank-aware for multiplayer)."""
-    # Get rankings from final state
-    rankings = []
-    for p in final_state.players:
-        score = p.eliminated_rings  # Higher eliminated = better
-        rankings.append((p.player_number, score))
-
-    # Sort by score descending
-    rankings.sort(key=lambda x: -x[1])
-
-    # Find perspective player's rank (0-indexed)
-    rank = 0
-    for i, (pnum, _) in enumerate(rankings):
-        if pnum == perspective:
-            rank = i
-            break
-
-    # Convert rank to value
-    if num_players == 2:
-        return 1.0 if rank == 0 else -1.0
-    elif num_players == 3:
-        return [1.0, 0.0, -1.0][rank]
-    else:  # 4 players
-        return [1.0, 0.33, -0.33, -1.0][rank]
+    return _rank_values_by_player(final_state, num_players).get(perspective, 0.0)
 
 
 def compute_multi_player_values(final_state: GameState, num_players: int) -> list[float]:
