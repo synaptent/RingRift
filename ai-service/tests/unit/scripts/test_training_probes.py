@@ -86,6 +86,17 @@ class TestProbeValueHeadHealth:
         assert crit
         assert any("DEAD_VALUE_HEAD" in w for w in warns)
         assert details["value_std"] == 0.0
+        assert details["value_samples_preview"] == [0.5] * 6
+        assert "samples=" in warns[0]
+
+    def test_near_threshold_values_include_range_diagnostics(self):
+        values = [-0.03, -0.015, -0.005, 0.005, 0.015, 0.03]
+        crit, warns, details = _check_probe_value_head_health(values)
+        assert not crit
+        assert warns == []
+        assert details["value_min"] == -0.03
+        assert details["value_max"] == 0.03
+        assert details["dead_value_std_threshold"] == 0.01
 
     def test_saturated_probe_values_are_critical(self):
         crit, warns, details = _check_probe_value_head_health(
@@ -94,6 +105,7 @@ class TestProbeValueHeadHealth:
         assert crit
         assert any("SATURATED_VALUE_HEAD" in w for w in warns)
         assert details["saturated_value_ratio"] >= 0.9
+        assert "samples=" in warns[0]
 
     def test_healthy_probe_values_pass(self):
         crit, warns, details = _check_probe_value_head_health(
@@ -204,6 +216,7 @@ class TestRunTrainingProbes:
 
             train_info = {
                 "elapsed_s": 120.0,
+                "batch_size": 512,
                 "last_epoch_line": "Epoch [15/15], Train Loss: 0.34, Val Loss: 0.45, Policy Acc: 60.0%",
             }
 
@@ -217,6 +230,7 @@ class TestRunTrainingProbes:
                 )
             assert not result.critical
             assert result.elapsed_s >= 0
+            assert result.details["training_context"]["batch_size"] == 512
 
     def test_critical_weight_delta_skips_inference(self):
         """If weight delta is critical, inference probe should be skipped."""
@@ -240,6 +254,40 @@ class TestRunTrainingProbes:
             mock_inf.assert_not_called()
             assert result.critical
             assert "inference" not in result.details
+
+    def test_training_context_preserves_lr_and_target_stats(self):
+        import torch
+        with tempfile.TemporaryDirectory() as td:
+            sd_best = {"layer.weight": torch.randn(10, 10)}
+            sd_cand = {
+                "layer.weight": sd_best["layer.weight"] + torch.randn(10, 10) * 0.01,
+            }
+            cand_path = os.path.join(td, "candidate.pth")
+            best_path = os.path.join(td, "best.pth")
+            torch.save(sd_cand, cand_path)
+            torch.save(sd_best, best_path)
+
+            train_info = {
+                "elapsed_s": 10.0,
+                "batch_size": 512,
+                "learning_rate": 2.5e-5,
+                "epochs": 15,
+                "scheduler": "none",
+                "target_stats": {"values": {"std": 0.8}},
+            }
+
+            with patch("scripts.lib.training_probes._inference_probe") as mock_inf:
+                mock_inf.return_value = (False, [], {"moves_played": 10, "inference_ok": True})
+                from app.models import BoardType
+                result = run_training_probes(
+                    cand_path, best_path, train_info,
+                    BoardType.HEX8, 4, 128,
+                )
+
+        context = result.details["training_context"]
+        assert context["learning_rate"] == 2.5e-5
+        assert context["epochs"] == 15
+        assert context["target_stats"]["values"]["std"] == 0.8
 
 
 class TestInferenceProbeRootValueHealth:

@@ -407,6 +407,44 @@ def _combine_npz_files(npz_files: list[Path], output_path: Path) -> tuple[Path, 
     return output_path, n_samples
 
 
+def _summarize_training_targets(npz_path: Path) -> dict[str, Any]:
+    """Return compact value-target stats for probe failure diagnostics."""
+    try:
+        with np.load(str(npz_path), allow_pickle=True) as data:
+            stats: dict[str, Any] = {}
+            if "values" in data:
+                values = np.asarray(data["values"], dtype=np.float32).reshape(-1)
+                if values.size:
+                    rounded, counts = np.unique(np.round(values, 3), return_counts=True)
+                    stats["values"] = {
+                        "samples": int(values.size),
+                        "mean": round(float(values.mean()), 6),
+                        "std": round(float(values.std()), 6),
+                        "min": round(float(values.min()), 6),
+                        "max": round(float(values.max()), 6),
+                        "histogram": {
+                            f"{float(value):.3f}": int(count)
+                            for value, count in zip(rounded, counts, strict=False)
+                        },
+                    }
+            if "values_mp" in data:
+                values_mp = np.asarray(data["values_mp"], dtype=np.float32).reshape(-1)
+                if values_mp.size:
+                    rounded, counts = np.unique(np.round(values_mp, 3), return_counts=True)
+                    stats["values_mp"] = {
+                        "samples": int(values_mp.size),
+                        "mean": round(float(values_mp.mean()), 6),
+                        "std": round(float(values_mp.std()), 6),
+                        "histogram": {
+                            f"{float(value):.3f}": int(count)
+                            for value, count in zip(rounded, counts, strict=False)
+                        },
+                    }
+            return stats
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
 def train_model(
     npz: Path,
     out: Path,
@@ -437,7 +475,13 @@ def train_model(
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
         el = time.time() - t0
         if r.returncode == 0:
-            info: dict[str, Any] = {"elapsed_s": el, "batch_size": b}
+            info: dict[str, Any] = {
+                "elapsed_s": el,
+                "batch_size": b,
+                "learning_rate": lr,
+                "epochs": epochs,
+                "scheduler": train_lr_scheduler,
+            }
             for line in (r.stdout + r.stderr).split("\n"):
                 if "val_loss" in line.lower():
                     info["log_line"] = line.strip()
@@ -1205,6 +1249,7 @@ def main() -> None:
             f"[3/5] Train (epochs={epochs}, bs={batch_size}, lr={effective_lr:.1e}, "
             f"scheduler={train_lr_scheduler})"
         )
+        target_stats = _summarize_training_targets(train_npz)
         ti = train_model(
             train_npz,
             cpath,
@@ -1214,6 +1259,7 @@ def main() -> None:
             effective_lr,
             train_lr_scheduler,
         )
+        ti["target_stats"] = target_stats
         if "error" in ti or not cpath.exists():
             logger.error("Training failed, skipping")
             last_error = ti.get("error", "") or "Training produced no output"
@@ -1248,11 +1294,13 @@ def main() -> None:
             )
             if probe.critical:
                 logger.error(f"TRAINING PROBE FAILED: {probe.summary}")
+                logger.error("TRAINING PROBE DETAILS: %s", json.dumps(probe.details, sort_keys=True))
                 last_error = probe.summary
                 last_error_stage = "probe"
                 consec_failures += 1; continue
             elif probe.warnings:
                 logger.warning(f"Training probe warnings: {probe.summary}")
+                logger.warning("Training probe details: %s", json.dumps(probe.details, sort_keys=True))
             else:
                 logger.info(f"  probes passed ({probe.elapsed_s:.1f}s)")
 

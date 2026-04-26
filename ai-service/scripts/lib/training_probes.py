@@ -22,6 +22,7 @@ PROBE_DEAD_VALUE_STD_THRESHOLD = 0.01
 PROBE_MIN_VALUE_SAMPLES = 5
 PROBE_SATURATED_VALUE_ABS_THRESHOLD = 0.99
 PROBE_SATURATED_VALUE_RATIO_THRESHOLD = 0.9
+PROBE_VALUE_SAMPLE_LOG_LIMIT = 20
 
 
 # ---------------------------------------------------------------------------
@@ -84,14 +85,22 @@ def _check_probe_value_head_health(
         details["skipped"] = f"too few value samples ({n} < {PROBE_MIN_VALUE_SAMPLES})"
         return False, [], details
 
+    rounded_values = [round(float(v), 6) for v in values[:PROBE_VALUE_SAMPLE_LOG_LIMIT]]
     mean_val = sum(values) / n
     var_val = sum((v - mean_val) ** 2 for v in values) / n
     std_val = var_val ** 0.5
+    min_val = min(values)
+    max_val = max(values)
     saturated = sum(1 for v in values if abs(v) >= PROBE_SATURATED_VALUE_ABS_THRESHOLD)
     saturated_ratio = saturated / n
 
     details["value_mean"] = round(mean_val, 4)
     details["value_std"] = round(std_val, 4)
+    details["value_min"] = round(min_val, 4)
+    details["value_max"] = round(max_val, 4)
+    details["value_span"] = round(max_val - min_val, 4)
+    details["dead_value_std_threshold"] = PROBE_DEAD_VALUE_STD_THRESHOLD
+    details["value_samples_preview"] = rounded_values
     details["saturated_value_samples"] = saturated
     details["saturated_value_ratio"] = round(saturated_ratio, 3)
 
@@ -100,7 +109,8 @@ def _check_probe_value_head_health(
         warnings.append(
             f"DEAD_VALUE_HEAD: value std={std_val:.6f} < "
             f"{PROBE_DEAD_VALUE_STD_THRESHOLD} across {n} probe positions "
-            f"(mean={mean_val:.4f})"
+            f"(mean={mean_val:.4f}, min={min_val:.4f}, max={max_val:.4f}, "
+            f"samples={rounded_values})"
         )
         return critical, warnings, details
 
@@ -109,7 +119,7 @@ def _check_probe_value_head_health(
         warnings.append(
             f"SATURATED_VALUE_HEAD: {saturated}/{n} probe root values have "
             f"|v| >= {PROBE_SATURATED_VALUE_ABS_THRESHOLD} "
-            f"(mean={mean_val:.4f}, std={std_val:.4f})"
+            f"(mean={mean_val:.4f}, std={std_val:.4f}, samples={rounded_values})"
         )
 
     return critical, warnings, details
@@ -388,6 +398,11 @@ def run_training_probes(
     """
     t0 = time.time()
     result = ProbeResult()
+    result.details["training_context"] = {
+        key: train_info[key]
+        for key in ("elapsed_s", "batch_size", "learning_rate", "epochs", "scheduler", "target_stats")
+        if key in train_info
+    }
 
     # --- Probe 1: Loss convergence (cheapest, no model loading) ---
     try:
