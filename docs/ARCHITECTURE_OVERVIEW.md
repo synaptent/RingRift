@@ -55,6 +55,22 @@ The minimal loop is the training engine used for the current reported results. I
 
 For supported live canaries, the operator entrypoint is [`ai-service/scripts/deploy_minimal_loops.sh`](/ai-service/scripts/deploy_minimal_loops.sh). That rollout path preflights `tests/unit/scripts/test_minimal_alphazero_loop.py` locally before it restarts trainer nodes unless an operator explicitly bypasses the guard. During a run, treat `<work-dir>/progress.json` as the live stage-status file and `<work-dir>/metrics.jsonl` as the durable iteration log.
 
+The minimal loop also owns several training-contract checks that are part of
+the supported architecture, not optional diagnostics:
+
+- checkpoint/runtime contracts: model version, feature version, player count,
+  and value/rank head shape must agree before a run is meaningful
+- data-export contracts: JSONL records must carry enough final-state
+  information to build multiplayer rank targets without silent winner-only
+  fallback
+- training probes: candidate checkpoints are stopped before evaluation when
+  they show non-finite values, saturated value heads, dead value variance, or
+  implausible weight deltas
+
+These checks are intentionally conservative. A stopped lane with preserved
+artifacts is preferable to a promoted checkpoint trained on invalid labels or a
+broken architecture contract.
+
 ### 4. The broader coordinator is support infrastructure
 
 The repository also contains a large amount of orchestration, cluster, daemon, and P2P machinery, especially under [`ai-service/scripts`](/ai-service/scripts) and [`ai-service/app/coordination`](/ai-service/app/coordination).
@@ -96,7 +112,26 @@ If you are approaching RingRift as an engineer or researcher, the most useful pa
 
 The published results come from a small set of board/player configurations rather than every possible setup in the repo.
 
-As of April 13, 2026:
+As of April 26, 2026, the public result claims should still be read from
+[`docs/data/results_snapshot.json`](/docs/data/results_snapshot.json) and
+[`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json).
+Live operator context is useful for debugging, but it is not automatically a
+published result.
+
+Current operational picture:
+
+- `square8_2p`, `square8_3p`, and `hex8_2p` remain the most useful supported
+  improvement lanes.
+- `hex8_2p` v4 has evidence of useful 2-player learning and a second-seed
+  replication lane.
+- v5-heavy/fv3 is an active architecture experiment. Recent work fixed a FiLM
+  initialization failure and improved probe diagnostics, but it should not be
+  presented as a settled headline lane.
+- v4 multiplayer on `hex8_3p` and `hex8_4p` is under active investigation.
+  Final-state rank-aware targets are now firing, but training dynamics are
+  still being validated with lower LR and richer probe diagnostics.
+
+Older checked-in snapshot context:
 
 - `hex8_2p` is the strongest result at `1979.8` and remains the main headline path
 - `square8_2p` is the second clear improvement path at `1601.8`
@@ -143,3 +178,13 @@ The architecture is now split into two explicit lanes:
 - the **legacy-but-rehabilitated lane**, centered on coordination, P2P, and operational tooling that is being audited and decomposed rather than deleted
 
 That distinction matters. The broader infrastructure is becoming usable again, but the project should still present the supported lane as the source of truth for scientific claims and reproducibility.
+
+The near-term architecture work should stay narrow:
+
+- consolidate duplicated outcome-ranking code into one canonical training helper
+  after the current v4 multiplayer LR test settles
+- keep absolute victory metrics such as territory spaces, eliminated rings,
+  markers, victory type, and elimination-turn state as auxiliary signals or
+  metadata before making them part of any headline value target
+- avoid broad cleanup sweeps while live training gates are pending; the most
+  valuable code changes have been small contract fixes with direct validation

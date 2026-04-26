@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> Last updated: 2026-04-16
+> Last updated: 2026-04-26
 > Scope: living documentation only
 
 This index is the curated front door for the project docs. It points to the
@@ -9,16 +9,17 @@ completed remediation notes live under [archive/INDEX.md](archive/INDEX.md).
 
 ## Start Here
 
-| Document                                     | Why it matters                                                   |
-| -------------------------------------------- | ---------------------------------------------------------------- |
-| [../README.md](../README.md)                 | Fastest external-facing overview of the game and training result |
-| [../QUICKSTART.md](../QUICKSTART.md)         | Local setup for the supported path                               |
-| [REVIEWER_GUIDE.md](REVIEWER_GUIDE.md)       | Cold-review path through the supported surface                   |
-| [RESULTS.md](RESULTS.md)                     | Checked-in evidence, caveats, and charts                         |
-| [REPRODUCIBILITY.md](REPRODUCIBILITY.md)     | Exact training commands, hardware, and artifact locations        |
-| [LESSONS_LEARNED.md](LESSONS_LEARNED.md)     | Engineering retrospective on what failed, what worked, and why   |
-| [PROJECT_BRIEF.md](PROJECT_BRIEF.md)         | Short technical orientation for new readers                      |
-| [RESEARCH_SNAPSHOT.md](RESEARCH_SNAPSHOT.md) | Short shareable research summary                                 |
+| Document                                                 | Why it matters                                                   |
+| -------------------------------------------------------- | ---------------------------------------------------------------- |
+| [../README.md](../README.md)                             | Fastest external-facing overview of the game and training result |
+| [../QUICKSTART.md](../QUICKSTART.md)                     | Local setup for the supported path                               |
+| [REVIEWER_GUIDE.md](REVIEWER_GUIDE.md)                   | Cold-review path through the supported surface                   |
+| [RESULTS.md](RESULTS.md)                                 | Checked-in evidence, caveats, and charts                         |
+| [REPRODUCIBILITY.md](REPRODUCIBILITY.md)                 | Exact training commands, hardware, and artifact locations        |
+| [LESSONS_LEARNED.md](LESSONS_LEARNED.md)                 | Engineering retrospective on what failed, what worked, and why   |
+| [LESSONS_LEARNED_2026-04.md](LESSONS_LEARNED_2026-04.md) | Dated training-debugging addendum; not a public results manifest |
+| [PROJECT_BRIEF.md](PROJECT_BRIEF.md)                     | Short technical orientation for new readers                      |
+| [RESEARCH_SNAPSHOT.md](RESEARCH_SNAPSHOT.md)             | Short shareable research summary                                 |
 
 ## Game And Rules
 

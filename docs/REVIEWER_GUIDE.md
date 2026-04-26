@@ -35,6 +35,9 @@ Read these in order:
 4. [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md)
 5. [docs/ARCHITECTURE_OVERVIEW.md](/docs/ARCHITECTURE_OVERVIEW.md)
 6. [docs/LESSONS_LEARNED.md](/docs/LESSONS_LEARNED.md)
+7. [docs/LESSONS_LEARNED_2026-04.md](/docs/LESSONS_LEARNED_2026-04.md) - dated
+   training-debugging addendum; useful for process review, not a headline
+   results source.
 
 Then inspect these code surfaces:
 
