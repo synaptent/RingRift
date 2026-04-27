@@ -49,6 +49,20 @@ class TestParseArgs:
         args = parse_args(["--learning-rate", "0.001"])
         assert args.learning_rate == 0.001
 
+    def test_loss_weight_args(self):
+        """Test train-loss weight arguments."""
+        args = parse_args([
+            "--policy-weight",
+            "0.8",
+            "--value-weight",
+            "1.8",
+            "--rank-dist-weight",
+            "0.05",
+        ])
+        assert args.policy_weight == 0.8
+        assert args.value_weight == 1.8
+        assert args.rank_dist_weight == 0.05
+
     def test_seed(self):
         """Test --seed argument."""
         args = parse_args(["--seed", "42"])

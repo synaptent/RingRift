@@ -99,7 +99,16 @@ def _run_loop_once(
         _write_iteration_npz(npz_path, marker)
         return True
 
-    def fake_train_model(npz_path, out_path, init_path, epochs, batch_size, lr, train_lr_scheduler):
+    def fake_train_model(
+        npz_path,
+        out_path,
+        init_path,
+        epochs,
+        batch_size,
+        lr,
+        train_lr_scheduler,
+        **train_kwargs,
+    ):
         with np.load(npz_path, allow_pickle=True) as data:
             markers = data["features"][:, 0, 0, 0].tolist()
         train_calls.append(
@@ -110,6 +119,7 @@ def _run_loop_once(
                 "batch_size": batch_size,
                 "lr": lr,
                 "train_lr_scheduler": train_lr_scheduler,
+                **train_kwargs,
             }
         )
         Path(out_path).write_bytes(b"candidate-model")
@@ -470,6 +480,35 @@ def test_loop_allows_explicit_training_scheduler_override(monkeypatch, tmp_path)
     assert result["metrics"][0]["train_lr_scheduler"] == "step"
 
 
+def test_loop_threads_training_loss_knobs_to_train_model(monkeypatch, tmp_path):
+    result = _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        extra_args=[
+            "--policy-weight",
+            "0.8",
+            "--value-weight",
+            "1.8",
+            "--rank-dist-weight",
+            "0.05",
+            "--gradient-clip-max-norm",
+            "0.5",
+        ],
+    )
+
+    train_call = result["train_calls"][0]
+    assert train_call["policy_weight"] == 0.8
+    assert train_call["value_weight"] == 1.8
+    assert train_call["rank_dist_weight"] == 0.05
+    assert train_call["gradient_clip_max_norm"] == 0.5
+
+    metrics = result["metrics"][0]
+    assert metrics["policy_weight"] == 0.8
+    assert metrics["value_weight"] == 1.8
+    assert metrics["rank_dist_weight"] == 0.05
+    assert metrics["gradient_clip_max_norm"] == 0.5
+
+
 def test_loop_merges_supplemental_npz_without_touching_iteration_namespace(monkeypatch, tmp_path):
     result = _run_loop_once(
         monkeypatch,
@@ -606,6 +645,40 @@ def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):
     assert isinstance(cmd, list)
     assert cmd[1:3] == ["-m", "app.training.train"]
     assert cmd[cmd.index("--lr-scheduler") + 1] == "none"
+
+
+def test_train_model_passes_loss_weight_knobs(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, capture_output, text, timeout):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="val_loss=0.1\n", stderr="")
+
+    monkeypatch.setattr(loop.subprocess, "run", fake_run)
+    monkeypatch.setattr(loop, "BOARD_TYPE", "hex8")
+    monkeypatch.setattr(loop, "NUM_PLAYERS", 3)
+
+    result = loop.train_model(
+        tmp_path / "train.npz",
+        tmp_path / "candidate.pth",
+        tmp_path / "init.pth",
+        epochs=2,
+        bs=64,
+        lr=3e-5,
+        train_lr_scheduler="none",
+        policy_weight=0.8,
+        value_weight=1.8,
+        rank_dist_weight=0.05,
+        gradient_clip_max_norm=0.5,
+    )
+
+    assert "error" not in result
+    cmd = captured["cmd"]
+    assert isinstance(cmd, list)
+    assert cmd[cmd.index("--policy-weight") + 1] == "0.8"
+    assert cmd[cmd.index("--value-weight") + 1] == "1.8"
+    assert cmd[cmd.index("--rank-dist-weight") + 1] == "0.05"
+    assert cmd[cmd.index("--gradient-clip-max-norm") + 1] == "0.5"
 
 
 def test_critical_minimal_loop_modules_avoid_top_level_facade_imports() -> None:

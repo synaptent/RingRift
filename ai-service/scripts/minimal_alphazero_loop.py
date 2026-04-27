@@ -453,6 +453,11 @@ def train_model(
     bs: int,
     lr: float,
     train_lr_scheduler: str,
+    *,
+    policy_weight: float | None = None,
+    value_weight: float | None = None,
+    rank_dist_weight: float | None = None,
+    gradient_clip_max_norm: float | None = None,
 ) -> dict:
     """Train candidate. Retries with halved batch on OOM."""
     for attempt in range(3):
@@ -467,9 +472,19 @@ def train_model(
                "--init-weights", str(init), "--no-auto-tune-batch-size",
                "--lr-scheduler", train_lr_scheduler, "--skip-freshness-check",
                "--sampling-weights", "uniform"]
+        if policy_weight is not None:
+            cmd.extend(["--policy-weight", str(policy_weight)])
+        if value_weight is not None:
+            cmd.extend(["--value-weight", str(value_weight)])
+        if rank_dist_weight is not None:
+            cmd.extend(["--rank-dist-weight", str(rank_dist_weight)])
+        if gradient_clip_max_norm is not None:
+            cmd.extend(["--gradient-clip-max-norm", str(gradient_clip_max_norm)])
         logger.info(
             f"  training epochs={epochs} bs={b} lr={lr} "
-            f"scheduler={train_lr_scheduler} (attempt {attempt+1})"
+            f"scheduler={train_lr_scheduler} policy_w={policy_weight} "
+            f"value_w={value_weight} rank_w={rank_dist_weight} "
+            f"grad_clip={gradient_clip_max_norm} (attempt {attempt+1})"
         )
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
@@ -481,6 +496,10 @@ def train_model(
                 "learning_rate": lr,
                 "epochs": epochs,
                 "scheduler": train_lr_scheduler,
+                "policy_weight": policy_weight,
+                "value_weight": value_weight,
+                "rank_dist_weight": rank_dist_weight,
+                "gradient_clip_max_norm": gradient_clip_max_norm,
             }
             for line in (r.stdout + r.stderr).split("\n"):
                 if "val_loss" in line.lower():
@@ -907,6 +926,14 @@ def main() -> None:
                          "(auto=none for fixed loop LR, cosine otherwise)")
     ap.add_argument("--lr-floor", type=float, default=1e-5,
                     help="Minimum LR for sqrt_decay schedule (default: 1e-5)")
+    ap.add_argument("--policy-weight", type=float, default=None,
+                    help="Optional policy loss weight passed to app.training.train")
+    ap.add_argument("--value-weight", type=float, default=None,
+                    help="Optional value loss weight passed to app.training.train")
+    ap.add_argument("--rank-dist-weight", type=float, default=None,
+                    help="Optional rank-distribution loss weight passed to app.training.train")
+    ap.add_argument("--gradient-clip-max-norm", type=float, default=None,
+                    help="Optional gradient clip max norm passed to app.training.train")
     ap.add_argument("--train-window", type=int, default=10,
                     help="Number of recent iterations to combine for training data (default: 10)")
     ap.add_argument("--promote-threshold", type=float, default=0.55)
@@ -1098,6 +1125,10 @@ def main() -> None:
         "base_lr": args.lr,
         "lr_schedule": args.lr_schedule,
         "train_lr_scheduler": train_lr_scheduler,
+        "policy_weight": args.policy_weight,
+        "value_weight": args.value_weight,
+        "rank_dist_weight": args.rank_dist_weight,
+        "gradient_clip_max_norm": args.gradient_clip_max_norm,
         "lr_floor": args.lr_floor,
         "train_window": train_window,
         "supplemental_data_dir": str(supplemental_data_dir) if supplemental_data_dir is not None else "",
@@ -1258,6 +1289,10 @@ def main() -> None:
             batch_size,
             effective_lr,
             train_lr_scheduler,
+            policy_weight=args.policy_weight,
+            value_weight=args.value_weight,
+            rank_dist_weight=args.rank_dist_weight,
+            gradient_clip_max_norm=args.gradient_clip_max_norm,
         )
         ti["target_stats"] = target_stats
         if "error" in ti or not cpath.exists():

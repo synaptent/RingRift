@@ -320,6 +320,18 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Initial learning rate (default: 0.0005 for stable training)'
     )
     parser.add_argument(
+        '--policy-weight', type=float, default=None,
+        help='Weight for policy loss. Defaults to TrainConfig.policy_weight.'
+    )
+    parser.add_argument(
+        '--value-weight', type=float, default=None,
+        help='Weight for value loss. Defaults to TrainConfig.value_weight.'
+    )
+    parser.add_argument(
+        '--rank-dist-weight', type=float, default=None,
+        help='Weight for multi-player rank-distribution loss. Defaults to TrainConfig.rank_dist_weight.'
+    )
+    parser.add_argument(
         '--seed', type=int, default=None,
         help='Random seed for reproducibility'
     )
@@ -927,6 +939,12 @@ def main() -> None:
         config.batch_size = args.batch_size
     if args.learning_rate is not None:
         config.learning_rate = args.learning_rate
+    if args.policy_weight is not None:
+        config.policy_weight = args.policy_weight
+    if args.value_weight is not None:
+        config.value_weight = args.value_weight
+    if args.rank_dist_weight is not None:
+        config.rank_dist_weight = args.rank_dist_weight
     if args.seed is not None:
         config.seed = args.seed
     if args.policy_label_smoothing > 0:
