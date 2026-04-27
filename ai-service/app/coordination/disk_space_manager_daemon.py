@@ -245,6 +245,12 @@ class DiskSpaceConfig:
 
     # Data paths to manage (relative to ai-service root)
     logs_dir: str = "logs"
+    user_logs_dir: str = field(
+        default_factory=lambda: os.environ.get(
+            "RINGRIFT_USER_LOGS_DIR",
+            str(Path.home() / "Library" / "Logs" / "RingRift"),
+        )
+    )
     games_dir: str = "data/games"
     training_dir: str = "data/training"
     checkpoints_dir: str = "data/checkpoints"
@@ -252,6 +258,7 @@ class DiskSpaceConfig:
 
     # Retention policies (days)
     log_retention_days: int = 7
+    max_user_log_mb: int = 1024
     checkpoint_retention_days: int = 14
     empty_db_max_age_days: int = 1
 
@@ -314,6 +321,7 @@ class DiskSpaceConfig:
             "MIN_FREE_GB": ("min_free_gb", int),
             "SYNC_BACKOFF_FREE_GB": ("sync_backoff_free_gb", float),
             "LOG_RETENTION_DAYS": ("log_retention_days", int),
+            "MAX_USER_LOG_MB": ("max_user_log_mb", int),
             "ENABLE_CLEANUP": ("enable_cleanup", lambda x: x == "1"),
             "EMIT_EVENTS": ("emit_events", lambda x: x == "1"),
         }
@@ -506,6 +514,7 @@ class DiskSpaceManagerDaemon(HandlerBase):
         if self.config.enable_cleanup:
             retention_freed = self._cleanup_old_owc_imports()
             retention_freed += self._cleanup_old_logs()
+            retention_freed += self._truncate_oversized_user_logs()
             retention_freed += self._cleanup_empty_databases()
             # Mar 2026: Enforce candidate model TTL to prevent unbounded accumulation.
             # Without this, candidate_*.pth files accumulate indefinitely (514 files,
@@ -725,6 +734,40 @@ class DiskSpaceManagerDaemon(HandlerBase):
                     logger.debug(f"Removed old log: {log_file.name}")
             except (OSError, PermissionError) as e:
                 logger.debug(f"Failed to remove log {log_file}: {e}")
+
+        return bytes_freed
+
+    def _truncate_oversized_user_logs(self) -> int:
+        """Truncate launchd/user logs that exceed the configured size cap.
+
+        macOS launchd writes stdout/stderr directly to files such as
+        ~/Library/Logs/RingRift/p2p.log. Those files may be actively open, so
+        truncating in place is safer than unlinking or renaming them.
+        """
+        bytes_freed = 0
+        logs_path = Path(self.config.user_logs_dir).expanduser()
+        if not logs_path.exists():
+            return 0
+
+        max_bytes = max(1, self.config.max_user_log_mb) * 1024 * 1024
+        for log_file in logs_path.glob("*.log"):
+            try:
+                if log_file.is_symlink() or not log_file.is_file():
+                    continue
+                size = log_file.stat().st_size
+                if size <= max_bytes:
+                    continue
+                with open(log_file, "r+b") as handle:
+                    handle.truncate(0)
+                bytes_freed += size
+                logger.warning(
+                    "[%s] Truncated oversized user log: %s (freed %.1fGB)",
+                    self.name,
+                    log_file,
+                    size / (1024**3),
+                )
+            except (OSError, PermissionError) as e:
+                logger.debug("Failed to truncate user log %s: %s", log_file, e)
 
         return bytes_freed
 

@@ -63,6 +63,7 @@ def config() -> DiskSpaceConfig:
         checkpoint_retention_days=14,
         min_checkpoints_per_config=2,
         min_logs_to_keep=3,
+        max_user_log_mb=1,
         enable_cleanup=True,
         emit_events=False,  # Disable for tests
     )
@@ -73,6 +74,7 @@ def daemon(temp_root: Path, config: DiskSpaceConfig) -> DiskSpaceManagerDaemon:
     """Create a daemon with temporary root."""
     daemon = DiskSpaceManagerDaemon(config=config)
     daemon._root_path = temp_root
+    daemon.config.user_logs_dir = str(temp_root / "user_logs")
     return daemon
 
 
@@ -325,6 +327,24 @@ class TestDiskSpaceManagerCleanup:
         # Should not remove any (all within minimum)
         assert bytes_freed == 0
         assert len(list(logs_path.glob("*.log"))) == daemon.config.min_logs_to_keep
+
+    def test_truncate_oversized_user_logs(
+        self, daemon: DiskSpaceManagerDaemon, temp_root: Path
+    ) -> None:
+        """Oversized launchd logs are truncated in place."""
+        logs_path = temp_root / "user_logs"
+        logs_path.mkdir(parents=True)
+        large_log = logs_path / "p2p.log"
+        small_log = logs_path / "resilience.log"
+        large_log.write_bytes(b"x" * (2 * 1024 * 1024))
+        small_log.write_bytes(b"x" * 128)
+
+        bytes_freed = daemon._truncate_oversized_user_logs()
+
+        assert bytes_freed == 2 * 1024 * 1024
+        assert large_log.exists()
+        assert large_log.stat().st_size == 0
+        assert small_log.stat().st_size == 128
 
     def test_cleanup_cache(self, daemon: DiskSpaceManagerDaemon) -> None:
         """Test cache cleanup."""
