@@ -960,7 +960,7 @@ def main() -> None:
         action="store_true",
         help=(
             "After PLATEAU_DETECTED, cap staged promotion thresholds at "
-            "52% for the next 3 iterations"
+            "52%% for the next 3 iterations"
         ),
     )
     ap.add_argument("--no-self-heal", action="store_true",

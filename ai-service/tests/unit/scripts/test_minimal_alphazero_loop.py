@@ -681,6 +681,20 @@ def test_train_model_passes_loss_weight_knobs(monkeypatch, tmp_path):
     assert cmd[cmd.index("--gradient-clip-max-norm") + 1] == "0.5"
 
 
+def test_minimal_loop_help_renders() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/minimal_alphazero_loop.py", "--help"],
+        cwd=REPO_ROOT / "ai-service",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    assert "--value-weight" in result.stdout
+    assert "52%" in result.stdout
+
+
 def test_critical_minimal_loop_modules_avoid_top_level_facade_imports() -> None:
     for relative_path in CRITICAL_LOOP_FILES:
         tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
