@@ -1338,7 +1338,7 @@ class HexNeuralNet_v4(nn.Module):
         globals: torch.Tensor,
         mask: torch.Tensor | None = None,
         return_features: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass with spatial policy heads and NAS-optimized backbone.
 
@@ -1351,7 +1351,8 @@ class HexNeuralNet_v4(nn.Module):
         Returns:
             v_out: [B, num_players] value predictions
             policy_logits: [B, P_HEX] policy logits
-            features: (optional) [B, num_filters] intermediate features if return_features=True
+            rank_dist: [B, num_players, num_players] rank probability distribution
+            features: (optional) [B, num_filters + global_features] intermediate features if return_features=True
         """
         hex_mask = self.hex_mask if mask is None else mask
 
@@ -1373,6 +1374,15 @@ class HexNeuralNet_v4(nn.Module):
         v_hidden = self.relu(self.value_fc2(v_hidden))
         v_hidden = self.dropout(v_hidden)
         v_out = self.tanh(self.value_fc3(v_hidden))
+
+        # Rank distribution head. V4 stores these weights and multiplayer
+        # training expects this output for rank-aware loss.
+        rank_hidden = self.relu(self.rank_dist_fc1(combined))
+        rank_hidden = self.dropout(rank_hidden)
+        rank_hidden = self.relu(self.rank_dist_fc2(rank_hidden))
+        rank_hidden = self.dropout(rank_hidden)
+        rank_logits = self.rank_dist_fc3(rank_hidden).view(-1, self.num_players, self.num_players)
+        rank_dist = self.rank_softmax(rank_logits)
 
         # Spatial policy heads
         placement_logits = self.placement_conv(out)
@@ -1396,6 +1406,6 @@ class HexNeuralNet_v4(nn.Module):
         policy_logits = self._scatter_policy_logits(placement_logits, movement_logits, special_logits, hex_mask)
 
         if return_features:
-            return v_out, policy_logits, out_pooled
+            return v_out, policy_logits, rank_dist, combined
 
-        return v_out, policy_logits
+        return v_out, policy_logits, rank_dist

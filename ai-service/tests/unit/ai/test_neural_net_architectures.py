@@ -644,10 +644,16 @@ class TestHexNeuralNet_v4:
         x = torch.randn(batch_size, 64, 25, 25)
         g = torch.randn(batch_size, 20)
 
-        value, policy = model(x, g)
+        value, policy, rank_dist = model(x, g)
 
         assert value.shape == (batch_size, 4)
         assert policy.shape == (batch_size, P_HEX)
+        assert rank_dist.shape == (batch_size, 4, 4)
+        assert torch.allclose(
+            rank_dist.sum(dim=-1),
+            torch.ones(batch_size, 4),
+            atol=1e-5,
+        )
 
     def test_uses_attention_blocks(self):
         """Test that v4 uses AttentionResidualBlock."""
@@ -684,10 +690,32 @@ class TestHexNeuralNet_v4:
         x = torch.randn(2, 64, 9, 9)
         g = torch.randn(2, 20)
 
-        value, policy = model(x, g)
+        value, policy, rank_dist = model(x, g)
 
         assert value.shape == (2, 4)
         assert policy.shape == (2, 5000)
+        assert rank_dist.shape == (2, 4, 4)
+
+    def test_return_features_includes_rank_distribution(self):
+        """Test v4 return_features preserves the rank distribution output."""
+        model = HexNeuralNet_v4(
+            in_channels=64,
+            global_features=20,
+            num_res_blocks=2,
+            num_filters=32,
+            board_size=9,
+            policy_size=5000,
+            hex_radius=4,
+        )
+        x = torch.randn(2, 64, 9, 9)
+        g = torch.randn(2, 20)
+
+        value, policy, rank_dist, features = model(x, g, return_features=True)
+
+        assert value.shape == (2, 4)
+        assert policy.shape == (2, 5000)
+        assert rank_dist.shape == (2, 4, 4)
+        assert features.shape == (2, 52)
 
 
 # ==============================================================================
