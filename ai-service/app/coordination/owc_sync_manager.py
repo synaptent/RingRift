@@ -61,6 +61,7 @@ from app.config.cluster_config import (
     get_sync_routing,
     ClusterNode,
 )
+from app.coordination.sync_policy import should_backoff_internal_write
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +186,11 @@ class OWCSyncConfig:
     enable_pull: bool = True
     enable_s3_pull: bool = True
     verify_checksums: bool = True
+    max_cache_entries: int = field(
+        default_factory=lambda: int(
+            os.environ.get("RINGRIFT_OWC_SYNC_MAX_CACHE_ENTRIES", "2048")
+        )
+    )
 
 
 @dataclass
@@ -540,6 +546,31 @@ class OWCSyncManager(HandlerBase):
                 sha256.update(chunk)
         return sha256.hexdigest()
 
+    def _prune_file_cache(self) -> None:
+        """Bound checksum/mtime caches used for push deduplication."""
+        max_entries = max(1, self.config.max_cache_entries)
+        if len(self._file_mtimes) <= max_entries and len(self._file_checksums) <= max_entries:
+            return
+
+        newest_keys = {
+            key
+            for key, _ in sorted(
+                self._file_mtimes.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:max_entries]
+        }
+        self._file_mtimes = {
+            key: value
+            for key, value in self._file_mtimes.items()
+            if key in newest_keys
+        }
+        self._file_checksums = {
+            key: value
+            for key, value in self._file_checksums.items()
+            if key in newest_keys
+        }
+
     async def _push_if_modified(self, local_path: Path, dest_rel_path: str) -> bool:
         """Push file to OWC if it has been modified since last push.
 
@@ -579,6 +610,7 @@ class OWCSyncManager(HandlerBase):
                 file_size = local_path.stat().st_size
                 self._file_mtimes[str(local_path)] = mtime
                 self._file_checksums[str(local_path)] = checksum
+                self._prune_file_cache()
                 self._sync_stats.push_files_synced += 1
                 self._sync_stats.push_bytes_synced += file_size
                 logger.info(
@@ -632,12 +664,13 @@ class OWCSyncManager(HandlerBase):
             result = await asyncio.to_thread(
                 subprocess.run,
                 [
-                    "rsync", "-avz", "--progress",
+                    "rsync", "-az",
                     "-e", ssh_opts,
                     str(local_path),
                     remote_dest,
                 ],
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
                 timeout=self.config.rsync_timeout,
             )
@@ -742,7 +775,7 @@ class OWCSyncManager(HandlerBase):
             )
 
             cmd = [
-                "rsync", "-avz", "--progress",
+                "rsync", "-az",
                 "--include=*.db",
                 "--include=*.db-wal",
                 "--include=*.db-shm",
@@ -761,10 +794,10 @@ class OWCSyncManager(HandlerBase):
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            _, stderr = await proc.communicate()
 
             if proc.returncode == 0:
                 self._sync_stats.pull_nodes_synced += 1
@@ -820,6 +853,9 @@ class OWCSyncManager(HandlerBase):
 
         npz_subdir = self._storage_config.subdirs.get("npz", "canonical_data")
         dest_path = Path(self._storage_config.path) / npz_subdir
+        if should_backoff_internal_write(dest_path):
+            logger.warning("[OWCSyncManager] Skipping NPZ pull: low free disk")
+            return 0
         dest_path.mkdir(parents=True, exist_ok=True)
 
         s3_source = (
@@ -832,10 +868,10 @@ class OWCSyncManager(HandlerBase):
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            _, stderr = await proc.communicate()
 
             if proc.returncode == 0:
                 self._sync_stats.s3_npz_synced += 1
@@ -869,6 +905,9 @@ class OWCSyncManager(HandlerBase):
 
         models_subdir = self._storage_config.subdirs.get("models", "canonical_models")
         dest_path = Path(self._storage_config.path) / models_subdir
+        if should_backoff_internal_write(dest_path):
+            logger.warning("[OWCSyncManager] Skipping models pull: low free disk")
+            return 0
         dest_path.mkdir(parents=True, exist_ok=True)
 
         s3_source = (
@@ -885,10 +924,10 @@ class OWCSyncManager(HandlerBase):
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            _, stderr = await proc.communicate()
 
             if proc.returncode == 0:
                 self._sync_stats.s3_models_synced += 1

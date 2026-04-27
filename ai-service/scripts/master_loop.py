@@ -54,6 +54,7 @@ import contextlib
 import json
 import logging
 import os
+import platform
 import resource
 import signal
 import sqlite3
@@ -534,6 +535,7 @@ class MasterLoopController:
         }
 
         # Timing
+        self._start_time = time.time()
         self._last_training_check = 0.0
         self._last_allocation_check = 0.0
         self._last_load_snapshot = 0.0  # Load forecasting (Dec 2025)
@@ -558,6 +560,7 @@ class MasterLoopController:
         self._db_path = STATE_DB_PATH
         self._last_state_save = 0.0
         self._loop_iteration = 0  # Heartbeat tracking (Dec 2025)
+        self._restart_requested_reason: str | None = None
         self._state_lock = threading.Lock()  # Race condition fix (Dec 2025)
         self._init_state_db()
 
@@ -1424,6 +1427,11 @@ class MasterLoopController:
                     # kill non-essential daemons. This catches cases where
                     # MemoryPressureController's graduated response is too slow.
                     await self._oom_watchdog_check()
+
+                    # 13. Master-loop self guard (April 2026)
+                    # Catch per-process RSS leaks and long uptimes even when
+                    # system-wide RAM percentage has not crossed the OOM guard.
+                    self._master_loop_self_guard_check()
 
                 except asyncio.CancelledError:
                     # Allow cancellation to propagate for clean shutdown
@@ -2562,6 +2570,58 @@ class MasterLoopController:
         except Exception as e:
             logger.debug(f"[MasterLoop] OOM watchdog error: {e}")
 
+    def _get_current_rss_gb(self) -> float:
+        """Return current process RSS in GiB, with portable fallbacks."""
+        try:
+            import psutil  # type: ignore
+
+            return psutil.Process(os.getpid()).memory_info().rss / (1024**3)
+        except Exception:
+            usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # macOS reports bytes; Linux reports KiB. This fallback is max RSS,
+            # not current RSS, but remains safe for a restart guard.
+            if platform.system() == "Darwin":
+                return usage / (1024**3)
+            return usage / (1024**2)
+
+    def _master_loop_self_guard_check(self) -> None:
+        """Cooperatively exit when master-loop exceeds RSS or uptime budget."""
+        enabled = os.environ.get(
+            "RINGRIFT_MASTER_LOOP_SELF_GUARD_ENABLED", "true"
+        ).lower() in {"1", "true", "yes"}
+        if not enabled:
+            return
+
+        rss_budget_gb = float(os.environ.get("RINGRIFT_MASTER_LOOP_RSS_BUDGET_GB", "20"))
+        max_uptime_hours = float(
+            os.environ.get("RINGRIFT_MASTER_LOOP_MAX_UPTIME_HOURS", "24")
+        )
+        rss_gb = self._get_current_rss_gb()
+        uptime_hours = (time.time() - self._start_time) / 3600
+
+        reason = None
+        if rss_gb > rss_budget_gb:
+            reason = f"rss_budget_exceeded:{rss_gb:.2f}GB>{rss_budget_gb:.2f}GB"
+        elif max_uptime_hours > 0 and uptime_hours > max_uptime_hours:
+            reason = (
+                f"uptime_budget_exceeded:{uptime_hours:.2f}h>"
+                f"{max_uptime_hours:.2f}h"
+            )
+
+        if reason is None:
+            return
+
+        self._restart_requested_reason = reason
+        logger.warning(
+            "[MasterLoop] Cooperative restart requested: %s rss_gb=%.2f uptime_hours=%.2f",
+            reason,
+            rss_gb,
+            uptime_hours,
+        )
+        self._update_heartbeat("restart_requested")
+        self._running = False
+        self._shutdown_event.set()
+
     # =========================================================================
     # Training coordination
     # =========================================================================
@@ -3088,6 +3148,17 @@ class MasterLoopController:
             "running": self._running,
             "active_configs": self.active_configs,
             "dry_run": self.dry_run,
+            "process": {
+                "rss_gb": round(self._get_current_rss_gb(), 3),
+                "uptime_hours": round((time.time() - self._start_time) / 3600, 3),
+                "rss_budget_gb": float(
+                    os.environ.get("RINGRIFT_MASTER_LOOP_RSS_BUDGET_GB", "20")
+                ),
+                "max_uptime_hours": float(
+                    os.environ.get("RINGRIFT_MASTER_LOOP_MAX_UPTIME_HOURS", "24")
+                ),
+                "restart_requested_reason": self._restart_requested_reason,
+            },
             "config_states": {
                 cfg: {
                     "games_pending": state.games_since_last_export,

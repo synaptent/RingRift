@@ -26,6 +26,19 @@ BUCKET="ringrift-models-20251214"
 
 echo "$LOG_PREFIX Starting gauntlet data sync for training"
 
+if [ "${RINGRIFT_GAUNTLET_PULL_FOR_TRAINING:-false}" != "true" ]; then
+    echo "$LOG_PREFIX Gauntlet DB rehydration is disabled by default."
+    echo "$LOG_PREFIX Set RINGRIFT_GAUNTLET_PULL_FOR_TRAINING=true for an explicit, active training consumer."
+    exit 0
+fi
+
+min_free_gb="${RINGRIFT_SYNC_INTERNAL_MIN_FREE_GB:-10}"
+free_gb=$(df -g . | awk 'NR==2 {print $4}')
+if [ "${free_gb:-0}" -lt "$min_free_gb" ]; then
+    echo "$LOG_PREFIX Backing off: only ${free_gb:-0}GB free (minimum ${min_free_gb}GB)"
+    exit 0
+fi
+
 # 1. Pull gauntlet DBs from S3 to coordinator (incremental, size-based)
 echo "$LOG_PREFIX Pulling gauntlet DBs from S3..."
 aws s3 sync "s3://$BUCKET/consolidated/games/" data/games/ \

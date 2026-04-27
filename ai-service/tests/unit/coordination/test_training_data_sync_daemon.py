@@ -39,6 +39,27 @@ from app.coordination.training_data_sync_daemon import (
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def allow_training_sync_policy(monkeypatch, tmp_path):
+    """Keep existing OWC transfer tests focused on subprocess outcomes."""
+    policy_path = tmp_path / "sync_policy.yaml"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "internal_write_min_free_gb: 0",
+                "pull:",
+                "  default_allowed: false",
+                "  require_consumer_signal: false",
+                "  gauntlet_allowed: false",
+                "  allowlist:",
+                "    - training",
+                "    - '*.npz'",
+            ]
+        )
+    )
+    monkeypatch.setenv("RINGRIFT_SYNC_POLICY_PATH", str(policy_path))
+
+
 @pytest.fixture
 def mock_data_source():
     """Create a mock DataSource enum."""

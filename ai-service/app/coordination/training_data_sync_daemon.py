@@ -53,6 +53,10 @@ from app.coordination.training_data_manifest import (
     TrainingDataEntry,
     get_training_data_manifest,
 )
+from app.coordination.sync_policy import (
+    is_pull_to_internal_allowed,
+    should_backoff_internal_write,
+)
 from typing import Callable
 
 logger = logging.getLogger(__name__)
@@ -173,6 +177,30 @@ async def sync_from_owc(
 
     try:
         # Ensure parent directory exists
+        if not is_pull_to_internal_allowed(
+            local_path.name,
+            family="training",
+            consumer_signal=os.environ.get("RINGRIFT_TRAINING_SYNC_CONSUMER_SIGNAL"),
+        ):
+            return SyncResult(
+                config_key=config_key,
+                success=False,
+                source=DataSource.OWC,
+                source_path=entry.path,
+                error="OWC->internal pull blocked by sync policy",
+                duration_seconds=time.time() - start_time,
+            )
+
+        if should_backoff_internal_write(local_path):
+            return SyncResult(
+                config_key=config_key,
+                success=False,
+                source=DataSource.OWC,
+                source_path=entry.path,
+                error="OWC->internal pull backed off due to low free disk",
+                duration_seconds=time.time() - start_time,
+            )
+
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build rsync command
@@ -183,7 +211,6 @@ async def sync_from_owc(
         cmd = [
             "rsync",
             "-avz",
-            "--progress",
             "--partial",
             "--inplace",
             "-e", ssh_opts,
@@ -196,12 +223,12 @@ async def sync_from_owc(
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(
+            _, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:

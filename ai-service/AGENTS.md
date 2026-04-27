@@ -26,6 +26,17 @@ must conform to them and to the TS engine, not vice versa.
 
 ## 2. Canonical vs Legacy Data & Models
 
+### 2.0 Coordinator sync policy
+
+Remote-to-internal rehydration is opt-in. Do not add OWC/S3/P2P pulls that write
+large DBs or training artifacts back to local internal storage unless they go
+through `app.coordination.sync_policy` and respect `data/sync_policy.yaml`.
+Default behavior is push-only for internal rehydration; `gauntlet_*.db`,
+`baseline_calibration_*.db`, and `tournament_*.db` must not be restored to
+`data/games` by default after an operator deletes them locally. Sync/import
+paths must also back off when free internal disk is below the configured
+absolute threshold.
+
 ### 2.1 Canonical policy (must follow)
 
 - **Canonical game data**:

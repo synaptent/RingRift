@@ -45,6 +45,11 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.coordination.sync_policy import (
+    is_evaluation_db_name,
+    is_pull_to_internal_allowed,
+    should_backoff_internal_write,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -561,6 +566,21 @@ class DataAvailabilityDaemon:
             else:
                 local_path = self.config.data_dir / req.data_type / req.file_pattern
 
+            if is_evaluation_db_name(req.file_pattern) and not is_pull_to_internal_allowed(
+                req.file_pattern,
+                family=req.data_type,
+                consumer_signal=f"data_availability:{req.data_type}",
+            ):
+                logger.info(
+                    "S3 evaluation DB pull blocked by sync policy: %s",
+                    req.file_pattern,
+                )
+                return False
+
+            if should_backoff_internal_write(local_path):
+                logger.warning("S3 pull backed off due to low free disk: %s", local_path)
+                return False
+
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
             async with aiohttp.ClientSession() as session:
@@ -590,6 +610,22 @@ class DataAvailabilityDaemon:
                 local_path = self.config.models_dir / req.file_pattern
             else:
                 local_path = self.config.data_dir / req.data_type / req.file_pattern
+
+            if not is_pull_to_internal_allowed(
+                req.file_pattern,
+                family=req.data_type,
+                consumer_signal=f"data_availability:{req.data_type}",
+            ):
+                logger.info(
+                    "OWC pull blocked by sync policy: %s (%s)",
+                    req.file_pattern,
+                    req.data_type,
+                )
+                return False
+
+            if should_backoff_internal_write(local_path):
+                logger.warning("OWC pull backed off due to low free disk: %s", local_path)
+                return False
 
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -640,18 +676,33 @@ class DataAvailabilityDaemon:
             else:
                 local_path = self.config.data_dir / req.data_type / req.file_pattern
 
+            if is_evaluation_db_name(req.file_pattern) and not is_pull_to_internal_allowed(
+                req.file_pattern,
+                family=req.data_type,
+                consumer_signal=f"data_availability:{req.data_type}",
+            ):
+                logger.info(
+                    "P2P evaluation DB pull blocked by sync policy: %s",
+                    req.file_pattern,
+                )
+                return False
+
+            if should_backoff_internal_write(local_path):
+                logger.warning("P2P pull backed off due to low free disk: %s", local_path)
+                return False
+
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Use rsync for large files
             cmd = [
-                "rsync", "-avz", "--progress",
+                "rsync", "-avz",
                 f"armand@{coordinator}:{remote_path}",
                 str(local_path),
             ]
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
 

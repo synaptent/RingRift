@@ -201,11 +201,28 @@ def get_owc_totals(databases: list[OWCDatabase]) -> dict[str, int]:
 
 def sync_database_from_owc(rel_path: str) -> Path | None:
     """Sync a single database from OWC to local staging."""
+    from app.coordination.sync_policy import (
+        is_pull_to_internal_allowed,
+        should_backoff_internal_write,
+    )
+
     OWC_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
     # Create local filename from path
     local_name = rel_path.replace("/", "_")
     local_path = OWC_STAGING_DIR / local_name
+
+    if not is_pull_to_internal_allowed(
+        local_name,
+        family="owc_imports",
+        consumer_signal=os.environ.get("RINGRIFT_OWC_IMPORT_CONSUMER_SIGNAL"),
+    ):
+        logger.info(f"  Skipped by sync policy: {rel_path}")
+        return None
+
+    if should_backoff_internal_write(local_path):
+        logger.warning(f"  Backing off due to low free disk: {local_path}")
+        return None
 
     remote_path = f"{OWC_USER}@{OWC_HOST}:{OWC_BASE_PATH}/{rel_path}"
 
@@ -213,15 +230,20 @@ def sync_database_from_owc(rel_path: str) -> Path | None:
 
     rsync_cmd = [
         "rsync",
-        "-avz",
-        "--progress",
+        "-az",
         "-e", f"ssh -i {OWC_SSH_KEY} -o StrictHostKeyChecking=no",
         remote_path,
         str(local_path),
     ]
 
     try:
-        result = subprocess.run(rsync_cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(
+            rsync_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=600,
+        )
         if result.returncode == 0:
             logger.info(f"  Synced: {local_path.stat().st_size / 1024 / 1024:.1f} MB")
             return local_path

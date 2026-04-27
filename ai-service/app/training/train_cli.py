@@ -939,11 +939,11 @@ def main() -> None:
         config.batch_size = args.batch_size
     if args.learning_rate is not None:
         config.learning_rate = args.learning_rate
-    if args.policy_weight is not None:
+    if getattr(args, "policy_weight", None) is not None:
         config.policy_weight = args.policy_weight
-    if args.value_weight is not None:
+    if getattr(args, "value_weight", None) is not None:
         config.value_weight = args.value_weight
-    if args.rank_dist_weight is not None:
+    if getattr(args, "rank_dist_weight", None) is not None:
         config.rank_dist_weight = args.rank_dist_weight
     if args.seed is not None:
         config.seed = args.seed
@@ -953,9 +953,9 @@ def main() -> None:
         config.weight_decay = args.weight_decay
     if hasattr(args, 'label_smoothing') and args.label_smoothing > 0:
         config.policy_label_smoothing = args.label_smoothing
-    if args.feature_version is not None:
+    if getattr(args, "feature_version", None) is not None:
         config.feature_version = args.feature_version
-    if args.filter_empty_policies:
+    if getattr(args, "filter_empty_policies", False):
         config.allow_empty_policies = False
     if args.board_type is not None:
         board_type_map = {

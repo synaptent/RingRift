@@ -1,0 +1,13 @@
+# RingRift coordinator sync policy.
+#
+# Default semantics are push-only for internal rehydration. OWC/S3/P2P pulls
+# that write large artifacts back to the coordinator's internal disk must have
+# an explicit downstream consumer signal and an allowlisted family/pattern.
+
+internal_write_min_free_gb: 10
+
+pull:
+  default_allowed: false
+  require_consumer_signal: true
+  gauntlet_allowed: false
+  allowlist: []

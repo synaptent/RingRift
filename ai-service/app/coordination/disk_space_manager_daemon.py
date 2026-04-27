@@ -43,6 +43,7 @@ from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PE
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.event_utils import parse_config_key
 from app.coordination.contracts import CoordinatorStatus
+from app.coordination.sync_policy import DEFAULT_INTERNAL_WRITE_MIN_FREE_GB
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +238,11 @@ class DiskSpaceConfig:
     # so 50GB left only 1-2 imports of headroom before critical.
     min_free_gb: int = 100
 
+    # Immediate sync backoff threshold. When free space drops below this,
+    # sync/import daemons that can write to internal disk must stop before the
+    # percentage-based critical gate catches up.
+    sync_backoff_free_gb: float = DEFAULT_INTERNAL_WRITE_MIN_FREE_GB
+
     # Data paths to manage (relative to ai-service root)
     logs_dir: str = "logs"
     games_dir: str = "data/games"
@@ -306,6 +312,7 @@ class DiskSpaceConfig:
             "CRITICAL_THRESHOLD": ("critical_threshold", int),
             "TARGET_USAGE": ("target_disk_usage", int),
             "MIN_FREE_GB": ("min_free_gb", int),
+            "SYNC_BACKOFF_FREE_GB": ("sync_backoff_free_gb", float),
             "LOG_RETENTION_DAYS": ("log_retention_days", int),
             "ENABLE_CLEANUP": ("enable_cleanup", lambda x: x == "1"),
             "EMIT_EVENTS": ("emit_events", lambda x: x == "1"),
@@ -470,6 +477,19 @@ class DiskSpaceManagerDaemon(HandlerBase):
             f"({self._current_status.free_gb:.1f}GB free)"
         )
 
+        if self._current_status.free_gb < self.config.sync_backoff_free_gb:
+            reason = (
+                f"sync_backoff_low_free_disk:{self._current_status.free_gb:.1f}GB"
+                f"<{self.config.sync_backoff_free_gb:.1f}GB"
+            )
+            block_disk_writes(reason)
+            logger.warning(
+                "disk_safety_belt_active free_gb=%.2f threshold_gb=%.2f path=%s",
+                self._current_status.free_gb,
+                self.config.sync_backoff_free_gb,
+                self._current_status.path,
+            )
+
         # Mar 18, 2026: Monitor OWC drive if mounted. OWC filling to 100%
         # caused a 7-day pipeline stall (queue_populator crash loop).
         self._check_owc_disk_space()
@@ -583,9 +603,12 @@ class DiskSpaceManagerDaemon(HandlerBase):
             f"freed {freed_mb:.1f}MB, now at {status.usage_percent:.1f}%"
         )
 
-        # Phase 2.3 Dec 29, 2025: Re-allow writes if cleanup succeeded
-        # Only allow if we're now below the critical threshold
-        if status.usage_percent < self.config.critical_threshold:
+        # Re-allow writes only when both percentage and absolute free-space
+        # safety gates are clear.
+        if (
+            status.usage_percent < self.config.critical_threshold
+            and status.free_gb >= self.config.sync_backoff_free_gb
+        ):
             allow_disk_writes()
 
         # Emit cleanup event
@@ -1471,6 +1494,10 @@ class DiskSpaceManagerDaemon(HandlerBase):
             "sync_cleanup_stats": self._sync_cleanup_stats,
             "sync_aware_cleanup_enabled": self.config.enable_sync_aware_cleanup,
             "min_copies_before_delete": self.config.min_copies_before_delete,
+            "sync_backoff_active": (
+                status.free_gb < self.config.sync_backoff_free_gb if status else None
+            ),
+            "sync_backoff_free_gb": self.config.sync_backoff_free_gb,
         }
 
         if not self._running:
@@ -1510,11 +1537,15 @@ class DiskSpaceManagerDaemon(HandlerBase):
                 "warning_threshold": self.config.warning_threshold,
                 "target_usage": self.config.target_disk_usage,
                 "enable_cleanup": self.config.enable_cleanup,
+                "sync_backoff_free_gb": self.config.sync_backoff_free_gb,
             },
             "disk": {
                 "usage_percent": status.usage_percent if status else None,
                 "free_gb": status.free_gb if status else None,
                 "needs_cleanup": status.needs_cleanup if status else None,
+                "sync_backoff_active": (
+                    status.free_gb < self.config.sync_backoff_free_gb if status else None
+                ),
             },
             "health": {
                 "healthy": health.healthy,

@@ -47,6 +47,10 @@ from app.coordination.event_emission_helpers import safe_emit_event
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.mixins.import_mixin import ImportDaemonMixin
 from app.coordination.protocols import CoordinatorStatus
+from app.coordination.sync_policy import (
+    is_pull_to_internal_allowed,
+    should_backoff_internal_write,
+)
 from app.core.ssh import SSHClient, SSHConfig, SSHResult
 from app.config.coordination_defaults import build_ssh_options
 
@@ -391,6 +395,24 @@ class OWCImportDaemon(HandlerBase, ImportDaemonMixin):
         local_path = self.config.staging_dir / local_name
         source_path = Path(self.config.owc_base_path) / rel_path
 
+        if not is_pull_to_internal_allowed(
+            local_name,
+            family="owc_imports",
+            consumer_signal=os.environ.get("RINGRIFT_OWC_IMPORT_CONSUMER_SIGNAL"),
+        ):
+            logger.info(
+                "[OWCImport] Skipping OWC->internal import by sync policy: %s",
+                rel_path,
+            )
+            return None
+
+        if should_backoff_internal_write(local_path):
+            logger.warning(
+                "[OWCImport] Backing off OWC->internal import: %s",
+                rel_path,
+            )
+            return None
+
         if self._is_local:
             # Local mode: direct file copy
             try:
@@ -436,7 +458,7 @@ class OWCImportDaemon(HandlerBase, ImportDaemonMixin):
         try:
             proc = await asyncio.create_subprocess_exec(
                 *rsync_cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
             await asyncio.wait_for(

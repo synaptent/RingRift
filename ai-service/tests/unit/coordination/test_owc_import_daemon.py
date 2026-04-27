@@ -46,6 +46,26 @@ def allow_import_cycle(daemon: OWCImportDaemon):
             yield
 
 
+@pytest.fixture(autouse=True)
+def allow_owc_import_policy(monkeypatch, tmp_path):
+    """Keep legacy OWC import tests focused on transfer behavior."""
+    policy_path = tmp_path / "sync_policy.yaml"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "internal_write_min_free_gb: 0",
+                "pull:",
+                "  default_allowed: false",
+                "  require_consumer_signal: false",
+                "  gauntlet_allowed: false",
+                "  allowlist:",
+                "    - owc_imports",
+            ]
+        )
+    )
+    monkeypatch.setenv("RINGRIFT_SYNC_POLICY_PATH", str(policy_path))
+
+
 # =============================================================================
 # OWCImportConfig Tests
 # =============================================================================

@@ -30,6 +30,17 @@ For current-state orientation, use these entrypoints first:
 - `../AGENTS.md` for repository invariants and canonical rules/parity expectations
 - `../docs/architecture/OVERVIEW.md` for current architecture docs
 - `scripts/README.md` for supported Python operational scripts
+- `data/sync_policy.yaml` for coordinator remote-to-internal rehydration policy
+
+## Coordinator Sync Safety
+
+Remote-to-internal sync is push-only by default. OWC/S3/P2P pulls that write to
+the coordinator's internal disk must pass `app.coordination.sync_policy`, carry
+an explicit downstream consumer signal, and satisfy the allowlist in
+`data/sync_policy.yaml`. Inactive gauntlet/evaluation DBs are not rehydrated by
+default. `master_loop.py` also has a per-process RSS/uptime self-guard; defaults
+are `RINGRIFT_MASTER_LOOP_RSS_BUDGET_GB=20` and
+`RINGRIFT_MASTER_LOOP_MAX_UPTIME_HOURS=24`.
 
 ## Project Overview
 
