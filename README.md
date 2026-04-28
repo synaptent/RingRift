@@ -112,6 +112,26 @@ If you want the curated wrapper instead of typing the full command, use:
 ./scripts/run_proven_experiment.sh square8_2p --print-only
 ```
 
+## Quick Start: Evaluate A Checkpoint
+
+To verify that a canonical model loads and plays without running a training
+loop, use the quick evaluation wrapper:
+
+```bash
+./scripts/run_quick_eval.sh hex8_2p --games 12
+```
+
+This runs the canonical neural policy checkpoint against the built-in baseline
+heuristic with seat rotation and writes a JSON result under `ai-service/results/`.
+It is a smoke/eval path, not a publication-grade Elo estimate. The wrapper
+verifies the checkpoint `.sha256` sidecar before running, so public evidence
+does not depend on silently loading an unverified model file.
+
+For the current outsider-facing packaging plan, see
+[docs/OUTSIDER_VALUE_ROADMAP.md](/docs/OUTSIDER_VALUE_ROADMAP.md). For the
+reusable AlphaZero implementation lessons, see
+[docs/research/SILENT_ALPHAZERO_FAILURES.md](/docs/research/SILENT_ALPHAZERO_FAILURES.md).
+
 ## What Is Proven, And What Is Not
 
 What is proven:

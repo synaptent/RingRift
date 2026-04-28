@@ -38,6 +38,7 @@ from scripts.evaluate_ai_models import (
     AI_TYPE_CMAES_HEURISTIC,
     AI_TYPE_MINIMAX,
     AI_TYPE_NEURAL_NETWORK,
+    AI_TYPE_POLICY_ONLY,
     AI_TYPE_RANDOM,
     EvaluationResults,
     GameResult,
@@ -147,6 +148,21 @@ class TestCreateAI:
         """Test creating AI for player 2."""
         ai = create_ai(AI_TYPE_RANDOM, player_num=2, board_type=BoardType.SQUARE8)
         assert ai.player_number == 2
+
+    def test_create_policy_only_ai_preserves_board_type(self) -> None:
+        """Policy-only evaluation must not initialize hex checkpoints as square."""
+
+        with patch("scripts.evaluate_ai_models.PolicyOnlyAI") as policy_cls:
+            ai = create_ai(
+                AI_TYPE_POLICY_ONLY,
+                player_num=1,
+                board_type=BoardType.HEX8,
+                checkpoint="models/canonical_hex8_2p.pth",
+            )
+
+        assert ai is policy_cls.return_value
+        _, _, kwargs = policy_cls.mock_calls[0]
+        assert kwargs["board_type"] == BoardType.HEX8
 
     def test_create_ai_invalid_type(self) -> None:
         """Test that invalid AI type raises ValueError."""

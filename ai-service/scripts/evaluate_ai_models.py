@@ -493,7 +493,7 @@ def create_ai(
             nn_model_id=ckpt if ckpt else None,
             allow_fresh_weights=False,
         )
-        ai = PolicyOnlyAI(player_num, config)
+        ai = PolicyOnlyAI(player_num, config, board_type=board_type)
         if ckpt:
             print(f"PolicyOnlyAI loaded checkpoint: {ckpt}")
         return ai
