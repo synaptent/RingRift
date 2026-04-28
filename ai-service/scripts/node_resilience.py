@@ -155,7 +155,7 @@ class NodeConfig:
     check_interval: int = 60  # seconds
     reconnect_interval: int = 300  # seconds
     max_local_selfplay_procs: int = 4
-    disk_threshold: int = 70  # percent - DISK_SYNC_TARGET_PERCENT from app.config.thresholds
+    disk_threshold: int = 90  # percent - coordinator/internal disks can run hot safely
     min_free_gb: float = 2.0  # trigger cleanup if free space is low
     fallback_board: str = "square8"
     fallback_num_players: int = 2
@@ -1059,17 +1059,34 @@ class NodeResilience:
         self.stop_orchestrator_fallback_jobs()
         self.stop_direct_fallback_processes()
 
+    def _disk_usage(self) -> tuple[float, float]:
+        """Return (used_percent, free_gb) for the RingRift data volume."""
+        # Measure disk pressure on the volume that actually contains the
+        # RingRift checkout/data. On macOS (APFS split volumes) and some
+        # container overlays, checking "/" can under-report the data volume.
+        stat = os.statvfs(self._ringrift_root())
+        total = stat.f_blocks * stat.f_frsize
+        free = stat.f_bavail * stat.f_frsize
+        used_percent = ((total - free) / total) * 100 if total > 0 else 0.0
+        free_gb = free / (1024 ** 3) if free > 0 else 0.0
+        return used_percent, free_gb
+
+    @staticmethod
+    def _subprocess_failure_message(result: subprocess.CompletedProcess[str]) -> str:
+        """Build a non-empty diagnostic for failed subprocess calls."""
+        stderr = (result.stderr or "").strip()
+        stdout = (result.stdout or "").strip()
+        parts = [f"exit={result.returncode}"]
+        if stderr:
+            parts.append(f"stderr={stderr[-1000:]}")
+        if stdout:
+            parts.append(f"stdout={stdout[-1000:]}")
+        return "; ".join(parts)
+
     def check_and_cleanup_disk(self) -> bool:
         """Check disk usage and run cleanup if needed."""
         try:
-            # Measure disk pressure on the volume that actually contains the
-            # RingRift checkout/data. On macOS (APFS split volumes) and some
-            # container overlays, checking "/" can under-report the data volume.
-            stat = os.statvfs(self._ringrift_root())
-            total = stat.f_blocks * stat.f_frsize
-            free = stat.f_bavail * stat.f_frsize
-            used_percent = ((total - free) / total) * 100 if total > 0 else 0
-            free_gb = free / (1024 ** 3) if free > 0 else 0.0
+            used_percent, free_gb = self._disk_usage()
 
             if used_percent > self.config.disk_threshold or free_gb < self.config.min_free_gb:
                 logger.warning(f"Disk usage {used_percent:.1f}% exceeds threshold {self.config.disk_threshold}%")
@@ -1100,10 +1117,28 @@ class NodeResilience:
                         timeout=300,
                     )
                     if result.returncode == 0:
-                        logger.info("Disk cleanup completed successfully")
+                        post_used_percent, post_free_gb = self._disk_usage()
+                        if (
+                            post_used_percent > self.config.disk_threshold
+                            or post_free_gb < self.config.min_free_gb
+                        ):
+                            logger.warning(
+                                "Disk cleanup completed but pressure remains: "
+                                f"usage={post_used_percent:.1f}% "
+                                f"free={post_free_gb:.2f}GB "
+                                f"(threshold={self.config.disk_threshold}% "
+                                f"min_free={self.config.min_free_gb}GB)"
+                            )
+                            return False
+                        logger.info(
+                            "Disk cleanup completed successfully: "
+                            f"usage={post_used_percent:.1f}% free={post_free_gb:.2f}GB"
+                        )
                         return True
-                    else:
-                        logger.warning(f"Disk cleanup failed: {result.stderr}")
+                    logger.warning(
+                        "Disk cleanup failed: "
+                        f"{self._subprocess_failure_message(result)}"
+                    )
                 else:
                     logger.warning("disk_monitor.py not found, skipping cleanup")
 
@@ -1441,7 +1476,7 @@ def main():
     parser.add_argument("--peers", default="", help="Comma-separated peer list for P2P orchestrator (defaults to coordinator URL)")
     parser.add_argument("--check-interval", type=int, default=60, help="Health check interval (seconds)")
     parser.add_argument("--max-local-procs", type=int, default=4, help="Max fallback workers to run when disconnected")
-    parser.add_argument("--disk-threshold", type=int, default=70, help="Disk usage percent threshold for cleanup (70% enforced 2025-12-15)")
+    parser.add_argument("--disk-threshold", type=int, default=90, help="Disk usage percent threshold for cleanup")
     parser.add_argument("--min-free-gb", type=float, default=2.0, help="Minimum free GB headroom before forcing cleanup")
     parser.add_argument(
         "--selfplay-script",
