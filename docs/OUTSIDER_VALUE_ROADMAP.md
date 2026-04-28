@@ -55,6 +55,8 @@ analysis around silent AlphaZero implementation bugs:
 
 The canonical writeup is
 [`docs/research/SILENT_ALPHAZERO_FAILURES.md`](research/SILENT_ALPHAZERO_FAILURES.md).
+The v4-specific retry protocol is
+[`docs/research/V4_MULTIPLAYER_DIAGNOSTIC.md`](research/V4_MULTIPLAYER_DIAGNOSTIC.md).
 
 ## Priority 3: Finish One Clean Replication Slice
 
