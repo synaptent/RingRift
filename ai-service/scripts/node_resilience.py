@@ -396,6 +396,42 @@ class NodeResilience:
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
+    def _launchd_job_loaded(self, label: str) -> bool:
+        """Return True when a macOS LaunchAgent label is available for this user."""
+        if sys.platform != "darwin":
+            return False
+        try:
+            result = subprocess.run(
+                ["launchctl", "print", f"gui/{os.getuid()}/{label}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return False
+
+    def _kickstart_launchd_job(self, label: str) -> bool:
+        """Restart a macOS LaunchAgent without direct-spawning a duplicate daemon."""
+        try:
+            service = f"gui/{os.getuid()}/{label}"
+            result = subprocess.run(
+                ["launchctl", "kickstart", "-k", service],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                return True
+            logger.warning(
+                "launchctl kickstart failed for %s: %s",
+                label,
+                self._subprocess_failure_message(result),
+            )
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            logger.warning("launchctl kickstart failed for %s: %s", label, e)
+        return False
+
     def _local_orchestrator_url(self, path: str) -> str:
         path = path if path.startswith("/") else f"/{path}"
         return f"http://localhost:{self.config.p2p_port}{path}"
@@ -754,6 +790,18 @@ class NodeResilience:
                 logger.warning("systemd start issued but /health did not become ready in time")
                 return False
 
+            if self._launchd_job_loaded("com.ringrift.p2p"):
+                logger.info("Starting P2P orchestrator via launchd (com.ringrift.p2p)")
+                if not self._kickstart_launchd_job("com.ringrift.p2p"):
+                    return False
+                deadline = time.time() + 60
+                while time.time() < deadline:
+                    if self.check_p2p_health():
+                        return True
+                    time.sleep(1)
+                logger.warning("launchd kickstart issued but /health did not become ready in time")
+                return False
+
             env = os.environ.copy()
             env["PYTHONPATH"] = self.config.ai_service_dir
 
@@ -774,6 +822,7 @@ class NodeResilience:
                         "--port", str(self.config.p2p_port),
                         "--peers", peers,
                         "--ringrift-path", self._ringrift_root(),
+                        "--force-supervisor",
                     ],
                     cwd=self.config.ai_service_dir,
                     env=env,

@@ -74,3 +74,47 @@ def test_cleanup_success_after_pressure_relieved(monkeypatch, tmp_path) -> None:
     )
 
     assert resilience.check_and_cleanup_disk() is True
+
+
+def test_start_p2p_prefers_launchd_on_macos(monkeypatch, tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    resilience = node_resilience.NodeResilience(cfg)
+    checks = iter([False, True])
+    kickstarted: list[str] = []
+
+    monkeypatch.setattr(resilience, "check_p2p_health", lambda: next(checks))
+    monkeypatch.setattr(resilience, "_check_port_available", lambda port: True)
+    monkeypatch.setattr(resilience, "_systemd_usable", lambda: False)
+    monkeypatch.setattr(resilience, "_launchd_job_loaded", lambda label: label == "com.ringrift.p2p")
+    monkeypatch.setattr(resilience, "_kickstart_launchd_job", lambda label: kickstarted.append(label) or True)
+
+    assert resilience.start_p2p_orchestrator() is True
+    assert kickstarted == ["com.ringrift.p2p"]
+
+
+def test_direct_p2p_spawn_forces_supervisor(monkeypatch, tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    resilience = node_resilience.NodeResilience(cfg)
+    commands: list[list[str]] = []
+
+    class FakeProc:
+        pid = 12345
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        commands.append(cmd)
+        return FakeProc()
+
+    monkeypatch.setattr(resilience, "check_p2p_health", lambda: False)
+    monkeypatch.setattr(resilience, "_check_port_available", lambda port: True)
+    monkeypatch.setattr(resilience, "_systemd_usable", lambda: False)
+    monkeypatch.setattr(resilience, "_launchd_job_loaded", lambda label: False)
+    monkeypatch.setattr(resilience, "_python_for_orchestrator", lambda: "python")
+    monkeypatch.setattr(node_resilience.subprocess, "Popen", fake_popen)
+
+    assert resilience.start_p2p_orchestrator() is False
+    assert commands
+    assert "--force-supervisor" in commands[0]

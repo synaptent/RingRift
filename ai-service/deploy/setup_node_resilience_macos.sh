@@ -161,6 +161,7 @@ cat > "$P2P_PLIST" <<EOF
     <string>${COORDINATOR_URL}</string>
     <string>--ringrift-path</string>
     <string>${RINGRIFT_ROOT}</string>
+    <string>--force-supervisor</string>
   </array>
   <key>StandardOutPath</key>
   <string>${LOG_DIR}/p2p.log</string>
