@@ -127,6 +127,13 @@ It is a smoke/eval path, not a publication-grade Elo estimate. The wrapper
 verifies the checkpoint `.sha256` sidecar before running, so public evidence
 does not depend on silently loading an unverified model file.
 
+To audit all public quick-eval model artifacts:
+
+```bash
+cd ai-service
+PYTHONPATH=. python scripts/audit_public_model_artifacts.py
+```
+
 For the current outsider-facing packaging plan, see
 [docs/OUTSIDER_VALUE_ROADMAP.md](/docs/OUTSIDER_VALUE_ROADMAP.md). For the
 reusable AlphaZero implementation lessons, see

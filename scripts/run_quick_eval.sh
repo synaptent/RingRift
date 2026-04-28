@@ -124,7 +124,7 @@ case "$CONFIG" in
     BOARD="square8"
     NUM_PLAYERS=2
     MODEL_PATH="models/canonical_square8_2p.pth"
-    MAX_MOVES=500
+    MAX_MOVES=600
     ;;
   hex8_2p)
     BOARD="hex8"

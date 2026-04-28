@@ -1,0 +1,29 @@
+{
+  "updated_at": "2026-04-28T15:18:44Z",
+  "gate": "cd ai-service && PYTHONPATH=. python scripts/audit_public_model_artifacts.py",
+  "artifacts": {
+    "hex8_2p": {
+      "path": "ai-service/models/canonical_hex8_2p.pth",
+      "sha256": "f03972ef444f40a241657907bd8955240768825e0ac96d029cf4b15cf4e7ca06",
+      "model_class": "HexNeuralNet_v2",
+      "architecture_version": "v2.0.0",
+      "board_type": "hex8",
+      "num_players": 2,
+      "status": "local_verified"
+    },
+    "square8_2p": {
+      "path": "ai-service/models/canonical_square8_2p.pth",
+      "sha256": "473f7f0aebf87eae2508132cb16104c8398ccde8c24f2fb6675a0bdba0d69b38",
+      "model_class": "RingRiftCNN_v2",
+      "architecture_version": "v2.0.0",
+      "board_type": "square8",
+      "num_players": 2,
+      "status": "local_verified"
+    }
+  },
+  "notes": [
+    "Model binaries are not tracked by git.",
+    "Hashes reflect local metadata-normalized checkpoints and matching .sha256 sidecars.",
+    "Publish these exact binaries as release assets or to the canonical artifact bucket before making public-download claims."
+  ]
+}

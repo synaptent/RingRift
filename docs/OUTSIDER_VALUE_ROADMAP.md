@@ -93,15 +93,14 @@ checksum manifest in the repo.
 Current artifact gate:
 
 - `canonical_hex8_2p.pth` matches its checked-in `.sha256` sidecar and is the
-  current quick-eval default. It loads through the public evaluator, but its
-  checkpoint metadata still reports `num_players=4` while the weights infer 2.
-  Clean this metadata before treating the model artifact as release-polished.
-- `canonical_square8_2p.pth` currently hashes to
-  `7c1cf2a996da0cf800b48a2357bc04aa4b3249bbb9516b5709a6d808ccf195c6`, while
-  its sidecar expects
-  `62f8ae65ea1ac4cd9d658af1e2a4f7ad7b281e27f2135ed51f6179192e42d1be`.
-  Treat square8 public evaluation as blocked until a verified checkpoint is
-  published or the sidecar is updated from provenance evidence.
+  current quick-eval default. Its top-level checkpoint metadata has been
+  normalized to `hex8/2p`, and it loads through the public evaluator.
+- `canonical_square8_2p.pth` now matches its `.sha256` sidecar and loads through
+  the public evaluator. The sidecar was regenerated from the active local file
+  after confirming that the active file and backup were byte-identical. Its
+  checkpoint metadata has also been normalized to `square8/2p`.
+- The public artifact gate is:
+  `cd ai-service && PYTHONPATH=. python scripts/audit_public_model_artifacts.py`.
 
 ## What Not To Optimize Yet
 
