@@ -346,6 +346,31 @@ class TestDiskSpaceManagerCleanup:
         assert large_log.stat().st_size == 0
         assert small_log.stat().st_size == 128
 
+    def test_cleanup_stale_gauntlet_temp_files(
+        self, daemon: DiskSpaceManagerDaemon, temp_root: Path
+    ) -> None:
+        """Hidden gauntlet temp files are removed without touching real DBs."""
+        games_path = temp_root / "data" / "games"
+        stale_temp = games_path / ".gauntlet_hex8_2p.db.ABC123"
+        fresh_temp = games_path / ".gauntlet_hex8_2p.db.FRESH"
+        visible_gauntlet = games_path / "gauntlet_hex8_2p.db"
+        canonical_db = games_path / "canonical_hex8_2p.db"
+        stale_temp.write_bytes(b"x" * 1024)
+        fresh_temp.write_bytes(b"x" * 2048)
+        visible_gauntlet.write_bytes(b"x" * 4096)
+        canonical_db.write_bytes(b"x" * 8192)
+
+        old_time = time.time() - (3 * 86400)
+        os.utime(stale_temp, (old_time, old_time))
+
+        bytes_freed = daemon._cleanup_stale_gauntlet_temp_files()
+
+        assert bytes_freed == 1024
+        assert not stale_temp.exists()
+        assert fresh_temp.exists()
+        assert visible_gauntlet.exists()
+        assert canonical_db.exists()
+
     def test_cleanup_cache(self, daemon: DiskSpaceManagerDaemon) -> None:
         """Test cache cleanup."""
         # This will try to clean real cache dirs - just verify no crash

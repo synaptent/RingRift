@@ -293,6 +293,7 @@ class DiskSpaceConfig:
     # (schema mismatch, ID format differences, etc.) and should be cleaned up
     # to prevent disk from filling. Source data remains on OWC drive and S3.
     owc_imports_retention_days: int = 3
+    gauntlet_temp_retention_days: int = 1
 
     # Enable actual cleanup (set False for dry-run)
     enable_cleanup: bool = True
@@ -322,6 +323,7 @@ class DiskSpaceConfig:
             "SYNC_BACKOFF_FREE_GB": ("sync_backoff_free_gb", float),
             "LOG_RETENTION_DAYS": ("log_retention_days", int),
             "MAX_USER_LOG_MB": ("max_user_log_mb", int),
+            "GAUNTLET_TEMP_RETENTION_DAYS": ("gauntlet_temp_retention_days", int),
             "ENABLE_CLEANUP": ("enable_cleanup", lambda x: x == "1"),
             "EMIT_EVENTS": ("emit_events", lambda x: x == "1"),
         }
@@ -515,6 +517,7 @@ class DiskSpaceManagerDaemon(HandlerBase):
             retention_freed = self._cleanup_old_owc_imports()
             retention_freed += self._cleanup_old_logs()
             retention_freed += self._truncate_oversized_user_logs()
+            retention_freed += self._cleanup_stale_gauntlet_temp_files()
             retention_freed += self._cleanup_empty_databases()
             # Mar 2026: Enforce candidate model TTL to prevent unbounded accumulation.
             # Without this, candidate_*.pth files accumulate indefinitely (514 files,
@@ -768,6 +771,41 @@ class DiskSpaceManagerDaemon(HandlerBase):
                 )
             except (OSError, PermissionError) as e:
                 logger.debug("Failed to truncate user log %s: %s", log_file, e)
+
+        return bytes_freed
+
+    def _cleanup_stale_gauntlet_temp_files(self) -> int:
+        """Remove stale hidden gauntlet DB temp files left by interrupted syncs.
+
+        rsync and local copy operations can leave files like
+        ``.gauntlet_hex8_2p.db.XYZ`` in ``data/games``. They are not canonical
+        DBs, are invisible to normal size audits, and can accumulate tens of GB.
+        Visible ``gauntlet_*.db`` files are intentionally not touched here.
+        """
+        bytes_freed = 0
+        games_path = self._root_path / self.config.games_dir
+        if not games_path.exists():
+            return 0
+
+        cutoff = time.time() - (self.config.gauntlet_temp_retention_days * 86400)
+        for temp_file in games_path.glob(".gauntlet_*.db.*"):
+            try:
+                if temp_file.is_symlink() or not temp_file.is_file():
+                    continue
+                stat = temp_file.stat()
+                if stat.st_mtime >= cutoff and stat.st_size > 0:
+                    continue
+                size = stat.st_size
+                temp_file.unlink()
+                bytes_freed += size
+                logger.warning(
+                    "[%s] Removed stale gauntlet temp file: %s (freed %.1fGB)",
+                    self.name,
+                    temp_file,
+                    size / (1024**3),
+                )
+            except (OSError, PermissionError) as e:
+                logger.debug("Failed to remove gauntlet temp file %s: %s", temp_file, e)
 
         return bytes_freed
 
