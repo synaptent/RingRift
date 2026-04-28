@@ -366,6 +366,54 @@ class TestCrossProcessEventQueue:
         _, subscribers_deleted, _ = queue.cleanup()
         assert subscribers_deleted >= 1
 
+    def test_cleanup_caps_event_count(self, temp_db_path):
+        """Cleanup keeps only the newest max_events rows."""
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.cross_process_events import CrossProcessEventQueue
+
+        capped_queue = CrossProcessEventQueue(
+            db_path=temp_db_path,
+            max_events=3,
+            maintenance_publish_interval=0,
+        )
+
+        event_ids = [capped_queue.publish("TYPE_A", {"seq": i}, "test") for i in range(6)]
+
+        events_deleted, _, _ = capped_queue.cleanup()
+
+        conn = sqlite3.connect(str(temp_db_path))
+        rows = conn.execute("SELECT event_id FROM events ORDER BY event_id").fetchall()
+        conn.close()
+        capped_queue.close()
+
+        assert events_deleted == 3
+        assert [row[0] for row in rows] == event_ids[-3:]
+
+    def test_publish_runs_periodic_maintenance(self, temp_db_path):
+        """Publish-triggered maintenance bounds queues even without a poller."""
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.coordination.cross_process_events import CrossProcessEventQueue
+
+        capped_queue = CrossProcessEventQueue(
+            db_path=temp_db_path,
+            max_events=2,
+            maintenance_publish_interval=2,
+        )
+
+        for i in range(4):
+            capped_queue.publish("TYPE_A", {"seq": i}, "test")
+
+        conn = sqlite3.connect(str(temp_db_path))
+        total = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        conn.close()
+        capped_queue.close()
+
+        assert total == 2
+
     def test_get_stats(self, queue):
         """Test getting queue statistics."""
         # Publish events
@@ -383,6 +431,7 @@ class TestCrossProcessEventQueue:
         assert stats["events_by_type"]["TYPE_B"] == 1
         assert len(stats["active_subscribers"]) == 1
         assert stats["retention_hours"] == 24  # Default
+        assert stats["max_events"] == 100000
 
     def test_thread_safety(self, queue):
         """Test queue is thread-safe for concurrent operations."""

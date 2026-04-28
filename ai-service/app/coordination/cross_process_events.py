@@ -105,6 +105,10 @@ from app.utils.retry import RetryConfig
 
 DEFAULT_RETENTION_HOURS = CrossProcessDefaults.RETENTION_HOURS
 SUBSCRIBER_TIMEOUT_SECONDS = CrossProcessDefaults.SUBSCRIBER_TIMEOUT
+DEFAULT_MAX_EVENTS = int(os.environ.get("RINGRIFT_CROSS_PROCESS_MAX_EVENTS", "100000"))
+DEFAULT_MAINTENANCE_PUBLISH_INTERVAL = int(
+    os.environ.get("RINGRIFT_CROSS_PROCESS_MAINTENANCE_PUBLISH_INTERVAL", "1000")
+)
 
 # Emit deprecation warning at import time (RR-CONSOLIDATION-2025-12)
 # Only warn if imported directly, not when imported by event_router internally
@@ -184,7 +188,13 @@ class CrossProcessEventQueue:
     - Thread-safe with connection pooling
     """
 
-    def __init__(self, db_path: Path | str | None = None, retention_hours: int = DEFAULT_RETENTION_HOURS):
+    def __init__(
+        self,
+        db_path: Path | str | None = None,
+        retention_hours: int = DEFAULT_RETENTION_HOURS,
+        max_events: int = DEFAULT_MAX_EVENTS,
+        maintenance_publish_interval: int = DEFAULT_MAINTENANCE_PUBLISH_INTERVAL,
+    ):
         # December 2025: Always convert to Path for consistency
         if db_path is None:
             self.db_path = DEFAULT_EVENT_DB
@@ -193,6 +203,9 @@ class CrossProcessEventQueue:
         else:
             self.db_path = db_path
         self.retention_hours = retention_hours
+        self.max_events = max_events
+        self.maintenance_publish_interval = maintenance_publish_interval
+        self._publishes_since_maintenance = 0
         self._local = threading.local()
         # December 2025: Lazy initialization for readonly filesystem support
         self._db_initialized = False
@@ -275,8 +288,6 @@ class CrossProcessEventQueue:
                     # Feb 2026: Memory-limiting pragmas to prevent OOM on coordinator
                     self._local.conn.execute('PRAGMA cache_size=-65536')  # 64 MB max
                     self._local.conn.execute('PRAGMA mmap_size=67108864')  # 64 MB max
-                    self._local.conn.execute('PRAGMA wal_autocheckpoint=4000')
-                    # Increased checkpoint interval for better concurrency
                     self._local.conn.execute('PRAGMA wal_autocheckpoint=500')
                     self._local.conn.execute('PRAGMA cache_size=-4000')  # 4MB cache
                     break
@@ -381,6 +392,7 @@ class CrossProcessEventQueue:
                 )
                 event_id = cursor.lastrowid
                 conn.commit()
+                self._maybe_run_maintenance()
                 if event_id is None:
                     raise RuntimeError("Database INSERT failed to return lastrowid")
                 return event_id
@@ -586,6 +598,26 @@ class CrossProcessEventQueue:
         result = cursor.fetchone()[0]
         return result if result is not None else 0
 
+    def _maybe_run_maintenance(self) -> None:
+        """Run bounded queue maintenance after enough writes."""
+        if self.maintenance_publish_interval <= 0:
+            return
+        self._publishes_since_maintenance += 1
+        if self._publishes_since_maintenance < self.maintenance_publish_interval:
+            return
+        self._publishes_since_maintenance = 0
+        try:
+            self.cleanup()
+        except sqlite3.Error as e:
+            logger.warning("[CrossProcessEventQueue] Maintenance cleanup failed: %s", e)
+
+    def _checkpoint_wal(self, conn: sqlite3.Connection) -> None:
+        """Best-effort WAL truncation after cleanup."""
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error as e:
+            logger.debug("[CrossProcessEventQueue] WAL checkpoint skipped: %s", e)
+
     def cleanup(self) -> tuple[int, int, int]:
         """Clean up old events and dead subscribers.
 
@@ -599,6 +631,23 @@ class CrossProcessEventQueue:
         cursor = conn.execute('DELETE FROM events WHERE created_at < ?', (cutoff_time,))
         events_deleted = cursor.rowcount
 
+        # Bound event volume as well as age. A high-rate storm can keep enough
+        # recent events to fill coordinator disks before 24h retention expires.
+        if self.max_events > 0:
+            cursor = conn.execute(
+                '''
+                DELETE FROM events
+                WHERE event_id IN (
+                    SELECT event_id
+                    FROM events
+                    ORDER BY event_id DESC
+                    LIMIT -1 OFFSET ?
+                )
+                ''',
+                (self.max_events,),
+            )
+            events_deleted += cursor.rowcount
+
         # Delete dead subscribers
         subscriber_cutoff = time.time() - SUBSCRIBER_TIMEOUT_SECONDS
         cursor = conn.execute('DELETE FROM subscribers WHERE last_poll_at < ?', (subscriber_cutoff,))
@@ -611,6 +660,7 @@ class CrossProcessEventQueue:
         acks_deleted = cursor.rowcount
 
         conn.commit()
+        self._checkpoint_wal(conn)
         return events_deleted, subscribers_deleted, acks_deleted
 
     def get_stats(self) -> dict[str, Any]:
@@ -646,6 +696,7 @@ class CrossProcessEventQueue:
             "events_by_type": events_by_type,
             "active_subscribers": active_subscribers,
             "retention_hours": self.retention_hours,
+            "max_events": self.max_events,
         }
 
     def health_check(self) -> "HealthCheckResult":
