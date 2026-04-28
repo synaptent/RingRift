@@ -68,6 +68,10 @@ Recommended stopping condition:
 - Summarize promotion rate, plateau timing, and value-head health.
 - Plot trajectories from `metrics.jsonl` rather than narrating individual logs.
 
+Current snapshot:
+
+- [`docs/research/FV3_REPLICATION_SNAPSHOT_2026-04-28.md`](research/FV3_REPLICATION_SNAPSHOT_2026-04-28.md)
+
 The public claim should be narrow:
 
 > RingRift self-play improvement is reproducible on the supported small-board
