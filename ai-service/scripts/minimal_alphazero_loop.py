@@ -472,6 +472,8 @@ def train_model(
                "--init-weights", str(init), "--no-auto-tune-batch-size",
                "--lr-scheduler", train_lr_scheduler, "--skip-freshness-check",
                "--sampling-weights", "uniform"]
+        if NUM_PLAYERS > 2:
+            cmd.append("--multi-player")
         if policy_weight is not None:
             cmd.extend(["--policy-weight", str(policy_weight)])
         if value_weight is not None:

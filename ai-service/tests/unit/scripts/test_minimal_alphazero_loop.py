@@ -509,6 +509,37 @@ def test_loop_threads_training_loss_knobs_to_train_model(monkeypatch, tmp_path):
     assert metrics["gradient_clip_max_norm"] == 0.5
 
 
+def test_train_model_enables_multi_player_training_for_3p(monkeypatch, tmp_path):
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, capture_output, text, timeout):
+        captured["cmd"] = list(cmd)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(loop, "BOARD_TYPE", "hex8")
+    monkeypatch.setattr(loop, "NUM_PLAYERS", 3)
+    monkeypatch.setattr(loop, "MODEL_VERSION", "v4")
+    monkeypatch.setattr(loop, "FEATURE_VERSION", 2)
+    monkeypatch.setattr(loop.subprocess, "run", fake_run)
+
+    result = loop.train_model(
+        tmp_path / "iter_001.npz",
+        tmp_path / "candidate.pth",
+        tmp_path / "best.pth",
+        epochs=1,
+        bs=8,
+        lr=3e-5,
+        train_lr_scheduler="none",
+        rank_dist_weight=0.05,
+    )
+
+    assert "error" not in result
+    assert "--multi-player" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--num-players") + 1] == "3"
+    assert captured["cmd"][captured["cmd"].index("--model-version") + 1] == "v4"
+    assert captured["cmd"][captured["cmd"].index("--rank-dist-weight") + 1] == "0.05"
+
+
 def test_loop_merges_supplemental_npz_without_touching_iteration_namespace(monkeypatch, tmp_path):
     result = _run_loop_once(
         monkeypatch,
