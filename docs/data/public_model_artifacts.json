@@ -1,6 +1,8 @@
 {
   "updated_at": "2026-04-28T15:18:44Z",
   "gate": "cd ai-service && PYTHONPATH=. python scripts/audit_public_model_artifacts.py",
+  "release_url": "https://github.com/synaptent/RingRift/releases/tag/public-model-artifacts-2026-04-28",
+  "release_packaging": "The .pth files are attached as 1 MiB .part-* chunks because large direct GitHub uploads failed from the publishing host. Reconstruct with README_RECONSTRUCT_MODEL_PARTS.md from the release.",
   "artifacts": {
     "hex8_2p": {
       "path": "ai-service/models/canonical_hex8_2p.pth",

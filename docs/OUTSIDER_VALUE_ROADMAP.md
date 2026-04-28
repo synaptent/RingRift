@@ -103,6 +103,11 @@ Current artifact gate:
   the public evaluator. The sidecar was regenerated from the active local file
   after confirming that the active file and backup were byte-identical. Its
   checkpoint metadata has also been normalized to `square8/2p`.
+- The verified artifacts are published under the GitHub release
+  [`public-model-artifacts-2026-04-28`](https://github.com/synaptent/RingRift/releases/tag/public-model-artifacts-2026-04-28).
+  The `.pth` files are split into 1 MiB parts because direct large-asset uploads
+  failed from the publishing host; the release includes reconstruction
+  instructions.
 - The public artifact gate is:
   `cd ai-service && PYTHONPATH=. python scripts/audit_public_model_artifacts.py`.
 

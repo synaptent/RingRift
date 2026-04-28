@@ -134,6 +134,11 @@ cd ai-service
 PYTHONPATH=. python scripts/audit_public_model_artifacts.py
 ```
 
+The verified model artifacts are published at
+[public-model-artifacts-2026-04-28](https://github.com/synaptent/RingRift/releases/tag/public-model-artifacts-2026-04-28).
+The `.pth` files are split into release parts; follow the release
+`README_RECONSTRUCT_MODEL_PARTS.md` before running the audit locally.
+
 For the current outsider-facing packaging plan, see
 [docs/OUTSIDER_VALUE_ROADMAP.md](/docs/OUTSIDER_VALUE_ROADMAP.md). For the
 reusable AlphaZero implementation lessons, see
