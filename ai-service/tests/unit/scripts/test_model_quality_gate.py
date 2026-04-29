@@ -12,6 +12,7 @@ import pytest
 from scripts.lib.model_quality_gate import (
     DEAD_VALUE_STD_THRESHOLD,
     LOW_DIVERSITY_THRESHOLD,
+    MIN_OPENINGS_FOR_COLLAPSE_CHECK,
     MODE_COLLAPSE_THRESHOLD,
     OPENING_LENGTH,
     SEAT_FAIRNESS_MIN_GAMES_PER_SEAT,
@@ -192,6 +193,47 @@ class TestBehavioralDiversity:
         collapse_warns = [w for w in warns if "MODE_COLLAPSE" in w]
         assert len(collapse_warns) == 0
 
+    def test_small_opening_sample_does_not_trigger_mode_collapse(self):
+        """A one-game opening sample cannot critically block a 50-game eval."""
+        tracker = QualityGateTracker()
+        tracker.mark_move_tracking_partial(
+            "legacy eval checkpoint without quality tracker state"
+        )
+        legal = _make_legal_moves(20)
+        for game_idx in range(50):
+            tracker.record_game_outcome(
+                game_idx,
+                candidate_seat=(game_idx % 2) + 1,
+                candidate_won=True,
+            )
+        for move_number in range(OPENING_LENGTH):
+            tracker.record_move(49, move_number, legal[move_number], legal)
+
+        crit, warns, details = _check_behavioral_diversity(tracker)
+
+        assert not crit
+        assert not any("MODE_COLLAPSE" in w for w in warns)
+        assert details["games_tracked"] == 50
+        assert details["opening_games_tracked"] == 1
+        assert details["opening_sample_coverage"] == 0.02
+        assert details["mode_collapse_check_skipped"] == "move tracking partial"
+
+    def test_complete_but_tiny_opening_sample_does_not_trigger_mode_collapse(self):
+        """Even complete trackers need enough opening samples before collapse checks."""
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(20)
+        for game_idx in range(MIN_OPENINGS_FOR_COLLAPSE_CHECK - 1):
+            for move_number in range(OPENING_LENGTH):
+                tracker.record_move(game_idx, move_number, legal[move_number], legal)
+            tracker.finish_game(game_idx)
+
+        crit, warns, details = _check_behavioral_diversity(tracker)
+
+        assert not crit
+        assert not any("MODE_COLLAPSE" in w for w in warns)
+        assert details["opening_games_tracked"] == MIN_OPENINGS_FOR_COLLAPSE_CHECK - 1
+        assert "opening sample" in details["mode_collapse_check_skipped"]
+
 
 # ---------------------------------------------------------------------------
 # Value Head Health tests
@@ -350,6 +392,56 @@ class TestCheckModelQuality:
         verdict = check_model_quality(tracker)
         assert verdict.passed
         assert not verdict.critical
+
+    def test_partial_tracker_skips_critical_value_head_check(self):
+        """Partial resumed value samples are not enough to block promotion."""
+        tracker = QualityGateTracker()
+        tracker.mark_move_tracking_partial("legacy eval checkpoint")
+        legal = _make_legal_moves(20)
+        for game_idx in range(50):
+            tracker.record_game_outcome(
+                game_idx,
+                candidate_seat=(game_idx % 2) + 1,
+                candidate_won=True,
+            )
+        for move_number in range(OPENING_LENGTH):
+            tracker.record_move(49, move_number, legal[0], legal, root_value=0.42)
+
+        verdict = check_model_quality(tracker)
+
+        assert verdict.passed
+        assert not verdict.critical
+        assert verdict.details["value_head_health"]["skipped"] == "move tracking partial"
+
+    def test_tracker_checkpoint_round_trip_preserves_quality_state(self):
+        """Eval resume checkpoints must preserve move/value quality samples."""
+        tracker = QualityGateTracker()
+        tracker.set_selfplay_baseline({1: 12, 2: 8})
+        _play_diverse_games(
+            tracker,
+            n_games=20,
+            moves_per_game=10,
+            n_legal=30,
+            value_fn=lambda g, m: 0.2 * (g % 5) - 0.4,
+        )
+        for game_idx in range(20):
+            tracker.record_game_outcome(
+                game_idx,
+                candidate_seat=(game_idx % 2) + 1,
+                candidate_won=game_idx % 3 == 0,
+            )
+
+        restored = QualityGateTracker()
+        restored.load_checkpoint(tracker.to_checkpoint())
+        verdict = check_model_quality(restored)
+
+        assert verdict.passed
+        assert not verdict.critical
+        assert restored._openings == tracker._openings
+        assert restored._unique_moves_chosen == tracker._unique_moves_chosen
+        assert restored._unique_legal_moves_seen == tracker._unique_legal_moves_seen
+        assert restored._seat_games == tracker._seat_games
+        assert restored._selfplay_seat_wins == tracker._selfplay_seat_wins
 
 
 # ---------------------------------------------------------------------------

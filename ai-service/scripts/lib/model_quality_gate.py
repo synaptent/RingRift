@@ -21,10 +21,10 @@ Usage from minimal_alphazero_loop.py:
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from scipy.stats import chisquare
 
@@ -81,6 +81,8 @@ def _move_key(move: object) -> str:
 
 OPENING_LENGTH = 5
 MODE_COLLAPSE_THRESHOLD = 0.80
+MIN_OPENINGS_FOR_COLLAPSE_CHECK = 10
+MIN_OPENING_SAMPLE_COVERAGE = 0.80
 LOW_DIVERSITY_THRESHOLD = 0.10
 
 
@@ -110,6 +112,102 @@ class QualityGateTracker:
         # The same iteration's selfplay per-seat wins. This is the empirical
         # null for natural seat asymmetry on the current board/config.
         self._selfplay_seat_wins: dict[int, int] = {}
+        self._move_tracking_complete = True
+        self._move_tracking_partial_reason: str | None = None
+
+    def mark_move_tracking_partial(self, reason: str) -> None:
+        """Record that move/value samples cover only part of the eval."""
+        self._move_tracking_complete = False
+        self._move_tracking_partial_reason = reason
+
+    def to_checkpoint(self) -> dict[str, Any]:
+        """Serialize tracker state for staged-eval resume checkpoints."""
+        return {
+            "schema_version": 1,
+            "openings": {str(k): list(v) for k, v in self._openings.items()},
+            "unique_moves_chosen": sorted(self._unique_moves_chosen),
+            "unique_legal_moves_seen": sorted(self._unique_legal_moves_seen),
+            "values": list(self._values),
+            "nonfinite_value_samples": self._nonfinite_value_samples,
+            "game_count": self._game_count,
+            "seat_wins": {str(k): v for k, v in self._seat_wins.items()},
+            "seat_games": {str(k): v for k, v in self._seat_games.items()},
+            "selfplay_seat_wins": {
+                str(k): v for k, v in self._selfplay_seat_wins.items()
+            },
+            "move_tracking_complete": self._move_tracking_complete,
+            "move_tracking_partial_reason": self._move_tracking_partial_reason,
+        }
+
+    def load_checkpoint(self, state: dict[str, Any]) -> None:
+        """Restore tracker state saved by :meth:`to_checkpoint`."""
+        if not isinstance(state, dict):
+            raise ValueError("quality tracker checkpoint must be a dict")
+
+        openings: dict[int, list[str]] = {}
+        raw_openings = state.get("openings", {})
+        if isinstance(raw_openings, dict):
+            for raw_idx, raw_seq in raw_openings.items():
+                try:
+                    game_idx = int(raw_idx)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(raw_seq, list):
+                    openings[game_idx] = [str(item) for item in raw_seq]
+
+        def _string_set(raw: Any) -> set[str]:
+            if not isinstance(raw, list):
+                return set()
+            return {str(item) for item in raw}
+
+        def _int_map(raw: Any) -> dict[int, int]:
+            result: dict[int, int] = {}
+            if not isinstance(raw, dict):
+                return result
+            for raw_key, raw_value in raw.items():
+                try:
+                    key = int(raw_key)
+                    value = int(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                result[key] = value
+            return result
+
+        values: list[float] = []
+        raw_values = state.get("values", [])
+        if isinstance(raw_values, list):
+            for raw_value in raw_values:
+                try:
+                    value = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(value):
+                    values.append(value)
+
+        self._openings = openings
+        self._unique_moves_chosen = _string_set(state.get("unique_moves_chosen", []))
+        self._unique_legal_moves_seen = _string_set(
+            state.get("unique_legal_moves_seen", [])
+        )
+        self._values = values
+        try:
+            self._nonfinite_value_samples = int(
+                state.get("nonfinite_value_samples", 0)
+            )
+        except (TypeError, ValueError):
+            self._nonfinite_value_samples = 0
+        try:
+            self._game_count = int(state.get("game_count", 0))
+        except (TypeError, ValueError):
+            self._game_count = 0
+        self._seat_wins = _int_map(state.get("seat_wins", {}))
+        self._seat_games = _int_map(state.get("seat_games", {}))
+        self._selfplay_seat_wins = _int_map(state.get("selfplay_seat_wins", {}))
+        self._move_tracking_complete = bool(
+            state.get("move_tracking_complete", True)
+        )
+        reason = state.get("move_tracking_partial_reason")
+        self._move_tracking_partial_reason = str(reason) if reason else None
 
     def record_move(
         self,
@@ -218,29 +316,53 @@ def _check_behavioral_diversity(
 
     n_games = tracker._game_count
     details["games_tracked"] = n_games
+    details["move_tracking_complete"] = tracker._move_tracking_complete
+    if tracker._move_tracking_partial_reason:
+        details["move_tracking_partial_reason"] = (
+            tracker._move_tracking_partial_reason
+        )
+
+    opening_strs: list[str] = []
+    for gidx in sorted(tracker._openings.keys()):
+        seq = tracker._openings[gidx]
+        opening_strs.append("|".join(seq))
+    opening_games_tracked = len(opening_strs)
+    details["opening_games_tracked"] = opening_games_tracked
+    details["opening_sample_coverage"] = (
+        round(opening_games_tracked / n_games, 3) if n_games > 0 else 0.0
+    )
 
     # --- Opening sequence repetition ---
-    if n_games >= 3:
-        # Stringify opening sequences for comparison
-        opening_strs: list[str] = []
-        for gidx in sorted(tracker._openings.keys()):
-            seq = tracker._openings[gidx]
-            opening_strs.append("|".join(seq))
+    if opening_strs:
+        from collections import Counter
+        counts = Counter(opening_strs)
+        _, most_common_count = counts.most_common(1)[0]
+        repeat_rate = most_common_count / opening_games_tracked
+        details["opening_repeat_rate"] = round(repeat_rate, 3)
+        details["unique_openings"] = len(counts)
 
-        if opening_strs:
-            from collections import Counter
-            counts = Counter(opening_strs)
-            most_common_seq, most_common_count = counts.most_common(1)[0]
-            repeat_rate = most_common_count / len(opening_strs)
-            details["opening_repeat_rate"] = round(repeat_rate, 3)
-            details["unique_openings"] = len(counts)
+        skip_reason = None
+        if not tracker._move_tracking_complete:
+            skip_reason = "move tracking partial"
+        elif opening_games_tracked < MIN_OPENINGS_FOR_COLLAPSE_CHECK:
+            skip_reason = (
+                f"opening sample {opening_games_tracked} < "
+                f"{MIN_OPENINGS_FOR_COLLAPSE_CHECK}"
+            )
+        elif details["opening_sample_coverage"] < MIN_OPENING_SAMPLE_COVERAGE:
+            skip_reason = (
+                f"opening coverage {details['opening_sample_coverage']:.0%} < "
+                f"{MIN_OPENING_SAMPLE_COVERAGE:.0%}"
+            )
 
-            if repeat_rate > MODE_COLLAPSE_THRESHOLD:
-                critical = True
-                warnings.append(
-                    f"MODE_COLLAPSE: {repeat_rate:.0%} of games share the same "
-                    f"opening ({most_common_count}/{len(opening_strs)} games)"
-                )
+        if skip_reason:
+            details["mode_collapse_check_skipped"] = skip_reason
+        elif n_games >= 3 and repeat_rate > MODE_COLLAPSE_THRESHOLD:
+            critical = True
+            warnings.append(
+                f"MODE_COLLAPSE: {repeat_rate:.0%} of games share the same "
+                f"opening ({most_common_count}/{opening_games_tracked} games)"
+            )
 
     # --- Move diversity ---
     n_chosen = len(tracker._unique_moves_chosen)
@@ -251,7 +373,9 @@ def _check_behavioral_diversity(
     if n_legal > 0:
         diversity_ratio = n_chosen / n_legal
         details["diversity_ratio"] = round(diversity_ratio, 3)
-        if diversity_ratio < LOW_DIVERSITY_THRESHOLD:
+        if not tracker._move_tracking_complete:
+            details["low_diversity_check_skipped"] = "move tracking partial"
+        elif diversity_ratio < LOW_DIVERSITY_THRESHOLD:
             warnings.append(
                 f"LOW_DIVERSITY: only {n_chosen}/{n_legal} legal moves ever "
                 f"chosen ({diversity_ratio:.1%})"
@@ -283,6 +407,15 @@ def _check_value_head_health(
     n = len(values)
     details["value_samples"] = n
     details["nonfinite_value_samples"] = tracker._nonfinite_value_samples
+    details["move_tracking_complete"] = tracker._move_tracking_complete
+    if tracker._move_tracking_partial_reason:
+        details["move_tracking_partial_reason"] = (
+            tracker._move_tracking_partial_reason
+        )
+
+    if not tracker._move_tracking_complete:
+        details["skipped"] = "move tracking partial"
+        return False, [], details
 
     if tracker._nonfinite_value_samples > 0:
         critical = True

@@ -810,3 +810,179 @@ def test_staged_evaluate_rotates_candidate_seat_evenly(monkeypatch):
     assert result["best_wins"] == 0
     assert result["win_rate"] == 1.0
     assert [candidate_by_game[i] for i in range(8)] == [1, 2, 3, 4, 1, 2, 3, 4]
+
+
+def test_staged_evaluate_resume_restores_quality_tracker_state(
+    monkeypatch,
+    tmp_path: Path,
+):
+    prior_move = SimpleNamespace(
+        type=SimpleNamespace(value="place"),
+        from_pos=None,
+        to=SimpleNamespace(x=0, y=0),
+    )
+    next_move = SimpleNamespace(
+        type=SimpleNamespace(value="place"),
+        from_pos=None,
+        to=SimpleNamespace(x=1, y=0),
+    )
+    prior_tracker = loop.QualityGateTracker()
+    prior_tracker.set_selfplay_baseline({1: 1, 2: 1})
+    prior_tracker.record_move(0, 0, prior_move, [prior_move], root_value=0.1)
+    prior_tracker.finish_game(0)
+    prior_tracker.record_game_outcome(0, 1, True)
+
+    checkpoint_path = tmp_path / "iter_001_eval.json"
+    checkpoint_path.write_text(
+        json.dumps(
+            {
+                "candidate_wins": 1,
+                "best_wins": 0,
+                "draws": 0,
+                "games_played": 1,
+                "seat_outcomes": [
+                    {"i": 0, "candidate_player": 1, "won": True},
+                ],
+                "tracker_state": prior_tracker.to_checkpoint(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeAI:
+        def __init__(self, player, model_path):
+            self.player_number = player
+            self.model_path = model_path
+            self._last_search_stats = {"root_value": 0.2}
+
+        def reset_for_new_game(self, rng_seed=None):
+            return None
+
+        def select_move(self, state):
+            return next_move
+
+    class FakeEnv:
+        num_players = 2
+
+        def reset(self, seed=None):
+            return SimpleNamespace(
+                game_status=loop.GameStatus.ACTIVE,
+                current_player=2,
+                winner=None,
+            )
+
+        def legal_moves(self):
+            return [next_move]
+
+        def step(self, move):
+            return (
+                SimpleNamespace(
+                    game_status=loop.GameStatus.COMPLETED,
+                    current_player=2,
+                    winner=2,
+                ),
+                0.0,
+                True,
+                {},
+            )
+
+    monkeypatch.setattr(loop, "_make_env", lambda: FakeEnv())
+    monkeypatch.setattr(loop, "_make_ai", lambda player, model_path, budget, randomness=0.0: FakeAI(player, model_path))
+    monkeypatch.setattr(loop, "_get_eval_stages", lambda: [(2, 0.99, 0.0)])
+
+    tracker = loop.QualityGateTracker()
+    result = loop.staged_evaluate(
+        "cand-model",
+        "best-model",
+        budget=64,
+        tracker=tracker,
+        checkpoint_path=checkpoint_path,
+    )
+
+    assert result["candidate_wins"] == 2
+    assert result["decision"] == "promote"
+    assert not checkpoint_path.exists()
+    assert tracker._move_tracking_complete
+    assert tracker._openings[0] == prior_tracker._openings[0]
+    assert tracker._openings[1] == ["place_1,0"]
+    assert tracker._seat_games == {1: 1, 2: 1}
+
+
+def test_staged_evaluate_legacy_resume_marks_tracker_partial(
+    monkeypatch,
+    tmp_path: Path,
+):
+    next_move = SimpleNamespace(
+        type=SimpleNamespace(value="place"),
+        from_pos=None,
+        to=SimpleNamespace(x=1, y=0),
+    )
+    checkpoint_path = tmp_path / "iter_001_eval.json"
+    checkpoint_path.write_text(
+        json.dumps(
+            {
+                "candidate_wins": 1,
+                "best_wins": 0,
+                "draws": 0,
+                "games_played": 1,
+                "seat_outcomes": [
+                    {"i": 0, "candidate_player": 1, "won": True},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeAI:
+        def __init__(self, player, model_path):
+            self.player_number = player
+            self.model_path = model_path
+            self._last_search_stats = {"root_value": 0.2}
+
+        def reset_for_new_game(self, rng_seed=None):
+            return None
+
+        def select_move(self, state):
+            return next_move
+
+    class FakeEnv:
+        num_players = 2
+
+        def reset(self, seed=None):
+            return SimpleNamespace(
+                game_status=loop.GameStatus.ACTIVE,
+                current_player=2,
+                winner=None,
+            )
+
+        def legal_moves(self):
+            return [next_move]
+
+        def step(self, move):
+            return (
+                SimpleNamespace(
+                    game_status=loop.GameStatus.COMPLETED,
+                    current_player=2,
+                    winner=2,
+                ),
+                0.0,
+                True,
+                {},
+            )
+
+    monkeypatch.setattr(loop, "_make_env", lambda: FakeEnv())
+    monkeypatch.setattr(loop, "_make_ai", lambda player, model_path, budget, randomness=0.0: FakeAI(player, model_path))
+    monkeypatch.setattr(loop, "_get_eval_stages", lambda: [(2, 0.99, 0.0)])
+
+    tracker = loop.QualityGateTracker()
+    result = loop.staged_evaluate(
+        "cand-model",
+        "best-model",
+        budget=64,
+        tracker=tracker,
+        checkpoint_path=checkpoint_path,
+    )
+
+    assert result["decision"] == "promote"
+    assert not tracker._move_tracking_complete
+    assert tracker._seat_games == {1: 1, 2: 1}

@@ -659,13 +659,12 @@ def staged_evaluate(
     clear wins/losses while giving marginal improvements up to 400 games
     of evidence.
 
-    When ``checkpoint_path`` is provided, per-game progress (candidate_wins,
-    best_wins, draws, games_played, per-seat outcomes) is persisted after
-    every game. On restart, the function resumes from that state rather than
-    replaying the full stage. Tracker move-level data from pre-restart is
-    not recovered — only game outcomes are replayed into the tracker — so
-    per-seat WR remains accurate but policy/value diversity metrics will
-    reflect only the post-resume portion.
+    When ``checkpoint_path`` is provided, per-game progress and quality-gate
+    tracker state are persisted after every game. On restart, new checkpoints
+    restore both outcome counts and move-level tracker state. Legacy
+    checkpoints that predate tracker persistence still resume outcome counts,
+    but mark move/value tracking partial so incomplete quality samples cannot
+    block promotion as full-evaluation evidence.
     """
     eval_stages = _get_eval_stages()
     eval_stages = _cap_promote_thresholds(eval_stages, promote_threshold_cap)
@@ -690,13 +689,31 @@ def staged_evaluate(
                 f"(cand={cw} best={bw} draws={dr})"
             )
             if tracker is not None:
-                for so in seat_outcomes:
+                tracker_restored = False
+                tracker_state = ckpt.get("tracker_state")
+                if isinstance(tracker_state, dict):
                     try:
-                        tracker.record_game_outcome(
-                            int(so["i"]), int(so["candidate_player"]), bool(so["won"]),
+                        tracker.load_checkpoint(tracker_state)
+                        tracker_restored = True
+                    except (TypeError, ValueError) as exc:
+                        logger.warning(
+                            "  eval checkpoint tracker state invalid; "
+                            "using outcome-only resume: %s",
+                            exc,
                         )
-                    except (KeyError, TypeError, ValueError):
-                        continue
+                if not tracker_restored:
+                    tracker.mark_move_tracking_partial(
+                        "legacy eval checkpoint without quality tracker state"
+                    )
+                    for so in seat_outcomes:
+                        try:
+                            tracker.record_game_outcome(
+                                int(so["i"]),
+                                int(so["candidate_player"]),
+                                bool(so["won"]),
+                            )
+                        except (KeyError, TypeError, ValueError):
+                            continue
         except (OSError, json.JSONDecodeError, ValueError):
             logger.warning("  eval checkpoint corrupt, starting eval from scratch")
             cw = bw = dr = games_played = 0
@@ -713,6 +730,8 @@ def staged_evaluate(
                 "games_played": games_played,
                 "seat_outcomes": seat_outcomes,
             }
+            if tracker is not None:
+                payload["tracker_state"] = tracker.to_checkpoint()
             tmp = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
             tmp.write_text(json.dumps(payload))
             tmp.replace(checkpoint_path)
