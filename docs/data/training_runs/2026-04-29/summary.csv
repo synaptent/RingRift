@@ -1,0 +1,14 @@
+run,iteration,decision,promoted,estimated_elo,win_rate,games_played,quality_gate_passed,quality_gate_summary
+fv3_reference_gh200-14,1,reject,False,1500.0,0.4,50,True,"SEAT_WR_IMBALANCE: per-seat wins deviate from selfplay baseline (chi2=5.00, p=0.0253; seat1=5/25 (wr=20%, null=50%), seat2=15/25 (wr=60%, null=50%))"
+fv3_reference_gh200-14,2,reject,False,1500.0,0.4,50,True,quality gate passed
+fv3_reference_gh200-14,3,reject,False,1500.0,0.44,100,True,quality gate passed
+fv3_reference_gh200-14,4,reject,False,1500.0,0.48,400,True,quality gate passed
+fv3_reference_gh200-14,5,reject,False,1500.0,0.4925,400,True,quality gate passed
+fv3_reference_gh200-14,6,promote,True,1501.7,0.5025,400,True,quality gate passed
+fv3_reference_gh200-14,7,promote,True,1586.8,0.62,50,True,quality gate passed
+fv3_reference_gh200-14,8,reject,False,1586.8,0.47,200,True,quality gate passed
+fv3_reference_gh200-14,9,reject,False,1586.8,0.48,200,True,quality gate passed
+fv3_reference_gh200-14,10,reject,False,1586.8,0.4587628865979381,194,True,quality gate passed
+fv3_reference_gh200-14,11,reject,False,1586.8,0.4825,400,True,"SEAT_WR_IMBALANCE: per-seat wins deviate from selfplay baseline (chi2=5.42, p=0.0199; seat1=99/200 (wr=50%, null=43%), seat2=94/200 (wr=47%, null=57%))"
+fv3_reference_gh200-14,12,promote,False,1586.8,0.72,50,False,CRITICAL; MODE_COLLAPSE: 100% of games share the same opening (1/1 games)
+fv3_reference_gh200-14,13,promote,True,1787.0,0.76,50,True,quality gate passed

@@ -21,6 +21,11 @@ EXTRA_PACKET_FILES = (
     "docs/assets/results/square8_2p_progression.svg",
     "docs/assets/readme/hex8-sandbox-live.png",
     "docs/data/ai_surface_manifest.json",
+    "docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.metrics.jsonl",
+    "docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter012_resume_backfill.json",
+    "docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter013_final.json",
+    "docs/data/training_runs/2026-04-29/summary.csv",
+    "docs/data/training_runs/2026-04-29/seed_a_gh200-8_0of7/gh200-8_seed_a_0of7_20260429T1545Z_evidence.tgz",
 )
 
 

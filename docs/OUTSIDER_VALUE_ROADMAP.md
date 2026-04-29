@@ -52,11 +52,15 @@ analysis around silent AlphaZero implementation bugs:
   tensors.
 - Initialization choices can make a large architecture look alive while key
   conditioning paths are effectively dead.
+- A staged evaluator can say "promote" while a resume-limited quality gate
+  incorrectly blocks promotion from an incomplete move-level sample.
 
 The canonical writeup is
 [`docs/research/SILENT_ALPHAZERO_FAILURES.md`](research/SILENT_ALPHAZERO_FAILURES.md).
 The v4-specific retry protocol is
 [`docs/research/V4_MULTIPLAYER_DIAGNOSTIC.md`](research/V4_MULTIPLAYER_DIAGNOSTIC.md).
+As of 2026-04-29, that retry is running on `gh200-8` after retiring fv3
+seed A at `0/7` promotions and preserving its evidence bundle.
 
 ## Priority 3: Finish One Clean Replication Slice
 
@@ -71,6 +75,10 @@ Recommended stopping condition:
 Current snapshot:
 
 - [`docs/research/FV3_REPLICATION_SNAPSHOT_2026-04-28.md`](research/FV3_REPLICATION_SNAPSHOT_2026-04-28.md)
+- [`docs/research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md`](research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md)
+  revises the `gh200-14` reference-lane interpretation: iter 12 was blocked by
+  resume-limited quality-gate coverage after a `49/50` eval resume, then iter
+  13 clean-promoted at `76.0%`.
 
 The public claim should be narrow:
 
@@ -114,7 +122,8 @@ Current artifact gate:
 ## What Not To Optimize Yet
 
 - Do not expand the GPU fleet until the existing results are analyzed.
-- Do not add another architecture family before v4/fv3/v5-heavy are explained.
+- Do not add another architecture family while the v4 retry is producing its
+  first post-fix diagnostic verdict.
 - Do not polish every daemon. Move unsupported operational surfaces behind a
   manifest and make the supported path obvious.
 - Do not claim multiplayer success until promotion trajectories support it.

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-04-29T15:55:00Z",
+  "lane": "fv3_reference_gh200-14",
+  "source_metrics": "docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.metrics.jsonl",
+  "backfill_method": "control_vs_treatment_documentation",
+  "backfill_rationale": "A fresh eval rerun would consume an active GH200 lane. The copied metrics already contain the needed control-vs-treatment evidence: iter 12 was strength-positive but blocked by a legacy resume tracker denominator, while iter 13 clean-promoted under a complete quality-gate sample.",
+  "control_iteration": {
+    "iteration": 12,
+    "timestamp_utc": "2026-04-29T01:54:00.425826+00:00",
+    "evaluation": {
+      "candidate_wins": 36,
+      "best_wins": 14,
+      "draws": 0,
+      "games_played": 50,
+      "win_rate": 0.72,
+      "decision": "promote",
+      "decision_stage": 1
+    },
+    "promoted": false,
+    "estimated_elo": 1586.8,
+    "quality_gate": {
+      "passed": false,
+      "critical": true,
+      "summary": "CRITICAL; MODE_COLLAPSE: 100% of games share the same opening (1/1 games)",
+      "known_issue": "legacy eval resume restored outcome counts but not move-level QualityGateTracker state",
+      "unsafe_denominator": "1/1 opening sample"
+    },
+    "classification": "strength-positive promotion blocked by legacy partial-sample quality gate"
+  },
+  "treatment_iteration": {
+    "iteration": 13,
+    "timestamp_utc": "2026-04-29T06:53:48.914476+00:00",
+    "evaluation": {
+      "candidate_wins": 38,
+      "best_wins": 12,
+      "draws": 0,
+      "games_played": 50,
+      "win_rate": 0.76,
+      "decision": "promote",
+      "decision_stage": 1
+    },
+    "promoted": true,
+    "estimated_elo": 1787.0,
+    "quality_gate": {
+      "passed": true,
+      "critical": false,
+      "summary": "quality gate passed",
+      "opening_repeat_rate": 0.077,
+      "unique_openings": 13,
+      "value_samples": 490
+    },
+    "classification": "strength-positive promotion accepted with complete enough quality-gate evidence"
+  },
+  "fix_commit": "4e1b7e20e",
+  "fix_summary": "Persist quality-gate tracker state in staged-eval checkpoints and mark legacy resumed move/value samples partial so they cannot become critical blockers.",
+  "operator_decision": "Do not use iter 12 as evidence of game or policy mode collapse. Use it as evidence that resume coverage metadata is necessary for trustworthy promotion gates."
+}

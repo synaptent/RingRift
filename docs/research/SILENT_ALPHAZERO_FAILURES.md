@@ -194,12 +194,96 @@ RingRift fix:
 
 - `c7aa48f92 fix(ai): initialize v5-heavy FiLM as identity` (2026-04-24).
 
+## Failure 5: Quality Gate Resume With A Degenerate Denominator
+
+Symptom:
+
+- The `gh200-14` fv3 reference lane appeared to plateau at `1586.8` Elo after
+  rejects at iters 8, 9, 10, and 11.
+- Iter 12 then produced a strong staged-evaluation signal: `36` candidate wins,
+  `14` best wins, `0` draws, `72.0%` win rate over `50` games, and
+  `evaluation.decision == "promote"`.
+- The model was not promoted. The quality gate recorded
+  `passed=false`, `critical=true`, and
+  `MODE_COLLAPSE: 100% of games share the same opening (1/1 games)`.
+- Iter 13 then clean-promoted at `38/12/0`, `76.0%` over `50` games, with
+  `quality gate passed`.
+
+Code citation:
+
+- `ai-service/scripts/lib/model_quality_gate.py:82-84` defines the opening
+  length and mode-collapse threshold.
+- `ai-service/scripts/lib/model_quality_gate.py:208-260` computes opening
+  repetition and marks `MODE_COLLAPSE` as critical when the repeat rate exceeds
+  the threshold.
+- `ai-service/scripts/minimal_alphazero_loop.py:662-668` documents the resume
+  limitation: eval checkpoints restore outcome counts, but move-level tracker
+  data from pre-restart games is not recovered.
+- `ai-service/scripts/minimal_alphazero_loop.py:1358-1360` attaches the
+  quality tracker to staged evaluation; `:1380-1387` turns a critical verdict
+  into `quality_blocked=True`; `:1414-1417` requires both
+  `decision == "promote"` and `not quality_blocked`; `:1436-1437` writes the
+  quality-gate record into `metrics.jsonl`.
+- Test: `ai-service/tests/unit/scripts/test_model_quality_gate.py`
+  (`test_small_opening_sample_does_not_trigger_mode_collapse`,
+  `test_partial_tracker_skips_critical_value_head_check`) and
+  `ai-service/tests/unit/scripts/test_minimal_alphazero_loop.py`
+  (`test_staged_evaluate_resume_restores_quality_tracker_state`,
+  `test_staged_evaluate_legacy_resume_marks_tracker_partial`).
+
+Why it is dangerous:
+
+- A normal promotion metric is green: the candidate beats the current best.
+- The quality gate also looks decisive because the warning is labeled
+  `MODE_COLLAPSE`.
+- The denominator is the real signal: `1/1` means only one opening sequence was
+  recorded, while the staged-evaluation outcome row counted `50` games.
+- A reviewer can draw the wrong conclusion in either direction: "the game is
+  flawed" or "the model collapsed" instead of "the move-level quality tracker
+  lost coverage across an eval resume."
+
+Fix shape:
+
+- Persist `QualityGateTracker` state inside the staged-eval checkpoint, not
+  only outcome counts.
+- Add explicit coverage fields such as `opening_games_tracked`,
+  `opening_sample_coverage`, and `move_tracking_complete`.
+- If a legacy checkpoint resumes without tracker state, mark move-level
+  tracking partial and skip critical behavioral/value-head gates for that
+  iteration rather than blocking promotion on a one-game suffix.
+- Keep seat fairness active across resume because per-seat outcomes are already
+  replayed into the tracker.
+
+RingRift fix:
+
+- `4e1b7e20e fix(coordination): persist quality-gate tracker state across eval
+resume` (2026-04-29): checkpointed quality-tracker state, partial-coverage
+  fields, and legacy-resume guards that keep incomplete move/value samples from
+  becoming critical blockers.
+
+RingRift evidence:
+
+- `docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.metrics.jsonl`
+  contains iters 1-13 copied from the live node.
+- `docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter012_resume_backfill.json`
+  records the control-vs-treatment backfill classification: iter 12 was a
+  strength-positive promotion blocked by the legacy partial-sample gate, while
+  iter 13 clean-promoted.
+- `docs/data/training_runs/2026-04-29/summary.csv` summarizes iter 12 as
+  `decision=promote`, `promoted=False`, `win_rate=0.72`,
+  `quality_gate_passed=False`, and iter 13 as `decision=promote`,
+  `promoted=True`, `win_rate=0.76`, `quality_gate_passed=True`.
+- `docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter013_final.json`
+  records the clean iter 13 promotion row.
+
 ## General Pattern
 
 The common failure mode is not a crash. It is a mismatch between what the
-experiment name claims and what the actual training graph optimizes.
+experiment name claims and what the actual system is proving: sometimes the
+training graph optimizes a different objective, and sometimes a quality gate
+with incomplete internal state produces a false conclusion.
 
-The reusable guardrail is to test contracts at three levels:
+The reusable guardrail is to test contracts at four levels:
 
 1. **Model contract**: outputs, shapes, and sensitivity.
    - Forward returns the documented tuple shape for every supported
@@ -218,12 +302,20 @@ The reusable guardrail is to test contracts at three levels:
    - Every artifact (checkpoint, NPZ, log line) should let an outsider
      reconstruct _what was actually optimized_, not just _what was
      intended_.
+4. **Evaluation contract**: promotion requires both strength and behavioral
+   sanity.
+   - Staged eval can decide that a candidate is stronger.
+   - Quality gates must still be allowed to block promotion when value-head
+     health, seat fairness, or behavioral diversity fails.
+   - Quality gates also need coverage metadata so incomplete tracker samples do
+     not masquerade as full-evaluation evidence.
 
 ## Reproducer Index
 
-| Failure                                                        | Commit                                                              | Test                                                                  |
-| -------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Hex v4 missing `rank_dist` in `forward()`                      | [`2a659360f`](https://github.com/an0mium/RingRift/commit/2a659360f) | `tests/unit/ai/test_neural_net_architectures.py::TestHexNeuralNet_v4` |
-| Minimal loop drops `--multi-player` for `num_players > 2`      | [`10ee06181`](https://github.com/an0mium/RingRift/commit/10ee06181) | `tests/unit/scripts/test_minimal_alphazero_loop.py`                   |
-| `transfer_2p_to_4p.py` no-ops on v4 (only matches `value_fc2`) | [`19ceb1ceb`](https://github.com/an0mium/RingRift/commit/19ceb1ceb) | `tests/unit/scripts/test_transfer_2p_to_4p.py`                        |
-| v5-heavy FiLM init compounds to saturation through SE blocks   | [`c7aa48f92`](https://github.com/an0mium/RingRift/commit/c7aa48f92) | `tests/unit/ai/test_v5_heavy_film_init.py`                            |
+| Failure                                                        | Commit                                                              | Test                                                                                                 |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Hex v4 missing `rank_dist` in `forward()`                      | [`2a659360f`](https://github.com/an0mium/RingRift/commit/2a659360f) | `tests/unit/ai/test_neural_net_architectures.py::TestHexNeuralNet_v4`                                |
+| Minimal loop drops `--multi-player` for `num_players > 2`      | [`10ee06181`](https://github.com/an0mium/RingRift/commit/10ee06181) | `tests/unit/scripts/test_minimal_alphazero_loop.py`                                                  |
+| `transfer_2p_to_4p.py` no-ops on v4 (only matches `value_fc2`) | [`19ceb1ceb`](https://github.com/an0mium/RingRift/commit/19ceb1ceb) | `tests/unit/scripts/test_transfer_2p_to_4p.py`                                                       |
+| v5-heavy FiLM init compounds to saturation through SE blocks   | [`c7aa48f92`](https://github.com/an0mium/RingRift/commit/c7aa48f92) | `tests/unit/ai/test_v5_heavy_film_init.py`                                                           |
+| Eval resume loses tracker coverage and blocks promotion        | Live guardrail evidence, copied 2026-04-29                          | `tests/unit/scripts/test_model_quality_gate.py`, `tests/unit/scripts/test_minimal_alphazero_loop.py` |

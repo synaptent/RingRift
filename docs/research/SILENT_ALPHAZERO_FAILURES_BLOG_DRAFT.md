@@ -12,10 +12,10 @@ on time, with reasonable-looking loss curves, while the actual training graph
 optimizes a different objective from the one your config promised.
 
 I run a small AlphaZero-style training cluster for a novel territory game
-called RingRift. Over the last two months, four bugs of this exact shape
-showed up in the codebase, plus a fifth class of bug that I think is worth
-naming out loud because it is very easy to write. Each one let training keep
-running long enough that the only way to detect it was a targeted probe.
+called RingRift. Over the last two months, five failure modes of this exact
+shape showed up in the codebase. Each one let training keep running long
+enough that the only way to detect it was a targeted probe or a quality gate
+that looked beyond win rate.
 
 This post is the short version of an internal writeup at
 `docs/research/SILENT_ALPHAZERO_FAILURES.md` in the RingRift repository, with
@@ -174,13 +174,52 @@ conditioning input and requires nonzero output deltas.
 Crucially: every checkpoint saved before the init fix is poisoned. The
 bad gamma weights are baked in. They cannot be fine-tuned out reliably.
 
-## Bug 5 (general class): The experiment name lies
+## Bug 5: A quality gate that loses its denominator on resume
 
-The four specific bugs above are all instances of a more general failure
+The newest example is not a broken forward pass or missing flag. It is a
+quality gate that made a promotion look unsafe because its internal sample was
+partial after an evaluation resume.
+
+One RingRift fv3 reference run had apparently plateaued: rejects at 47-48%
+for several iterations around 1587 Elo. Then iteration 12 suddenly beat the
+current best by 36 games to 14, a 72% staged-evaluation win rate. A naive
+promotion rule would have accepted the model.
+
+The model was rejected because the quality gate said every tracked game shared
+the same opening. The metric row looked damning:
+`decision=promote`, `promoted=false`, `quality_gate.passed=false`,
+`quality_gate.critical=true`, `MODE_COLLAPSE`.
+
+The clue was hidden in the denominator: `1/1 games`.
+
+The staged evaluator had a resume checkpoint with the 50-game outcome count,
+but the quality tracker only had move-level data from the post-resume suffix.
+So the row combined two different sample sizes: full outcome evidence and
+one-game behavioral-diversity evidence. Iteration 13 then clean-promoted at
+38-12 over 50 games with the quality gate passing, which made the iter 12
+interpretation much clearer.
+
+**Lesson**: quality gates need their own provenance and coverage fields.
+If an evaluation can resume from a checkpoint, either persist the gate's
+move-level state too or mark behavioral/value checks as partial and non-critical
+for that iteration. A gate that catches bad models is useful. A gate that hides
+its sample denominator becomes another silent failure.
+
+RingRift's fix is now committed as `4e1b7e20e`
+(`fix(coordination): persist quality-gate tracker state across eval resume`).
+For publication, the clean evidence pair is the copied control-vs-treatment
+record: iter 12 was a strength-positive promotion blocked by the legacy
+partial-sample gate, while iter 13 was a strength-positive promotion that
+passed the gate.
+
+## The general class: The experiment name lies
+
+The five specific bugs above are all instances of a more general failure
 mode: **the experiment name claims one thing, the actual training graph
-optimizes another, and both keep running long enough that nobody notices**.
+or evaluation gate proves another, and both keep running long enough that
+nobody notices**.
 
-The mismatch can be at three different layers:
+The mismatch can be at four different layers:
 
 1. **Model contract**: the architecture has a head it never returns, or a
    conditioning path that contributes nothing, or a forward signature that
@@ -196,10 +235,14 @@ The mismatch can be at three different layers:
    artifacts whether the run that produced them was the run that was
    supposed to be produced.
 
-In RingRift, every one of those three layers had a real bug at some point
-during 2026. None of them crashed.
+4. **Evaluation contract**: the promotion gate measures win rate, behavioral
+   sanity, and the coverage of the quality checks themselves.
 
-The reusable guardrail is to test contracts at all three layers
+In RingRift, the first three layers each had a real bug at some point
+during 2026, and the fourth layer caught a real near-miss. None of them
+crashed.
+
+The reusable guardrail is to test contracts at all four layers
 independently:
 
 - For the model: forward returns the documented tuple shape for every
@@ -215,6 +258,9 @@ independently:
 - For the experiment: every artifact (checkpoint, NPZ, log line) should
   let an outsider reconstruct what was actually optimized, not just what
   was intended.
+
+- For evaluation: persist quality-gate verdicts next to win-rate decisions,
+  make promotion require both, and include sample coverage for each gate.
 
 ## Why I am writing this externally
 

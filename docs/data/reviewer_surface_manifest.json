@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "as_of": "2026-04-24",
+  "as_of": "2026-04-29",
   "purpose": "Machine-readable map of the supported RingRift review surface. This keeps outside-reviewer entrypoints focused on the product, canonical rules, parity, and minimal training proof path.",
   "reviewer_entrypoint": "docs/REVIEWER_GUIDE.md",
   "must_read": [
@@ -12,7 +12,9 @@
     "docs/REPRODUCIBILITY.md",
     "docs/ARCHITECTURE_OVERVIEW.md",
     "docs/data/ai_surface_manifest.json",
-    "docs/LESSONS_LEARNED.md"
+    "docs/LESSONS_LEARNED.md",
+    "docs/research/SILENT_ALPHAZERO_FAILURES.md",
+    "docs/research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md"
   ],
   "supported_code_surfaces": [
     {
@@ -97,6 +99,23 @@
       "claim_type": "live_cluster_status",
       "source": "operator logs and metrics.jsonl on GH200 nodes",
       "publication_rule": "Do not promote into public docs until artifacts are mirrored or recorded in the evidence manifest."
+    },
+    {
+      "claim_type": "failure_analysis",
+      "source": "docs/research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md",
+      "publication_rule": "May be used as a checked-in engineering lesson; do not turn it into a headline Elo result.",
+      "evidence": [
+        "docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter012_resume_backfill.json",
+        "docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter013_final.json"
+      ]
+    },
+    {
+      "claim_type": "live_retry",
+      "source": "docs/research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md",
+      "publication_rule": "The gh200-8 v4 multiplayer retry is operational evidence until a first post-fix verdict lands; preserve logs before making model-quality claims.",
+      "evidence": [
+        "docs/data/training_runs/2026-04-29/seed_a_gh200-8_0of7/gh200-8_seed_a_0of7_20260429T1545Z_evidence.tgz"
+      ]
     }
   ]
 }

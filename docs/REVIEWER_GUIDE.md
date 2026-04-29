@@ -38,6 +38,11 @@ Read these in order:
 7. [docs/LESSONS_LEARNED_2026-04.md](/docs/LESSONS_LEARNED_2026-04.md) - dated
    training-debugging addendum; useful for process review, not a headline
    results source.
+8. [docs/research/SILENT_ALPHAZERO_FAILURES.md](/docs/research/SILENT_ALPHAZERO_FAILURES.md) -
+   reusable AlphaZero failure catalog with tests and evidence pointers.
+9. [docs/research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md](/docs/research/FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md) -
+   live-run evidence where staged eval said promote but a resume-limited
+   quality-gate sample blocked iter 12 before iter 13 clean-promoted.
 
 Then inspect these code surfaces:
 
@@ -58,6 +63,11 @@ The public result claims are intentionally narrower than live operator context.
 - Claim provenance lives in [docs/data/results_evidence_manifest.json](/docs/data/results_evidence_manifest.json).
 - Larger artifacts such as checkpoints, full metrics logs, and training NPZ files live outside git and are referenced from [docs/REPRODUCIBILITY.md](/docs/REPRODUCIBILITY.md).
 - Live cluster updates should not be promoted into public claims until their artifacts are mirrored or explicitly recorded in the evidence manifest.
+- The 2026-04-29 fv3 quality-gate resume note is not a headline result; it is
+  a checked-in failure-analysis artifact with copied metrics.
+- The `gh200-8` v4 multiplayer retry is an active diagnostic, not a
+  multiplayer-strength claim. Treat it as live operational evidence until a
+  first post-fix training probe and eval verdict are preserved.
 
 This boundary is deliberate. It is better for RingRift to underclaim than to ask
 a reviewer to trust chat logs or oral history.
@@ -119,6 +129,8 @@ Highest-signal improvement areas:
 3. Extend non-zero coverage thresholds beyond the current TypeScript rules engine and Python training-contract ratchets.
 4. Tighten Python typing for parity and checkpoint-contract modules.
 5. Package result artifacts so the headline claims can be audited without private cluster access.
+6. Patch the staged-eval quality-gate resume contract so incomplete
+   move-level samples cannot block promotion as if they covered the full eval.
 
 ## Reviewer Surface Manifest
 

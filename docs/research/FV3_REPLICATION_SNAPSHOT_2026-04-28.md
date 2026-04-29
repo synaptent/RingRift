@@ -3,6 +3,14 @@
 This is a point-in-time snapshot of the active Lambda GH200 lanes. It is meant
 to support outside review without requiring access to live nodes.
 
+Update 2026-04-29: the `gh200-14` reference-lane plateau interpretation in this
+snapshot is incomplete. Later copied metrics show iter 12 had a staged
+`promote` decision at `72.0%` over `50` games but was blocked after a `49/50`
+eval resume left the quality gate with a one-game opening sample; iter 13 then
+clean-promoted at `76.0%`. Keep this file as the 2026-04-28 snapshot, and use
+[`FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md`](FV3_QUALITY_GATE_RESUME_NOTE_2026-04-29.md)
+for the updated interpretation.
+
 Raw metrics are checked in under
 [`docs/data/training_runs/2026-04-28`](../data/training_runs/2026-04-28/).
 The compact machine-readable summary is
