@@ -1,0 +1,64 @@
+{
+  "name": "canonical_hex8_2p_v5_heavy_fv3.pth",
+  "purpose": "Frontier checkpoint for the hex8 2-player v5-heavy + fv3-feature replication study (gh200-14 reference lane).",
+  "sha256": "4dd382d4232e68b877b062eac2e1e96dd192bfd47393c3e2b74dab551bbae836",
+  "size_bytes": 34610051,
+  "minted_at": "2026-04-30T08:00:00Z",
+  "iteration": 15,
+  "estimated_elo": 1897.4,
+  "total_promotions": 5,
+  "board_type": "hex8",
+  "num_players": 2,
+  "model_version": "v5-heavy",
+  "feature_version": 3,
+  "training_loop": "ai-service/scripts/minimal_alphazero_loop.py",
+  "training_lr": 5e-5,
+  "training_lr_schedule": "fixed",
+  "produced_on_node": "lambda-gh200-14",
+  "produced_in_workdir": "ai-service/data/minimal_loop_hex8_2p_v5_heavy_fv3",
+  "promotion_trajectory": [
+    { "iteration": 6, "wr": 0.502, "elo_after": 1501.7, "stage": 4 },
+    { "iteration": 7, "wr": 0.62, "elo_after": 1586.8, "stage": 1 },
+    {
+      "iteration": 13,
+      "wr": 0.76,
+      "elo_after": 1787.0,
+      "stage": 1,
+      "note": "first promotion under resume-safe quality gate fix 4e1b7e20e"
+    },
+    {
+      "iteration": 14,
+      "wr": 0.515,
+      "elo_after": 1797.4,
+      "stage": 4,
+      "note": "slow stage-4 promote"
+    },
+    {
+      "iteration": 15,
+      "wr": 0.64,
+      "elo_after": 1897.4,
+      "stage": 1,
+      "note": "+100 Elo single-iter jump"
+    }
+  ],
+  "training_git_sha_at_promotion": "4e1b7e20e",
+  "training_git_sha_pushed_at": "2026-04-29T05:30:00Z",
+  "verification": {
+    "sweep_command": "python3 scripts/check_canonical_models.py",
+    "expected_status": "MATCH against on-disk weights when pulled from S3 or copied from gh200-14",
+    "live_path_on_remote": "/home/ubuntu/ringrift/ai-service/data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth",
+    "live_path_remote_node": "lambda-gh200-14"
+  },
+  "context": {
+    "is_canonical_for_config": false,
+    "is_experiment_frontier": true,
+    "experiment_name": "fv3 architectural replication (4 seeds + 1 reference)",
+    "replication_promotion_rate": "6/26 = 23% across all fv3 lanes (vs 12.5% reference target)",
+    "related_doc": "docs/research/QUALITY_GATE_RESUME_BUG.md",
+    "validates": [
+      "4e1b7e20e (resume-safe quality gate)",
+      "demonstrates 3 consecutive clean promotions post-fix",
+      "iter 13/14/15 verdicts all unaffected by tracker resume-coverage bug"
+    ]
+  }
+}

@@ -107,8 +107,13 @@ ai-service/app/training/**/data/
 
 # AI service models and eval pools (large files - use Git LFS if versioning needed)
 /models/
-ai-service/models/
+ai-service/models/*
 ai-service/models_essential/
+# Track canonical model metadata (sidecars + provenance JSON) so an outsider
+# can verify published artifacts without the .pth files themselves.
+!ai-service/models/canonical_*.sha256
+!ai-service/models/canonical_*.provenance.json
+!ai-service/models/README.md
 ai-service/data/eval_pools/
 ai-service/runs/
 # Self-play game data (large jsonl files generated during training/evaluation)
