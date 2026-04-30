@@ -330,6 +330,11 @@ RingRift evidence:
   preserves the failed gh200-8 retry. The archived `error_index.txt` shows
   iter 1 and iter 2 both failed with `model.num_players=4 but training expects
 3 players`.
+- `docs/data/training_runs/2026-04-30/gh200-8_v4_retry_postfix_weak_eval/`
+  preserves the first post-fix retry diagnostic. It shows the mechanical fix
+  held long enough to produce `candidate_001.pth` and start eval, but the
+  candidate was weak (`54-111`, `32.7%` after 165 games), so the lane was
+  stopped and the GH200 was repurposed.
 
 ## Failure 7: Training Failure Advanced To Fresh Selfplay
 
