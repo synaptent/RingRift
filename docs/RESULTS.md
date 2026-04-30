@@ -2,7 +2,7 @@
 
 This document summarizes the current research evidence from the RingRift self-play training project.
 
-Status is current as of April 17, 2026.
+Status is current as of April 30, 2026 (fv3 replication study + silent-failures catalog refresh).
 
 For claim provenance, see
 [`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json).
@@ -104,6 +104,23 @@ Prerequisites landed immediately before launch:
 - `1848182b9 fix(training): align v5-heavy bootstrap schema`
 
 Until the first v5-heavy iteration completes the full self-play → export → train → eval cycle, this is _launched_ rather than _working_. We hold the claim language until we see a completed iteration in `metrics.jsonl`.
+
+### `hex8_2p` v5-heavy + fv3 Replication Study (April 24–30)
+
+A 4-seed architectural replication of the v5-heavy line with feature-version 3, plus a `gh200-14` reference seed. The frontier checkpoint for the reference seed is preserved as `ai-service/models/canonical_hex8_2p_v5_heavy_fv3.pth` (sidecar + `canonical_hex8_2p_v5_heavy_fv3.provenance.json` checked in; `.pth` artifact gitignored, recoverable from `gh200-14:data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth`).
+
+| Field            | Value                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Reference seed   | `gh200-14` (5 promotions, frontier `1897.4` Elo, 16 iterations completed)                                                      |
+| Replicas         | `gh200-8` (seed_a, retired 0/7), `gh200-11` (seed_b, 2/6), `gh200-13` (seed_c, 0/7), `gh200-10` (seed_d, 4/6)                  |
+| Cumulative       | 6 promotions in 26 verdicts = `23%` promotion rate                                                                             |
+| Reference target | `12.5%` per-iter promotion rate (replication strengthens)                                                                      |
+| seed_d profile   | Hottest replica: `4/6` promotions, frontier Elo `1570.4`, iter 7 in stage 4 grind at the snapshot point                        |
+| Reference jump   | iter 12→13 broke a 4-iter plateau at `1587` Elo. iter 13/14/15 promoted in 3 consecutive verdicts under post-fix quality gate. |
+
+Reference-lane Elo trajectory: `1500 → 1502 → 1587 → 1787 → 1797 → 1897`.
+
+The reference lane reaching `1897` Elo across 5 promotions, while 3 of 4 replication seeds also promote at least once, validates that the v5-heavy + fv3 architectural hypothesis produces real iterative improvement on a fresh feature schema, not a single-seed accident.
 
 ### `square8_2p`
 
@@ -208,6 +225,17 @@ The reported April 2026 results should be understood as post-fix results, not as
 - multiplayer promotion thresholds were corrected so 3-player and 4-player runs are judged against the right criteria instead of the 2-player defaults
 
 These changes are part of why the `hex8_2p` and `square8_2p` results should be treated as current evidence, while earlier unstable or misconfigured runs should not.
+
+### Silent failures discovered and fixed during the fv3 replication run (April 28–30)
+
+The fv3 replication study surfaced four additional silent-failure modes that did not crash, corrupt artifacts, or produce loss-curve anomalies, but did invalidate the scientific interpretation of individual iterations or whole iterations of compute. Each was reproducer'd, fixed, and tested before the cluster moved on.
+
+- **Quality-gate critical override on partial sample after eval resume.** `staged_evaluate()` checkpointed only per-game outcomes for resume; when an evaluation resumed near the end of a stage, `QualityGateTracker._openings` had move-level data from at most one post-resume game, so its `MODE_COLLAPSE` check fired `(1/1 games)` automatically. The CRITICAL verdict overrode an SPRT promote decision and silently rejected a real `72%` win-rate iteration. Fix `4e1b7e20e fix(coordination): persist quality-gate tracker state across eval resume` adds tracker state to the eval checkpoint and adds a "partial sample" detection so resumed evaluations can no longer trigger CRITICAL overrides on degenerate denominators. Reproducer and full root-cause writeup: [`docs/research/QUALITY_GATE_RESUME_BUG.md`](research/QUALITY_GATE_RESUME_BUG.md). The reference lane's iter `13`/`14`/`15` promotions are direct validation that this fix does not regress legitimate promotions.
+- **Hex multiplayer fixed-seat metadata mismatch.** v4 hex multi-player heads were widening 3-player heads to 4-player, so a strict-resized 3-player checkpoint reported `model.num_players=4` against `target_values.shape=(B, 3)` and aborted training every iteration. Fix `fe3497e8d fix(training): keep hex multiplayer heads fixed-seat`. Tests cover 3p hex v4 construction, 3p transfer metadata + tensor shapes, and the no-next-selfplay failure guard.
+- **Padded multiplayer value targets.** `multi_player_value_loss` expected pred_values and target_values to share the same shape; 3-player fixed-seat models received 4-slot `values_mp` NPZ data and aborted training. Fix `3a482e0bd fix(training): mask padded slots in multiplayer value/rank targets` masks inactive padding so 3-player models can train against 4-slot encoded targets.
+- **Master-loop silent advance past failed training.** Pre-fix, `minimal_alphazero_loop.py` would log a training failure but bump the iter counter and start the next selfplay against unchanged `best.pth`, accumulating hours of selfplay against a frozen model with no candidate ever produced. Fix shipped alongside `fe3497e8d`: the loop now halts on training failure before starting the next selfplay iteration.
+
+These four are added to the `docs/research/SILENT_ALPHAZERO_FAILURES.md` catalog (as Failure 6, 7, 7-companion, and 8). The full catalog is intentionally a project deliverable — every entry is a contract-mismatch class that other AlphaZero-style codebases are likely to share, with file:line citations and tests.
 
 ### Supplemental policy-data pipeline
 
