@@ -1814,6 +1814,7 @@ def train_model(
                         rank_targets, rank_mask = build_rank_targets(
                             value_targets,
                             effective_num_players,
+                            output_players=int(rank_dist_pred.shape[1]),
                         )
                         rank_log_probs = torch.log(
                             rank_dist_pred.clamp_min(1e-8)
@@ -2323,6 +2324,7 @@ def train_model(
                             rank_targets, rank_mask = build_rank_targets(
                                 value_targets,
                                 effective_val_num_players,
+                                output_players=int(rank_dist_pred.shape[1]),
                             )
                             rank_log_probs = torch.log(
                                 rank_dist_pred.clamp_min(1e-8)

@@ -462,6 +462,21 @@ class TestBuildRankTargets:
         assert rank_targets.shape == (1, 4, 4)
         assert rank_mask.shape == (1, 4)
 
+    def test_rank_targets_can_match_fixed_seat_model_head(self, build_rank_targets):
+        """3p fixed-seat models can train from 4-slot values_mp targets."""
+        value_targets = torch.tensor([[0.9, 0.3, 0.6, -1.0]])
+        num_players = 3
+
+        rank_targets, rank_mask = build_rank_targets(
+            value_targets,
+            num_players,
+            output_players=3,
+        )
+
+        assert rank_targets.shape == (1, 3, 3)
+        assert rank_mask.shape == (1, 3)
+        assert rank_mask.all()
+
 
 class TestGetPolicySizeForBoard:
     """Tests for get_policy_size_for_board function."""

@@ -47,9 +47,29 @@ def test_multi_player_value_loss_masks_per_sample_tensor() -> None:
     assert torch.isclose(loss, expected)
 
 
-def test_multi_player_value_loss_rejects_shape_mismatch() -> None:
+def test_multi_player_value_loss_allows_inactive_target_padding() -> None:
+    pred = torch.tensor(
+        [
+            [1.0, 2.0, 3.0],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    target = torch.tensor(
+        [
+            [1.0, 0.0, 0.0, 9.0],
+            [1.0, 1.0, 1.0, 9.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    expected = ((pred[:, :3] - target[:, :3]) ** 2).sum() / (2 * 3)
+    loss = multi_player_value_loss(pred, target, num_players=3)
+    assert torch.isclose(loss, expected)
+
+
+def test_multi_player_value_loss_rejects_active_shape_mismatch() -> None:
     pred = torch.zeros((2, 4), dtype=torch.float32)
     target = torch.zeros((2, 2), dtype=torch.float32)
-    with pytest.raises(ValueError, match="share the same shape"):
-        multi_player_value_loss(pred, target, num_players=2)
-
+    with pytest.raises(ValueError, match=r"num_players must be in \[1, 2\]"):
+        multi_player_value_loss(pred, target, num_players=3)

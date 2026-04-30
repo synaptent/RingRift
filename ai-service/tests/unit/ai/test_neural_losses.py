@@ -62,13 +62,23 @@ class TestMultiPlayerValueLoss:
         # Loss should be 0 because all active slots match
         assert loss.item() == pytest.approx(0.0)
 
-    def test_shape_mismatch_raises(self):
-        """Test that mismatched shapes raise ValueError."""
+    def test_inactive_padding_shape_mismatch_is_masked(self):
+        """Test that inactive padding slots need not match prediction width."""
+        pred = torch.randn(4, 4)
+        target = torch.randn(4, 3)
+        target[:, :2] = pred[:, :2]
+
+        loss = multi_player_value_loss(pred, target, num_players=2)
+
+        assert loss.item() == pytest.approx(0.0)
+
+    def test_active_shape_mismatch_raises(self):
+        """Test that active slots must exist in both tensors."""
         pred = torch.randn(4, 4)
         target = torch.randn(4, 3)
 
-        with pytest.raises(ValueError, match="share the same shape"):
-            multi_player_value_loss(pred, target, num_players=2)
+        with pytest.raises(ValueError, match="num_players must be in"):
+            multi_player_value_loss(pred, target, num_players=4)
 
     def test_wrong_ndim_raises(self):
         """Test that wrong ndim raises ValueError."""

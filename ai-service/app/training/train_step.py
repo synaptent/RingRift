@@ -809,7 +809,11 @@ def run_training_step(
             build_rank_targets = _try_import_rank_targets()
             if build_rank_targets and batch.value_targets.ndim == 2:
                 effective_np = batch.num_players if batch.num_players is not None else config.num_players
-                rank_targets, rank_mask = build_rank_targets(batch.value_targets, effective_np)
+                rank_targets, rank_mask = build_rank_targets(
+                    batch.value_targets,
+                    effective_np,
+                    output_players=int(rank_dist_pred.shape[1]),
+                )
                 rank_log_probs = torch.log(rank_dist_pred.clamp_min(1e-8))
                 per_player_loss = -(rank_targets * rank_log_probs).sum(dim=-1)
                 if torch.any(rank_mask):

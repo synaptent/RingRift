@@ -47,29 +47,41 @@ def multi_player_value_loss(
     torch.Tensor
         Scalar MSE loss averaged over active players.
     """
-    if pred_values.shape != target_values.shape:
-        raise ValueError(
-            "multi_player_value_loss expects pred_values and target_values to "
-            f"share the same shape; got pred_values={tuple(pred_values.shape)} "
-            f"target_values={tuple(target_values.shape)}."
-        )
-    if pred_values.ndim != 2:
+    if pred_values.ndim != 2 or target_values.ndim != 2:
         raise ValueError(
             "multi_player_value_loss expects 2D tensors of shape "
             "(batch, max_players); got "
-            f"pred_values.ndim={pred_values.ndim}."
+            f"pred_values.ndim={pred_values.ndim} "
+            f"target_values.ndim={target_values.ndim}."
+        )
+    if pred_values.shape[0] != target_values.shape[0]:
+        raise ValueError(
+            "multi_player_value_loss expects matching batch sizes; got "
+            f"pred_values={tuple(pred_values.shape)} "
+            f"target_values={tuple(target_values.shape)}."
         )
 
-    batch_size, max_players = target_values.shape
+    batch_size = target_values.shape[0]
+    active_width = min(int(pred_values.shape[1]), int(target_values.shape[1]))
+    if active_width < 1:
+        raise ValueError(
+            "multi_player_value_loss needs at least one player slot; got "
+            f"pred_values={tuple(pred_values.shape)} "
+            f"target_values={tuple(target_values.shape)}."
+        )
+    pred_active = pred_values[:, :active_width]
+    target_active = target_values[:, :active_width]
 
     # Create mask for active players.
     if isinstance(num_players, int):
         n = int(num_players)
-        if n < 1 or n > max_players:
+        if n < 1 or n > active_width:
             raise ValueError(
-                f"num_players must be in [1, {max_players}], got {n}."
+                f"num_players must be in [1, {active_width}], got {n} for "
+                f"pred_values={tuple(pred_values.shape)} "
+                f"target_values={tuple(target_values.shape)}."
             )
-        mask = torch.zeros_like(target_values)
+        mask = torch.zeros_like(target_active)
         mask[:, :n] = 1.0
     else:
         num_players_tensor = num_players.to(
@@ -77,12 +89,14 @@ def multi_player_value_loss(
             dtype=torch.long,
         )
         if num_players_tensor.ndim == 0:
-            n = None
-            if n < 1 or n > max_players:
+            n = int(num_players_tensor.item())
+            if n < 1 or n > active_width:
                 raise ValueError(
-                    f"num_players must be in [1, {max_players}], got {n}."
+                    f"num_players must be in [1, {active_width}], got {n} for "
+                    f"pred_values={tuple(pred_values.shape)} "
+                    f"target_values={tuple(target_values.shape)}."
                 )
-            mask = torch.zeros_like(target_values)
+            mask = torch.zeros_like(target_active)
             mask[:, :n] = 1.0
         elif num_players_tensor.ndim == 1:
             if int(num_players_tensor.shape[0]) != int(batch_size):
@@ -90,19 +104,20 @@ def multi_player_value_loss(
                     "Per-sample num_players tensor must have shape (batch,), "
                     f"got {tuple(num_players_tensor.shape)} for batch_size={batch_size}."
                 )
-            if torch.any(num_players_tensor < 1) or torch.any(num_players_tensor > max_players):
+            if torch.any(num_players_tensor < 1) or torch.any(num_players_tensor > active_width):
                 raise ValueError(
                     "Per-sample num_players tensor contains values outside "
-                    f"[1, {max_players}]."
+                    f"[1, {active_width}] for pred_values={tuple(pred_values.shape)} "
+                    f"target_values={tuple(target_values.shape)}."
                 )
 
             player_idx = torch.arange(
-                max_players,
+                active_width,
                 device=target_values.device,
             ).unsqueeze(0)
             mask = (
                 player_idx < num_players_tensor.unsqueeze(1)
-            ).to(dtype=target_values.dtype)
+            ).to(dtype=target_active.dtype)
         else:
             raise ValueError(
                 "Per-sample num_players tensor must be a scalar or 1D tensor; "
@@ -110,7 +125,7 @@ def multi_player_value_loss(
             )
 
     # Compute masked MSE
-    squared_errors = ((pred_values - target_values) ** 2) * mask
+    squared_errors = ((pred_active - target_active) ** 2) * mask
     denom = mask.sum()
     if float(denom.item()) <= 0.0:
         raise ValueError(
@@ -506,6 +521,7 @@ def detect_masked_policy_output(policy_pred: torch.Tensor, threshold: float = -1
 def build_rank_targets(
     values_mp: torch.Tensor,
     num_players: int | torch.Tensor,
+    output_players: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Build per-player rank distributions from value vectors.
 
@@ -526,7 +542,12 @@ def build_rank_targets(
         rank_targets: [B, P, P] distribution over ranks per player
         active_mask: [B, P] True for active player slots
     """
-    batch_size, max_players = values_mp.shape
+    batch_size, value_players = values_mp.shape
+    max_players = int(output_players) if output_players is not None else int(value_players)
+    if max_players < 1 or max_players > int(value_players):
+        raise ValueError(
+            f"output_players must be in [1, {value_players}], got {output_players}."
+        )
     if isinstance(num_players, int):
         num_players_tensor = torch.full(
             (batch_size,),
@@ -555,7 +576,12 @@ def build_rank_targets(
 
     for b in range(batch_size):
         n = int(num_players_tensor[b].item())
-        n = max(1, min(n, max_players))
+        if output_players is None:
+            n = max(1, min(n, max_players))
+        elif n < 1 or n > max_players:
+            raise ValueError(
+                f"num_players must be in [1, {max_players}], got {n}."
+            )
         vals = values_mp[b, :n]
         active_mask[b, :n] = True
         for p in range(n):
