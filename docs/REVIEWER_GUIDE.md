@@ -12,6 +12,11 @@ RingRift should be judged first on its supported path:
 3. A Python AI and replay-parity mirror for training and inference.
 4. A narrow minimal-loop training harness that produced the checked-in results.
 
+The most credible current story is not "every experimental lane is strong." It
+is that the supported two-player training path can improve small-board models,
+and that the project has unusually explicit contract tests and evidence for
+silent AlphaZero failure modes.
+
 Everything else is secondary until the supported path is understood.
 
 ## Ten-Minute Review Path
@@ -66,8 +71,15 @@ The public result claims are intentionally narrower than live operator context.
 - The 2026-04-29 fv3 quality-gate resume note is not a headline result; it is
   a checked-in failure-analysis artifact with copied metrics.
 - The `gh200-8` v4 multiplayer retry is an active diagnostic, not a
-  multiplayer-strength claim. Treat it as live operational evidence until a
-  first post-fix training probe and eval verdict are preserved.
+  multiplayer-strength claim. The 2026-04-30 fixed-seat and padded-target
+  fixes prove that the retry can train and evaluate through the intended
+  mechanical path, but early post-fix eval was weak. Treat that lane as
+  operational evidence until its verdict and seat-balance analysis are
+  preserved.
+- The `gh200-12` square8_3p recovery similarly proves that max-slot
+  multiplayer targets can train against fixed-seat heads after the
+  2026-04-30 loss fix. It should not be presented as a strength result unless
+  the post-fix eval trajectory supports that claim.
 
 This boundary is deliberate. It is better for RingRift to underclaim than to ask
 a reviewer to trust chat logs or oral history.
@@ -125,12 +137,12 @@ from historical surface area.
 Highest-signal improvement areas:
 
 1. Keep the public evidence pack current from machine-readable snapshots.
-2. Continue shrinking or archiving non-supported scripts.
-3. Extend non-zero coverage thresholds beyond the current TypeScript rules engine and Python training-contract ratchets.
-4. Tighten Python typing for parity and checkpoint-contract modules.
-5. Package result artifacts so the headline claims can be audited without private cluster access.
-6. Patch the staged-eval quality-gate resume contract so incomplete
-   move-level samples cannot block promotion as if they covered the full eval.
+2. Mirror the live fv3 and 2026-04-30 reliability-fix artifacts into
+   evidence manifests before changing public result claims.
+3. Continue shrinking or archiving non-supported scripts.
+4. Extend non-zero coverage thresholds beyond the current TypeScript rules engine and Python training-contract ratchets.
+5. Tighten Python typing for parity and checkpoint-contract modules.
+6. Package result artifacts so the headline claims can be audited without private cluster access.
 
 ## Reviewer Surface Manifest
 

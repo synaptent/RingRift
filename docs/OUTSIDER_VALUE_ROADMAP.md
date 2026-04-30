@@ -54,13 +54,17 @@ analysis around silent AlphaZero implementation bugs:
   conditioning paths are effectively dead.
 - A staged evaluator can say "promote" while a resume-limited quality gate
   incorrectly blocks promotion from an incomplete move-level sample.
+- A fixed-seat multiplayer checkpoint can be correct while a training path
+  widens the model to max players or rejects inactive max-slot target padding.
 
 The canonical writeup is
 [`docs/research/SILENT_ALPHAZERO_FAILURES.md`](research/SILENT_ALPHAZERO_FAILURES.md).
 The v4-specific retry protocol is
 [`docs/research/V4_MULTIPLAYER_DIAGNOSTIC.md`](research/V4_MULTIPLAYER_DIAGNOSTIC.md).
-As of 2026-04-29, that retry is running on `gh200-8` after retiring fv3
-seed A at `0/7` promotions and preserving its evidence bundle.
+As of 2026-04-30, the v4 retry is useful as a diagnostic, not a strength
+claim: the fixed-seat head and padded-target bugs have been patched and
+deployed, but the first post-fix eval trajectory is weak enough that the next
+valuable work is seat-balance/root-cause analysis or repurposing the GPU.
 
 ## Priority 3: Finish One Clean Replication Slice
 
@@ -79,6 +83,10 @@ Current snapshot:
   revises the `gh200-14` reference-lane interpretation: iter 12 was blocked by
   resume-limited quality-gate coverage after a `49/50` eval resume, then iter
   13 clean-promoted at `76.0%`.
+- Live operator context on 2026-04-30 has the fv3 reference lane above its
+  earlier plateau after subsequent clean promotions. Do not turn that into a
+  public headline until the metrics and checkpoint evidence are mirrored into
+  the checked-in evidence manifest.
 
 The public claim should be narrow:
 

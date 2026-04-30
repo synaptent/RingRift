@@ -320,8 +320,9 @@ Fix shape:
 
 RingRift fix:
 
-- 2026-04-30 current fix: hex model construction now uses the requested
-  player count for hex v3/v4/v5 paths instead of widening to `MAX_PLAYERS`.
+- [`fe3497e8d`](https://github.com/an0mium/RingRift/commit/fe3497e8d):
+  hex model construction now uses the requested player count for hex v3/v4/v5
+  paths instead of widening to `MAX_PLAYERS`.
 
 RingRift evidence:
 
@@ -367,8 +368,9 @@ Fix shape:
 
 RingRift fix:
 
-- 2026-04-30 current fix: the minimal loop now halts on training failure before
-  starting another selfplay iteration against unchanged weights.
+- [`fe3497e8d`](https://github.com/an0mium/RingRift/commit/fe3497e8d):
+  the minimal loop now halts on training failure before starting another
+  selfplay iteration against unchanged weights.
 
 RingRift evidence:
 
@@ -424,8 +426,9 @@ Fix shape:
 
 RingRift fix:
 
-- 2026-04-30 current fix: multiplayer value loss now tolerates inactive target
-  padding, and rank-target generation can align to a fixed-seat model head.
+- [`3a482e0bd`](https://github.com/an0mium/RingRift/commit/3a482e0bd):
+  multiplayer value loss now tolerates inactive target padding, and
+  rank-target generation can align to a fixed-seat model head.
 
 RingRift evidence:
 
@@ -475,6 +478,6 @@ The reusable guardrail is to test contracts at four levels:
 | `transfer_2p_to_4p.py` no-ops on v4 (only matches `value_fc2`) | [`19ceb1ceb`](https://github.com/an0mium/RingRift/commit/19ceb1ceb) | `tests/unit/scripts/test_transfer_2p_to_4p.py`                                                                                            |
 | v5-heavy FiLM init compounds to saturation through SE blocks   | [`c7aa48f92`](https://github.com/an0mium/RingRift/commit/c7aa48f92) | `tests/unit/ai/test_v5_heavy_film_init.py`                                                                                                |
 | Eval resume loses tracker coverage and blocks promotion        | Live guardrail evidence, copied 2026-04-29                          | `tests/unit/scripts/test_model_quality_gate.py`, `tests/unit/scripts/test_minimal_alphazero_loop.py`                                      |
-| Hex multiplayer model construction widens 3p to max players    | Current 2026-04-30 fix                                              | `tests/unit/training/test_train_dataset_inference.py`, `tests/unit/training/test_model_initializer.py`                                    |
-| Training failure advances to another selfplay iteration        | Current 2026-04-30 fix                                              | `tests/unit/scripts/test_minimal_alphazero_loop.py::test_loop_halts_after_training_failure_before_next_selfplay`                          |
-| Fixed-seat model rejects max-slot inactive value padding       | Current 2026-04-30 fix                                              | `tests/test_multi_player_value_loss.py`, `tests/unit/ai/test_neural_losses.py`, `tests/unit/training/test_train.py::TestBuildRankTargets` |
+| Hex multiplayer model construction widens 3p to max players    | [`fe3497e8d`](https://github.com/an0mium/RingRift/commit/fe3497e8d) | `tests/unit/training/test_train_dataset_inference.py`, `tests/unit/training/test_model_initializer.py`                                    |
+| Training failure advances to another selfplay iteration        | [`fe3497e8d`](https://github.com/an0mium/RingRift/commit/fe3497e8d) | `tests/unit/scripts/test_minimal_alphazero_loop.py::test_loop_halts_after_training_failure_before_next_selfplay`                          |
+| Fixed-seat model rejects max-slot inactive value padding       | [`3a482e0bd`](https://github.com/an0mium/RingRift/commit/3a482e0bd) | `tests/test_multi_player_value_loss.py`, `tests/unit/ai/test_neural_losses.py`, `tests/unit/training/test_train.py::TestBuildRankTargets` |
