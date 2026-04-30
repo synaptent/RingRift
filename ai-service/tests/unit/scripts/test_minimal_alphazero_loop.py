@@ -54,6 +54,7 @@ def _run_loop_once(
     existing_metrics: list[dict] | None = None,
     supplemental_markers: list[float] | None = None,
     staged_eval_result: dict | None = None,
+    train_error: str | None = None,
 ):
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -122,6 +123,8 @@ def _run_loop_once(
                 **train_kwargs,
             }
         )
+        if train_error is not None:
+            return {"error": train_error}
         Path(out_path).write_bytes(b"candidate-model")
         return {"last_epoch_line": "Epoch [1/1], Train Loss: 0.1, Val Loss: 0.2"}
 
@@ -232,7 +235,11 @@ def _run_loop_once(
     loop.main()
 
     metrics_path = work_dir / "metrics.jsonl"
-    metrics_rows = [json.loads(line) for line in metrics_path.read_text().splitlines() if line.strip()]
+    metrics_rows = (
+        [json.loads(line) for line in metrics_path.read_text().splitlines() if line.strip()]
+        if metrics_path.exists()
+        else []
+    )
 
     return {
         "work_dir": work_dir,
@@ -507,6 +514,25 @@ def test_loop_threads_training_loss_knobs_to_train_model(monkeypatch, tmp_path):
     assert metrics["value_weight"] == 1.8
     assert metrics["rank_dist_weight"] == 0.05
     assert metrics["gradient_clip_max_norm"] == 0.5
+
+
+def test_loop_halts_after_training_failure_before_next_selfplay(monkeypatch, tmp_path):
+    result = _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        extra_args=[],
+        iterations=3,
+        train_error="Model value head mismatch: model.num_players=4 but training expects 3 players",
+    )
+
+    assert len(result["train_calls"]) == 1
+    assert result["export_markers"] == [1.0]
+    assert result["metrics"] == []
+
+    progress = json.loads((result["work_dir"] / "progress.json").read_text())
+    assert progress["stage"] == "training_failed"
+    assert "Model value head mismatch" in progress["error"]
+    assert not (result["work_dir"] / "iter_002.npz").exists()
 
 
 def test_train_model_enables_multi_player_training_for_3p(monkeypatch, tmp_path):

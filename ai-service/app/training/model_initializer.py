@@ -571,7 +571,9 @@ class ModelInitializer:
         if is_hex_model:
             # Hex models use 16 channels per frame
             encoding_channels = 16 * (history_length + 1)
-            hex_num_players = MAX_PLAYERS if self.config.multi_player else num_players
+            # Hex multiplayer checkpoints are fixed-seat artifacts; construct
+            # heads for the requested player count so strict checkpoints load.
+            hex_num_players = num_players
         else:
             # Square models use 14 channels per frame
             pass

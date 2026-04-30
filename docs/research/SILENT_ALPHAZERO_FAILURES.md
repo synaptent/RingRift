@@ -276,6 +276,106 @@ RingRift evidence:
 - `docs/data/training_runs/2026-04-29/fv3_reference_gh200-14.iter013_final.json`
   records the clean iter 13 promotion row.
 
+## Failure 6: Fixed-Seat Hex Model Widened To Max Players
+
+Symptom:
+
+- The `gh200-8` v4 multiplayer retry launched as a 3-player run with
+  `--num-players 3`, `--multi-player`, and a transferred 3-player v4
+  checkpoint.
+- Training failed before the first epoch with:
+  `Model value head mismatch (after model creation): model.num_players=4 but
+training expects 3 players`.
+- The transfer artifact had 3-player value/rank tensors, but the training
+  model-construction path widened hex multiplayer heads to `MAX_PLAYERS`.
+
+Code citation:
+
+- `ai-service/app/training/train_dataset_inference.py` set
+  `hex_num_players = MAX_PLAYERS if multi_player else num_players`, and
+  `app.training.train` passed that value into `create_training_model`.
+- `ai-service/app/training/model_initializer.py` and the legacy
+  `train_model_init.py` helper had the same hex widening rule.
+- Tests:
+  `ai-service/tests/unit/training/test_train_dataset_inference.py`,
+  `ai-service/tests/unit/training/test_model_initializer.py`, and
+  `ai-service/tests/unit/scripts/test_transfer_2p_to_4p.py`.
+
+Why it is dangerous:
+
+- The checkpoint can strict-load into a 3-player v4 model, so transfer-time
+  verification passes.
+- The launch command and NPZ metadata both say `3p`.
+- Training silently constructs a different model shape than the experiment
+  claims, and the error only appears after expensive selfplay has already
+  produced data.
+
+Fix shape:
+
+- For hex models, treat multiplayer checkpoints as fixed-seat artifacts:
+  construct value and rank heads for the actual run player count.
+- Keep transfer tests that assert both top-level and versioned metadata are
+  updated for 3-player targets.
+- Validate model value-head metadata immediately after construction.
+
+RingRift fix:
+
+- 2026-04-30 current fix: hex model construction now uses the requested
+  player count for hex v3/v4/v5 paths instead of widening to `MAX_PLAYERS`.
+
+RingRift evidence:
+
+- `docs/data/training_runs/2026-04-30/gh200-8_v4_retry_num_players_mismatch/`
+  preserves the failed gh200-8 retry. The archived `error_index.txt` shows
+  iter 1 and iter 2 both failed with `model.num_players=4 but training expects
+3 players`.
+
+## Failure 7: Training Failure Advanced To Fresh Selfplay
+
+Symptom:
+
+- After the v4 retry training subprocess raised the value-head mismatch,
+  `minimal_alphazero_loop.py` logged `Training failed, skipping`.
+- It then advanced to the next iteration and started another 100-game selfplay
+  batch against unchanged `best.pth`.
+- By the time the failure was stopped, the live lane had entered iter 3
+  selfplay without ever producing `candidate_001.pth` or a promotion eval.
+
+Code citation:
+
+- `ai-service/scripts/minimal_alphazero_loop.py` handled training failure by
+  incrementing `consec_failures` and continuing to the next iteration. The
+  repeated-failure circuit breaker only checked at the top of the next
+  iteration, after more selfplay could be spent.
+- Test:
+  `ai-service/tests/unit/scripts/test_minimal_alphazero_loop.py::test_loop_halts_after_training_failure_before_next_selfplay`.
+
+Why it is dangerous:
+
+- The loop is alive, GPU-active, and producing fresh JSONL/NPZ files.
+- The metrics stream has no promotion/eval row because no candidate exists.
+- Operators can mistake GPU utilization for productive search while the lane
+  is repeatedly generating data from a frozen best model.
+
+Fix shape:
+
+- Treat training subprocess failure as terminal for the current loop run.
+- Write `progress.json` with `stage=training_failed`, the error string, and
+  the failure count before exiting.
+- Require an operator or patched code path to relaunch the lane, so failure
+  review happens before more selfplay is spent.
+
+RingRift fix:
+
+- 2026-04-30 current fix: the minimal loop now halts on training failure before
+  starting another selfplay iteration against unchanged weights.
+
+RingRift evidence:
+
+- The same `gh200-8_v4_retry_num_players_mismatch` evidence archive records
+  `progress.json` at `iteration=3`, `stage=selfplay_started` after iter 1 and
+  iter 2 training failures, proving the silent advance pattern.
+
 ## General Pattern
 
 The common failure mode is not a crash. It is a mismatch between what the
@@ -312,10 +412,12 @@ The reusable guardrail is to test contracts at four levels:
 
 ## Reproducer Index
 
-| Failure                                                        | Commit                                                              | Test                                                                                                 |
-| -------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Hex v4 missing `rank_dist` in `forward()`                      | [`2a659360f`](https://github.com/an0mium/RingRift/commit/2a659360f) | `tests/unit/ai/test_neural_net_architectures.py::TestHexNeuralNet_v4`                                |
-| Minimal loop drops `--multi-player` for `num_players > 2`      | [`10ee06181`](https://github.com/an0mium/RingRift/commit/10ee06181) | `tests/unit/scripts/test_minimal_alphazero_loop.py`                                                  |
-| `transfer_2p_to_4p.py` no-ops on v4 (only matches `value_fc2`) | [`19ceb1ceb`](https://github.com/an0mium/RingRift/commit/19ceb1ceb) | `tests/unit/scripts/test_transfer_2p_to_4p.py`                                                       |
-| v5-heavy FiLM init compounds to saturation through SE blocks   | [`c7aa48f92`](https://github.com/an0mium/RingRift/commit/c7aa48f92) | `tests/unit/ai/test_v5_heavy_film_init.py`                                                           |
-| Eval resume loses tracker coverage and blocks promotion        | Live guardrail evidence, copied 2026-04-29                          | `tests/unit/scripts/test_model_quality_gate.py`, `tests/unit/scripts/test_minimal_alphazero_loop.py` |
+| Failure                                                        | Commit                                                              | Test                                                                                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Hex v4 missing `rank_dist` in `forward()`                      | [`2a659360f`](https://github.com/an0mium/RingRift/commit/2a659360f) | `tests/unit/ai/test_neural_net_architectures.py::TestHexNeuralNet_v4`                                            |
+| Minimal loop drops `--multi-player` for `num_players > 2`      | [`10ee06181`](https://github.com/an0mium/RingRift/commit/10ee06181) | `tests/unit/scripts/test_minimal_alphazero_loop.py`                                                              |
+| `transfer_2p_to_4p.py` no-ops on v4 (only matches `value_fc2`) | [`19ceb1ceb`](https://github.com/an0mium/RingRift/commit/19ceb1ceb) | `tests/unit/scripts/test_transfer_2p_to_4p.py`                                                                   |
+| v5-heavy FiLM init compounds to saturation through SE blocks   | [`c7aa48f92`](https://github.com/an0mium/RingRift/commit/c7aa48f92) | `tests/unit/ai/test_v5_heavy_film_init.py`                                                                       |
+| Eval resume loses tracker coverage and blocks promotion        | Live guardrail evidence, copied 2026-04-29                          | `tests/unit/scripts/test_model_quality_gate.py`, `tests/unit/scripts/test_minimal_alphazero_loop.py`             |
+| Hex multiplayer model construction widens 3p to max players    | Current 2026-04-30 fix                                              | `tests/unit/training/test_train_dataset_inference.py`, `tests/unit/training/test_model_initializer.py`           |
+| Training failure advances to another selfplay iteration        | Current 2026-04-30 fix                                              | `tests/unit/scripts/test_minimal_alphazero_loop.py::test_loop_halts_after_training_failure_before_next_selfplay` |

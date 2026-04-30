@@ -193,6 +193,26 @@ class TestModelInitializer:
         assert initializer.distributed is True
         assert initializer.is_main_process is False
 
+    def test_hex_v4_multiplayer_uses_requested_player_count(self, mock_device):
+        """3p hex v4 training must not widen value/rank heads to MAX_PLAYERS."""
+        from app.coordination.types import BoardType
+        from app.training.model_initializer import ModelConfig, ModelInitializer
+
+        config = ModelConfig(
+            board_type=BoardType.HEX8,
+            num_players=3,
+            multi_player=True,
+            model_version="v4",
+            num_res_blocks=1,
+            num_filters=16,
+            feature_version=3,
+        )
+        result = ModelInitializer(config, mock_device).create_model()
+
+        assert result.model.num_players == 3
+        assert result.model.value_fc3.out_features == 3
+        assert result.model.rank_dist_fc3.out_features == 9
+
 
 class TestBoardSizeDetermination:
     """Tests for board size determination methods."""

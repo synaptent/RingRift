@@ -134,7 +134,9 @@ def create_model(config: ModelInitConfig) -> ModelInitResult:
         model_name = f"{config.model_type.upper()}"
 
     elif config.use_hex_v4:
-        hex_num_players = MAX_PLAYERS if config.multi_player else config.num_players
+        # Hex checkpoints are fixed-seat artifacts; keep model heads aligned
+        # with the requested player count instead of widening to MAX_PLAYERS.
+        hex_num_players = config.num_players
         model = HexNeuralNet_v4(
             in_channels=config.encoding_channels or 64,
             global_features=20,
@@ -148,7 +150,7 @@ def create_model(config: ModelInitConfig) -> ModelInitResult:
         model_name = "HexNeuralNet_v4"
 
     elif config.use_hex_v3:
-        hex_num_players = MAX_PLAYERS if config.multi_player else config.num_players
+        hex_num_players = config.num_players
         model = HexNeuralNet_v3(
             in_channels=config.encoding_channels or 64,
             global_features=20,
@@ -162,7 +164,7 @@ def create_model(config: ModelInitConfig) -> ModelInitResult:
         model_name = "HexNeuralNet_v3"
 
     elif config.use_hex_model:
-        hex_num_players = MAX_PLAYERS if config.multi_player else config.num_players
+        hex_num_players = config.num_players
         model = HexNeuralNet_v2(
             in_channels=config.encoding_channels or 40,
             global_features=20,

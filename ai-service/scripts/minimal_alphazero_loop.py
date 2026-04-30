@@ -1317,10 +1317,26 @@ def main() -> None:
         )
         ti["target_stats"] = target_stats
         if "error" in ti or not cpath.exists():
-            logger.error("Training failed, skipping")
+            logger.error(
+                "Training failed; halting loop to avoid another selfplay "
+                "iteration against unchanged best weights"
+            )
             last_error = ti.get("error", "") or "Training produced no output"
             last_error_stage = "training"
-            consec_failures += 1; continue
+            consec_failures += 1
+            try:
+                (wdir / "progress.json").write_text(json.dumps({
+                    "iteration": it,
+                    "stage": "training_failed",
+                    "error": last_error,
+                    "consecutive_failures": consec_failures,
+                    "estimated_elo": round(elo, 1),
+                    "total_promotions": promos,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }, indent=2) + "\n")
+            except OSError:
+                pass
+            break
 
         training_exp_params = {**_static_exp_params, "effective_lr": effective_lr}
 

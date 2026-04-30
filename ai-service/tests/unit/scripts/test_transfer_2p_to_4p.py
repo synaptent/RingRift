@@ -148,3 +148,43 @@ def test_transfer_hex_v4_resizes_value_and_rank_heads_then_strict_loads(tmp_path
 
     target_model = _small_hex_v4(num_players=4)
     target_model.load_state_dict(transferred_sd, strict=True)
+
+
+def test_transfer_hex_v4_to_3p_updates_all_player_metadata(tmp_path):
+    source = tmp_path / "hex8_2p_v4.pth"
+    output = tmp_path / "hex8_3p_v4.pth"
+    source_model = _small_hex_v4(num_players=2)
+
+    torch.save(
+        {
+            "model_state_dict": source_model.state_dict(),
+            "num_players": 2,
+            "_versioning_metadata": {
+                "config": {
+                    "board_type": "hex8",
+                    "num_players": 2,
+                    "num_res_blocks": 1,
+                    "num_filters": 16,
+                    "global_features": 20,
+                },
+            },
+        },
+        source,
+    )
+
+    transfer_model_players(
+        str(source),
+        str(output),
+        "hex8",
+        target_players=3,
+        source_players=2,
+    )
+
+    checkpoint = safe_load_checkpoint(output, map_location="cpu")
+    transferred_sd = checkpoint["model_state_dict"]
+
+    assert checkpoint["num_players"] == 3
+    assert checkpoint["_versioning_metadata"]["config"]["num_players"] == 3
+    assert transferred_sd["value_fc3.weight"].shape == (3, 256)
+    assert transferred_sd["rank_dist_fc3.weight"].shape == (9, 256)
+    _small_hex_v4(num_players=3).load_state_dict(transferred_sd, strict=True)

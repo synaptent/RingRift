@@ -826,7 +826,9 @@ def infer_dataset_metadata(
         is_main=is_main,
     )
     if use_hex_model:
-        hex_num_players = MAX_PLAYERS if multi_player else num_players
+        # Hex multiplayer checkpoints are fixed-seat artifacts; value and rank
+        # heads must match the actual NPZ player count, not the maximum seat cap.
+        hex_num_players = num_players
 
     return DatasetInferenceResult(
         board_size=board_size,
