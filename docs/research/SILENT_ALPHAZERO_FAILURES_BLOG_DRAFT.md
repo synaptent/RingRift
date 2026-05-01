@@ -1,18 +1,18 @@
-# Five silent ways an AlphaZero implementation can lie to you
+# Eight silent ways an AlphaZero implementation can lie to you
 
-_Draft. ~1,800 words. Audience: ML engineers who have built or maintain
+_Draft. ~2,500 words. Audience: ML engineers who have built or maintain
 self-play training systems. Not yet edited for publication; structured as a
 LessWrong / personal-site post that can be split into a thread or a paper._
 
 ---
 
 If you are running self-play training over a long horizon, the most expensive
-class of bug is not a crash. It is the bug that lets every iteration finish
-on time, with reasonable-looking loss curves, while the actual training graph
+class of bug is not a crash. It is the bug that lets every iteration finish on
+time, with reasonable-looking loss curves, while the actual training graph
 optimizes a different objective from the one your config promised.
 
 I run a small AlphaZero-style training cluster for a novel territory game
-called RingRift. Over the last two months, five failure modes of this exact
+called RingRift. Over the last two months, eight failure modes of this exact
 shape showed up in the codebase. Each one let training keep running long
 enough that the only way to detect it was a targeted probe or a quality gate
 that looked beyond win rate.
@@ -212,14 +212,86 @@ record: iter 12 was a strength-positive promotion blocked by the legacy
 partial-sample gate, while iter 13 was a strength-positive promotion that
 passed the gate.
 
+The important postscript is that this was not a harmless bookkeeping bug. After
+the fix, the same `gh200-14` fv3 reference lane kept promoting: iter 14, iter
+15, and then iter 20, which reached `2028.3` Elo after a clean `68%` stage-1
+verdict. That is now the strongest `hex8_2p` checkpoint in the project. Without
+the gate-coverage fix, I would have been left with a plausible but false
+"this architecture plateaued around 1587" story.
+
+## Bug 6: A fixed-seat model silently widened to max players
+
+The next failure showed up while testing the multiplayer fixes. A v4 retry was
+launched as a 3-player run. The checkpoint had 3-player value and rank tensors.
+The command line said `--num-players 3`. The NPZ metadata said 3p.
+
+But the training model-construction path widened hex multiplayer heads to
+`MAX_PLAYERS`, so the model had a 4-player value head. Transfer-time checks
+passed, because the artifact itself was valid. The mismatch appeared only after
+self-play had already produced the iteration's data and training tried to
+compare 3-player checkpoint metadata with a 4-player model.
+
+Fix: construct fixed-seat hex heads for the actual run player count, and test
+both the dataset-inference path and model-initializer path. The repair commit is
+`fe3497e8d`.
+
+**Lesson**: if an experiment says "3-player," assert that every constructed
+model, checkpoint sidecar, target tensor, and loss head agrees on 3. Do not let
+"max players" be an implicit compatibility convenience.
+
+## Bug 7: A failed training step advanced to fresh self-play
+
+The fixed-seat bug exposed another one. When training failed, the outer
+`minimal_alphazero_loop.py` logged the failure and advanced to the next
+iteration. That meant the loop started another 100-game self-play batch against
+the unchanged `best.pth`.
+
+From the outside this looked productive: the GPU was busy, fresh JSONL files
+grew, the process stayed alive. Scientifically it was wasted compute. There was
+no candidate, no eval, no new best model, just fresh data generated from the
+same frozen checkpoint after a known failed training step.
+
+Fix: training failure is terminal for that loop run. The loop writes
+`stage=training_failed` to `progress.json` and exits before starting the next
+self-play iteration. This shipped in the same `fe3497e8d` patch.
+
+**Lesson**: after a failed optimizer step, liveness is not health. A training
+orchestrator should stop before it spends another iteration producing data
+against unchanged weights.
+
+## Bug 8: Max-slot targets with fixed-seat value heads
+
+The final bug appeared after the fixed-seat repair. A square8 3-player lane
+resumed after a node reboot, got past the previous disk issue, and then failed
+with:
+
+```text
+multi_player_value_loss expects pred_values and target_values to share the
+same shape; got pred_values=(512, 3) target_values=(512, 4)
+```
+
+This time the model was right: it produced a fixed 3-player value head. The
+training data was also defensible: `values_mp` was stored in a 4-slot
+max-player layout, with the inactive fourth slot padded. The loss function was
+wrong. It required full-width equality before applying the active-player mask,
+so inactive padding looked like an active contract violation.
+
+Fix: slice predictions and targets to the shared active width, reject only when
+the requested active player count exceeds either tensor width, and build rank
+targets to the model head width for fixed-seat models. The repair commit is
+`3a482e0bd`.
+
+**Lesson**: padding is a storage convention, not a semantic player. Loss
+functions need to compare active domains, not raw tensor widths.
+
 ## The general class: The experiment name lies
 
-The five specific bugs above are all instances of a more general failure
+The eight specific bugs above are all instances of a more general failure
 mode: **the experiment name claims one thing, the actual training graph
 or evaluation gate proves another, and both keep running long enough that
 nobody notices**.
 
-The mismatch can be at four different layers:
+The mismatch can be at five different layers:
 
 1. **Model contract**: the architecture has a head it never returns, or a
    conditioning path that contributes nothing, or a forward signature that
@@ -235,14 +307,15 @@ The mismatch can be at four different layers:
    artifacts whether the run that produced them was the run that was
    supposed to be produced.
 
-4. **Evaluation contract**: the promotion gate measures win rate, behavioral
+4. **Data contract**: exported targets encode the active player domain, not
+   just a convenient max-width storage layout.
+
+5. **Evaluation contract**: the promotion gate measures win rate, behavioral
    sanity, and the coverage of the quality checks themselves.
 
-In RingRift, the first three layers each had a real bug at some point
-during 2026, and the fourth layer caught a real near-miss. None of them
-crashed.
+In RingRift, every one of these layers had a real bug at some point during 2026. None of them crashed in the useful way.
 
-The reusable guardrail is to test contracts at all four layers
+The reusable guardrail is to test contracts at all five layers
 independently:
 
 - For the model: forward returns the documented tuple shape for every
@@ -258,6 +331,9 @@ independently:
 - For the experiment: every artifact (checkpoint, NPZ, log line) should
   let an outsider reconstruct what was actually optimized, not just what
   was intended.
+
+- For data: test active-width target handling separately from storage-width
+  padding, especially in multiplayer losses.
 
 - For evaluation: persist quality-gate verdicts next to win-rate decisions,
   make promotion require both, and include sample coverage for each gate.
