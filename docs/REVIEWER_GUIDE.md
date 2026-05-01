@@ -137,8 +137,8 @@ from historical surface area.
 Highest-signal improvement areas:
 
 1. Keep the public evidence pack current from machine-readable snapshots.
-2. Mirror the live fv3 and 2026-04-30 reliability-fix artifacts into
-   evidence manifests before changing public result claims.
+2. Keep new fv3 and reliability-fix artifacts mirrored into evidence manifests
+   before changing public result claims.
 3. Continue shrinking or archiving non-supported scripts.
 4. Extend non-zero coverage thresholds beyond the current TypeScript rules engine and Python training-contract ratchets.
 5. Tighten Python typing for parity and checkpoint-contract modules.

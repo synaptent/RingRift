@@ -1,14 +1,10 @@
 {
-  "as_of": "2026-04-16",
+  "as_of": "2026-05-01",
   "caveats": [
     {
       "id": "multiplayer_elo_formula_pre_dfb3d20c1",
       "added_at": "2026-04-18",
-      "affected_configs": [
-        "square8_3p",
-        "hex8_3p",
-        "square8_4p"
-      ],
+      "affected_configs": ["square8_3p", "hex8_3p", "square8_4p"],
       "affected_metric": "estimated_elo",
       "note": "Pre-dfb3d20c1 3p/4p estimated_elo values in trainer metrics used a 2-player-only promotion formula. Historical values are preserved as recorded for provenance and should be recomputed before comparing pre-fix multiplayer runs against new data. 2p headline numbers were always correct.",
       "issue_url": "https://github.com/synaptent/RingRift/issues/90"
@@ -18,8 +14,8 @@
     {
       "config": "hex8_2p",
       "start_elo": 1500.0,
-      "best_elo": 1979.8,
-      "promotions": 7
+      "best_elo": 2028.3,
+      "promotions": 6
     },
     {
       "config": "square8_2p",
@@ -66,6 +62,15 @@
   },
   "recent_updates": [
     {
+      "config": "hex8_2p",
+      "iteration": 20,
+      "win_rate": 0.68,
+      "games_played": 50,
+      "decision": "promote",
+      "estimated_elo": 2028.3,
+      "note": "New v5-heavy + fv3 reference frontier from gh200-14; quality gate passed and candidate_020.pth matches best.pth by SHA256."
+    },
+    {
       "config": "square8_2p",
       "iteration": 35,
       "win_rate": 0.62,
@@ -90,7 +95,7 @@
       "games_played": 400,
       "decision": "reject",
       "estimated_elo": 1979.8,
-      "note": "Current v3 line appears plateaued after an exact 50.0% stage-4 reject."
+      "note": "Previous v3-family line appears plateaued after an exact 50.0% stage-4 reject; retained as historical context below the newer fv3 frontier."
     },
     {
       "config": "hex8_3p",

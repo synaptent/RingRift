@@ -1,0 +1,2 @@
+3f98a4bcf982d93f251ce9fa3d6b8ed11dba34e35da4b07c0554ef1b5542d371  data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth
+3f98a4bcf982d93f251ce9fa3d6b8ed11dba34e35da4b07c0554ef1b5542d371  data/minimal_loop_hex8_2p_v5_heavy_fv3/models/candidate_020.pth
