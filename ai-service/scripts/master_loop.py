@@ -2598,6 +2598,7 @@ class MasterLoopController:
         )
         rss_gb = self._get_current_rss_gb()
         uptime_hours = (time.time() - self._start_time) / 3600
+        self._prune_stale_coordination_connections()
 
         reason = None
         if rss_gb > rss_budget_gb:
@@ -2621,6 +2622,30 @@ class MasterLoopController:
         self._update_heartbeat("restart_requested")
         self._running = False
         self._shutdown_event.set()
+
+    def _prune_stale_coordination_connections(self) -> None:
+        """Release SQLite handles left behind by completed worker threads."""
+        try:
+            from app.coordination.cross_process_events import (
+                prune_stale_event_queue_connections,
+            )
+            from app.coordination.sync_mutex import prune_stale_sync_mutex_connections
+
+            sync_closed = prune_stale_sync_mutex_connections()
+            event_closed = prune_stale_event_queue_connections()
+            if sync_closed or event_closed:
+                logger.info(
+                    "[MasterLoop] Pruned stale coordination DB connections: "
+                    "sync_mutex=%s cross_process_events=%s",
+                    sync_closed,
+                    event_closed,
+                )
+        except Exception as exc:
+            logger.debug(
+                "[MasterLoop] Coordination connection pruning skipped: %s",
+                exc,
+                exc_info=True,
+            )
 
     # =========================================================================
     # Training coordination

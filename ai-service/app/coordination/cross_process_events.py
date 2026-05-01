@@ -45,6 +45,7 @@ Usage:
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import socket
@@ -207,6 +208,8 @@ class CrossProcessEventQueue:
         self.maintenance_publish_interval = maintenance_publish_interval
         self._publishes_since_maintenance = 0
         self._local = threading.local()
+        self._connections_by_thread: dict[int, sqlite3.Connection] = {}
+        self._connections_lock = threading.Lock()
         # December 2025: Lazy initialization for readonly filesystem support
         self._db_initialized = False
         self._readonly_mode = False
@@ -279,6 +282,7 @@ class CrossProcessEventQueue:
                         str(self.db_path),
                         timeout=float(SQLITE_TIMEOUT * 2),  # 60s for cross-process events
                         isolation_level=None,  # Autocommit for better concurrency
+                        check_same_thread=False,
                     )
                     self._local.conn.row_factory = sqlite3.Row
                     # WAL mode for concurrent access
@@ -290,6 +294,11 @@ class CrossProcessEventQueue:
                     self._local.conn.execute('PRAGMA mmap_size=67108864')  # 64 MB max
                     self._local.conn.execute('PRAGMA wal_autocheckpoint=500')
                     self._local.conn.execute('PRAGMA cache_size=-4000')  # 4MB cache
+                    self._local.conn_thread_id = threading.get_ident()
+                    with self._connections_lock:
+                        self._connections_by_thread[self._local.conn_thread_id] = (
+                            self._local.conn
+                        )
                     break
                 except sqlite3.OperationalError as e:
                     if "database is locked" in str(e) and attempt.should_retry:
@@ -745,10 +754,80 @@ class CrossProcessEventQueue:
             )
 
     def close(self) -> None:
-        """Close the database connection."""
+        """Close the current thread's database connection."""
         if hasattr(self._local, "conn") and self._local.conn:
-            self._local.conn.close()
+            conn = self._local.conn
+            thread_id = getattr(self._local, "conn_thread_id", threading.get_ident())
+            with self._connections_lock:
+                self._connections_by_thread.pop(thread_id, None)
+            conn.close()
             self._local.conn = None
+            self._local.conn_thread_id = None
+
+    def close_all(self) -> int:
+        """Close all tracked database connections.
+
+        This is primarily for long-running coordinator shutdown and tests. The
+        queue uses thread-local SQLite connections, so a process-level close must
+        account for connections opened by worker threads.
+        """
+        closed = 0
+        with self._connections_lock:
+            connections = list(self._connections_by_thread.values())
+            self._connections_by_thread.clear()
+
+        for conn in connections:
+            try:
+                conn.close()
+                closed += 1
+            except (sqlite3.Error, sqlite3.ProgrammingError):
+                pass
+
+        if hasattr(self._local, "conn"):
+            self._local.conn = None
+            self._local.conn_thread_id = None
+        return closed
+
+    def prune_stale_connections(self, active_thread_ids: set[int] | None = None) -> int:
+        """Close tracked connections whose owning thread has exited."""
+        if active_thread_ids is None:
+            active_thread_ids = {
+                thread.ident for thread in threading.enumerate() if thread.ident
+            }
+
+        stale: list[tuple[int, sqlite3.Connection]] = []
+        with self._connections_lock:
+            for thread_id, conn in list(self._connections_by_thread.items()):
+                if thread_id not in active_thread_ids:
+                    stale.append((thread_id, conn))
+
+            for thread_id, _ in stale:
+                self._connections_by_thread.pop(thread_id, None)
+
+        closed = 0
+        for _, conn in stale:
+            try:
+                conn.close()
+                closed += 1
+            except (sqlite3.Error, sqlite3.ProgrammingError):
+                pass
+        return closed
+
+    def connection_stats(self) -> dict[str, int]:
+        """Return lightweight connection tracking stats for leak diagnostics."""
+        active_thread_ids = {
+            thread.ident for thread in threading.enumerate() if thread.ident
+        }
+        with self._connections_lock:
+            return {
+                "tracked_connections": len(self._connections_by_thread),
+                "tracked_threads": len(self._connections_by_thread),
+                "active_threads": sum(
+                    1
+                    for thread_id in self._connections_by_thread
+                    if thread_id in active_thread_ids
+                ),
+            }
 
 
 # Global singleton instance
@@ -770,8 +849,28 @@ def reset_event_queue() -> None:
     global _event_queue
     with _queue_lock:
         if _event_queue is not None:
-            _event_queue.close()
+            _event_queue.close_all()
         _event_queue = None
+
+
+def prune_stale_event_queue_connections() -> int:
+    """Prune stale global event queue connections without creating the singleton."""
+    with _queue_lock:
+        if _event_queue is None:
+            return 0
+        return _event_queue.prune_stale_connections()
+
+
+def _cleanup_on_exit() -> None:
+    """Cleanup handler for process exit."""
+    global _event_queue
+    if _event_queue is not None:
+        closed = _event_queue.close_all()
+        if closed > 0:
+            logger.debug("[CrossProcessEventQueue] Closed %s connection(s) on exit", closed)
+
+
+atexit.register(_cleanup_on_exit)
 
 
 # Convenience functions for common operations
@@ -1083,6 +1182,7 @@ __all__ = [
     # Functions
     "get_event_queue",
     "poll_events",
+    "prune_stale_event_queue_connections",
     "publish_event",
     "reset_event_queue",
     "subscribe_process",

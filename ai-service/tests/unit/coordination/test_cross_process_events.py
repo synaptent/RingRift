@@ -170,6 +170,26 @@ class TestCrossProcessEventQueue:
         event_id = queue.publish(event_type="PING", source="test")
         assert event_id > 0
 
+    def test_prune_stale_thread_connections(self, queue):
+        """Connections opened by completed worker threads should be reclaimable."""
+
+        def publish_from_worker():
+            event_id = queue.publish("WORKER_EVENT", {"ok": True}, "worker")
+            assert event_id > 0
+
+        thread = threading.Thread(target=publish_from_worker)
+        thread.start()
+        thread.join()
+
+        before = queue.connection_stats()
+        assert before["tracked_threads"] >= 1
+
+        closed = queue.prune_stale_connections()
+        after = queue.connection_stats()
+
+        assert closed >= 1
+        assert after["tracked_threads"] == 0
+
     def test_publish_event_creates_record(self, queue, temp_db_path):
         """Test that publish actually creates database record."""
         event_id = queue.publish(

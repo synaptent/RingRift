@@ -151,21 +151,28 @@ class SyncMutex:
         self._local = threading.local()
         # Track all connections for cleanup on process exit (Dec 2025)
         self._all_connections: set[sqlite3.Connection] = set()
+        self._connections_by_thread: dict[int, sqlite3.Connection] = {}
         self._connections_lock = threading.Lock()
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get thread-local database connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            conn = sqlite3.connect(str(self.db_path), timeout=float(SQLITE_TIMEOUT))
+            conn = sqlite3.connect(
+                str(self.db_path),
+                timeout=float(SQLITE_TIMEOUT),
+                check_same_thread=False,
+            )
             conn.row_factory = sqlite3.Row
             conn.execute('PRAGMA journal_mode=WAL')
             conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
             conn.execute('PRAGMA synchronous=NORMAL')
             self._local.conn = conn
+            self._local.conn_thread_id = threading.get_ident()
             # Track connection for cleanup on process exit (Dec 2025)
             with self._connections_lock:
                 self._all_connections.add(conn)
+                self._connections_by_thread[self._local.conn_thread_id] = conn
         return self._local.conn
 
     def _init_db(self) -> None:
@@ -606,10 +613,13 @@ class SyncMutex:
         """Close the current thread's database connection."""
         if hasattr(self._local, "conn") and self._local.conn:
             conn = self._local.conn
+            thread_id = getattr(self._local, "conn_thread_id", threading.get_ident())
             with self._connections_lock:
                 self._all_connections.discard(conn)
+                self._connections_by_thread.pop(thread_id, None)
             conn.close()
             self._local.conn = None
+            self._local.conn_thread_id = None
 
     def close_all(self) -> int:
         """Close all tracked database connections (Dec 2025).
@@ -627,10 +637,59 @@ class SyncMutex:
                     # Connection may already be closed
                     pass
             self._all_connections.clear()
+            self._connections_by_thread.clear()
         # Also clear thread-local reference if present
         if hasattr(self._local, "conn"):
             self._local.conn = None
+            self._local.conn_thread_id = None
         return closed
+
+    def prune_stale_connections(self, active_thread_ids: set[int] | None = None) -> int:
+        """Close tracked connections whose owning thread has exited.
+
+        Long-lived coordination processes call sync helpers from many temporary
+        worker threads. Without this pruning, the process can retain SQLite
+        handles for threads that no longer exist until full process shutdown.
+        """
+        if active_thread_ids is None:
+            active_thread_ids = {
+                thread.ident for thread in threading.enumerate() if thread.ident
+            }
+
+        stale: list[tuple[int, sqlite3.Connection]] = []
+        with self._connections_lock:
+            for thread_id, conn in list(self._connections_by_thread.items()):
+                if thread_id not in active_thread_ids:
+                    stale.append((thread_id, conn))
+
+            for thread_id, conn in stale:
+                self._connections_by_thread.pop(thread_id, None)
+                self._all_connections.discard(conn)
+
+        closed = 0
+        for _, conn in stale:
+            try:
+                conn.close()
+                closed += 1
+            except (sqlite3.Error, sqlite3.ProgrammingError):
+                pass
+        return closed
+
+    def connection_stats(self) -> dict[str, int]:
+        """Return lightweight connection tracking stats for leak diagnostics."""
+        active_thread_ids = {
+            thread.ident for thread in threading.enumerate() if thread.ident
+        }
+        with self._connections_lock:
+            return {
+                "tracked_connections": len(self._all_connections),
+                "tracked_threads": len(self._connections_by_thread),
+                "active_threads": sum(
+                    1
+                    for thread_id in self._connections_by_thread
+                    if thread_id in active_thread_ids
+                ),
+            }
 
 
 # Global singleton instance
@@ -654,6 +713,14 @@ def reset_sync_mutex() -> None:
         if _sync_mutex is not None:
             _sync_mutex.close_all()  # Close ALL connections, not just current thread
         _sync_mutex = None
+
+
+def prune_stale_sync_mutex_connections() -> int:
+    """Prune stale global SyncMutex connections without creating the singleton."""
+    with _mutex_lock:
+        if _sync_mutex is None:
+            return 0
+        return _sync_mutex.prune_stale_connections()
 
 
 def _cleanup_on_exit() -> None:
@@ -832,6 +899,7 @@ __all__ = [
     "get_sync_mutex",
     "get_sync_stats",
     "is_sync_locked",
+    "prune_stale_sync_mutex_connections",
     "release_sync_lock",
     "reset_sync_mutex",
     "sync_heartbeat",

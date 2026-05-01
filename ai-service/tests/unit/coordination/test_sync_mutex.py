@@ -435,3 +435,25 @@ class TestSyncMutexThreadSafety:
         assert all(results.values())
         assert len(results) == 5
         mutex.close()
+
+    def test_prune_stale_thread_connections(self, temp_db):
+        """Connections opened by completed worker threads should be reclaimable."""
+        mutex = SyncMutex(temp_db)
+
+        def use_mutex_from_worker():
+            assert mutex.acquire("worker-host", "rsync", wait=False)
+            assert mutex.release("worker-host")
+
+        thread = threading.Thread(target=use_mutex_from_worker)
+        thread.start()
+        thread.join()
+
+        before = mutex.connection_stats()
+        assert before["tracked_threads"] >= 2
+
+        closed = mutex.prune_stale_connections()
+        after = mutex.connection_stats()
+
+        assert closed >= 1
+        assert after["tracked_threads"] == 1
+        mutex.close_all()
