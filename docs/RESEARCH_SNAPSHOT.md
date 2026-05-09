@@ -1,6 +1,6 @@
 # RingRift Research Snapshot
 
-This is the shortest shareable summary of the RingRift training project as of May 1, 2026.
+This is the shortest shareable summary of the RingRift training project as of May 9, 2026.
 
 ## What RingRift Is
 
@@ -17,7 +17,7 @@ The project now has credible evidence of iterative neural-network improvement on
 
 | Config       | Best Reported Elo | Promotions | Interpretation                                                       |
 | ------------ | ----------------: | ---------: | -------------------------------------------------------------------- |
-| `hex8_2p`    |          `2028.3` |        `6` | Strongest result; v5-heavy + fv3 reference lane crossed 2000 Elo     |
+| `hex8_2p`    |          `2241.7` |       `13` | Strongest result; v5-heavy + fv3 reference lane crossed 2200 Elo     |
 | `square8_2p` |          `1782.0` |        `5` | Second clean 2-player proof now has two consecutive `62%` promotions |
 | `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                   |
 
@@ -40,7 +40,7 @@ In other words, the current evidence is post-fix evidence, not a continuation of
 
 The project is not finished.
 
-- the older `hex8_2p` v3-family line plateaued at `1979.8`, and the newer v5-heavy + fv3 reference lane has now broken above it to `2028.3`
+- the older `hex8_2p` v3-family line plateaued at `1979.8`, and the newer v5-heavy + fv3 reference lane has now broken above it to `2241.7`
 - `hex8_3p` finally produced a first clean result, but it was a `35%` reject
 - `square8_3p` still needs another clean promotion before it should count as persuasive multiplayer evidence
 - `square8_4p` and the larger-board paths remain unproven

@@ -8,11 +8,11 @@ RingRift is both a deterministic abstract strategy game and a research codebase 
 
 ## What The Project Has Proven So Far
 
-As of May 1, 2026, the strongest reported results are:
+As of May 9, 2026, the strongest reported results are:
 
 | Config       | Best Reported Elo | Promotions | Notes                                                                    |
 | ------------ | ----------------: | ---------: | ------------------------------------------------------------------------ |
-| `hex8_2p`    |          `2028.3` |        `6` | Strongest overall result; v5-heavy + fv3 reference lane crossed 2000 Elo |
+| `hex8_2p`    |          `2241.7` |       `13` | Strongest overall result; v5-heavy + fv3 reference lane crossed 2200 Elo |
 | `square8_2p` |          `1782.0` |        `5` | Clean fixed-LR run now has two consecutive `62%` promotions              |
 | `square8_3p` |          `1534.9` |        `1` | Promising multiplayer evidence, but still too weak to overclaim          |
 

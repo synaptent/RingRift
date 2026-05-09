@@ -83,10 +83,10 @@ Current snapshot:
   revises the `gh200-14` reference-lane interpretation: iter 12 was blocked by
   resume-limited quality-gate coverage after a `49/50` eval resume, then iter
   13 clean-promoted at `76.0%`.
-- May 1 evidence mirrors the fv3 reference lane's clean iter 20 promotion:
-  `2028.3` Elo after a `68.0%` stage-1 verdict, with metrics and checkpoint
-  hashes checked into the evidence manifest. Future frontier changes should
-  follow the same evidence-first publication rule.
+- May 9 evidence mirrors the fv3 reference lane's iter 34 promotion:
+  `2241.7` Elo after a `52.75%` stage-4 verdict over 400 games, with metrics
+  and checkpoint hashes checked into the evidence manifest. Future frontier
+  changes should follow the same evidence-first publication rule.
 
 The public claim should be narrow:
 

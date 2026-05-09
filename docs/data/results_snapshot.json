@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-01",
+  "as_of": "2026-05-08",
   "caveats": [
     {
       "id": "multiplayer_elo_formula_pre_dfb3d20c1",
@@ -14,8 +14,8 @@
     {
       "config": "hex8_2p",
       "start_elo": 1500.0,
-      "best_elo": 2028.3,
-      "promotions": 6
+      "best_elo": 2241.7,
+      "promotions": 13
     },
     {
       "config": "square8_2p",
@@ -63,12 +63,12 @@
   "recent_updates": [
     {
       "config": "hex8_2p",
-      "iteration": 20,
-      "win_rate": 0.68,
-      "games_played": 50,
+      "iteration": 34,
+      "win_rate": 0.5275,
+      "games_played": 400,
       "decision": "promote",
-      "estimated_elo": 2028.3,
-      "note": "New v5-heavy + fv3 reference frontier from gh200-14; quality gate passed and candidate_020.pth matches best.pth by SHA256."
+      "estimated_elo": 2241.7,
+      "note": "New v5-heavy + fv3 reference frontier from gh200-14; quality gate passed with a non-critical seat-imbalance warning and candidate_034.pth matches best.pth by SHA256."
     },
     {
       "config": "square8_2p",

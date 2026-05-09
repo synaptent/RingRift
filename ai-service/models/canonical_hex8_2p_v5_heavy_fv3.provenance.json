@@ -1,12 +1,12 @@
 {
   "name": "canonical_hex8_2p_v5_heavy_fv3.pth",
   "purpose": "Frontier checkpoint for the hex8 2-player v5-heavy + fv3-feature replication study (gh200-14 reference lane).",
-  "sha256": "3f98a4bcf982d93f251ce9fa3d6b8ed11dba34e35da4b07c0554ef1b5542d371",
+  "sha256": "cd7d5fa542b9afcd59fa7fa2e713784878f2fdffa0d03e559ba0708303ed60b4",
   "size_bytes": 34610051,
-  "minted_at": "2026-05-01T19:04:02Z",
-  "iteration": 20,
-  "estimated_elo": 2028.3,
-  "total_promotions": 6,
+  "minted_at": "2026-05-07T09:53:51Z",
+  "iteration": 34,
+  "estimated_elo": 2241.7,
+  "total_promotions": 13,
   "board_type": "hex8",
   "num_players": 2,
   "model_version": "v5-heavy",
@@ -46,27 +46,41 @@
       "elo_after": 2028.3,
       "stage": 1,
       "note": "clean stage-1 promote after four rejects; best.pth matches candidate_020.pth"
+    },
+    {
+      "iteration": 33,
+      "wr": 0.55,
+      "elo_after": 2222.6,
+      "stage": 3,
+      "note": "stage-3 promote over 200 games"
+    },
+    {
+      "iteration": 34,
+      "wr": 0.5275,
+      "elo_after": 2241.7,
+      "stage": 4,
+      "note": "stage-4 promote over 400 games; quality gate passed with non-critical seat imbalance warning; best.pth matches candidate_034.pth"
     }
   ],
-  "training_git_sha_at_promotion": "2b809e574",
-  "training_git_sha_observed_at": "2026-05-01T19:50:24Z",
+  "training_git_sha_at_promotion": "36041a04e",
+  "training_git_sha_observed_at": "2026-05-09T04:30:00Z",
   "verification": {
     "sweep_command": "python3 scripts/check_canonical_models.py",
     "expected_status": "MATCH against on-disk weights when pulled from S3 or copied from gh200-14",
     "live_path_on_remote": "/home/ubuntu/ringrift/ai-service/data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth",
     "live_path_remote_node": "lambda-gh200-14",
-    "checked_in_evidence": "docs/data/training_runs/2026-05-01/gh200-14_fv3_iter20_frontier/"
+    "checked_in_evidence": "docs/data/training_runs/2026-05-09/gh200-14_fv3_iter34_frontier/"
   },
   "context": {
     "is_canonical_for_config": false,
     "is_experiment_frontier": true,
     "experiment_name": "fv3 architectural replication (4 seeds + 1 reference)",
-    "replication_promotion_rate": "6/26 = 23% across the April 30 checked-in fv3 replication snapshot; gh200-14 later advanced to 6/20 on May 1",
+    "replication_promotion_rate": "6/26 = 23% across the April 30 checked-in fv3 replication snapshot; gh200-14 later advanced to 13/34 by May 9",
     "related_doc": "docs/research/QUALITY_GATE_RESUME_BUG.md",
     "validates": [
       "4e1b7e20e (resume-safe quality gate)",
-      "demonstrates 4 clean post-fix reference-lane promotions through iter 20",
-      "iter 13/14/15/20 verdicts all unaffected by tracker resume-coverage bug"
+      "demonstrates 11 clean post-fix reference-lane promotions through iter 34",
+      "iter 13/14/15/20/33/34 verdicts all unaffected by tracker resume-coverage bug"
     ]
   }
 }

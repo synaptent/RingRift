@@ -214,8 +214,8 @@ passed the gate.
 
 The important postscript is that this was not a harmless bookkeeping bug. After
 the fix, the same `gh200-14` fv3 reference lane kept promoting: iter 14, iter
-15, and then iter 20, which reached `2028.3` Elo after a clean `68%` stage-1
-verdict. That is now the strongest `hex8_2p` checkpoint in the project. Without
+15, iter 20, and then iter 34, which reached `2241.7` Elo after a `52.75%`
+stage-4 verdict over 400 games. That is now the strongest `hex8_2p` checkpoint in the project. Without
 the gate-coverage fix, I would have been left with a plausible but false
 "this architecture plateaued around 1587" story.
 
