@@ -2,7 +2,7 @@
 
 This document summarizes the current research evidence from the RingRift self-play training project.
 
-Status is current as of May 9, 2026 (fv3 reference frontier evidence mirrored after iter 34).
+Status is current as of May 11, 2026 (fv3 reference frontier evidence mirrored after iter 42).
 
 For claim provenance, see
 [`docs/data/results_evidence_manifest.json`](/docs/data/results_evidence_manifest.json).
@@ -11,13 +11,13 @@ operator-reported results that are not yet published here.
 
 ## Headline Results
 
-| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                                                                        |
-| ------------ | --------: | ----------------: | ---------: | ------------------------------------------------------------------------------------------------------------- |
-| `hex8_2p`    |    `1500` |          `2241.7` |       `13` | Current frontier; v5-heavy + fv3 `gh200-14` reference lane promoted at `52.75%` over `400` games in iter `34` |
-| `square8_2p` |    `1500` |          `1782.0` |        `5` | Strongest recent mover; iterations `34` and `35` both promoted at `62%`                                       |
-| `square8_3p` |    `1500` |          `1534.9` |        `1` | Multiplayer still weak; iteration `21` rejected at `30%`                                                      |
-| `hex8_3p`    |    `1500` |          `1500.0` |        `0` | First completed hex multiplayer eval rejected at `35%`                                                        |
-| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                                                                          |
+| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                                                                       |
+| ------------ | --------: | ----------------: | ---------: | ------------------------------------------------------------------------------------------------------------ |
+| `hex8_2p`    |    `1500` |          `2327.8` |       `16` | Current frontier; v5-heavy + fv3 `gh200-14` reference lane promoted at `52.0%` over `400` games in iter `42` |
+| `square8_2p` |    `1500` |          `1782.0` |        `5` | Strongest recent mover; iterations `34` and `35` both promoted at `62%`                                      |
+| `square8_3p` |    `1500` |          `1534.9` |        `1` | Multiplayer still weak; iteration `21` rejected at `30%`                                                     |
+| `hex8_3p`    |    `1500` |          `1500.0` |        `0` | First completed hex multiplayer eval rejected at `35%`                                                       |
+| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                                                                         |
 
 > Multiplayer Elo caveat: pre-`dfb3d20c1` `3p/4p` `estimated_elo` values were
 > logged with a `2p`-only promotion formula. The historical numbers below are
@@ -35,7 +35,7 @@ RingRift was built as a novel deterministic strategy game plus an end-to-end Alp
 
 The answer is now yes.
 
-The strongest evidence is still `hex8_2p`: the current v5-heavy + fv3 reference lane has now crossed `2200` Elo, reaching `2241.7` after a stage-4 `52.75%` promotion at iteration `34`. `square8_2p` is the second clean proof point, reaching `1782.0` Elo with `5` promotions after two consecutive `62%` promotions at iterations `34` and `35`.
+The strongest evidence is still `hex8_2p`: the current v5-heavy + fv3 reference lane has now crossed `2300` Elo, reaching `2327.8` after a stage-4 `52.0%` promotion at iteration `42`. The independent `seed_d` fv3 replica has also reached `2193.4` Elo with `20` promotions, which makes the fv3 result much less likely to be a single-seed accident. `square8_2p` remains the second board proof point, reaching `1782.0` Elo with `5` promotions after two consecutive `62%` promotions at iterations `34` and `35`.
 
 The current state is still not a universal success story, though: only `2` of `12` configs have strong evidence of improvement, multiplayer remains weak, and larger boards remain unproven.
 
@@ -43,9 +43,9 @@ The current state is still not a universal success story, though: only `2` of `1
 
 ### `hex8_2p`
 
-- Best reported Elo: `2241.7`
-- Promotions: `13` on the v5-heavy + fv3 `gh200-14` reference lane
-- Latest verified fv3 milestone: iteration `34` promoted at `52.75%` over `400` staged eval games
+- Best reported Elo: `2327.8`
+- Promotions: `16` on the v5-heavy + fv3 `gh200-14` reference lane
+- Latest verified fv3 milestone: iteration `42` promoted at `52.0%` over `400` staged eval games
 - Historical v3-family milestone: `1979.8` Elo after `7` promotions, followed by an exact `50.0%` stage-4 reject at iteration `36`
 - Interpretation: strong iterative improvement from the `1500` baseline, with the newer fv3 feature schema breaking above the earlier v3-family `1979.8` plateau
 
@@ -53,10 +53,10 @@ Current fv3 frontier evidence:
 
 | Iteration | Win Rate |         Eval Games | Result  | Estimated Elo |
 | --------- | -------: | -----------------: | ------- | ------------: |
-| `34`      | `52.75%` | `400` staged games | promote |      `2241.7` |
+| `42`      |  `52.0%` | `400` staged games | promote |      `2327.8` |
 
 The checked-in evidence for this promotion is
-[`docs/data/training_runs/2026-05-09/gh200-14_fv3_iter34_frontier/iter034_final.json`](/docs/data/training_runs/2026-05-09/gh200-14_fv3_iter34_frontier/iter034_final.json).
+[`docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier/iter042_final.json`](/docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier/iter042_final.json).
 The promoted checkpoint is still gitignored as a binary artifact, but its hash is
 recorded in
 [`ai-service/models/canonical_hex8_2p_v5_heavy_fv3.pth.sha256`](/ai-service/models/canonical_hex8_2p_v5_heavy_fv3.pth.sha256)
@@ -95,9 +95,9 @@ First completed v4 iterations (source: `gh200-8` node `metrics.jsonl`, not yet m
 | `7`       |  `55.0%` | `200` games | promote |      `1534.9` |
 | `8`       |  `43.0%` | `100` games | reject  |      `1534.9` |
 
-Interpretation: the training-probe fix committed at `beafb4a07` unstuck the v4 pipeline (previously all iterations failed at the architecture-version-mismatch probe). v4 now completes iterations and has produced one promotion, but it is starting from a `1500` baseline — nowhere near catching the supported fv3 `2241.7` result. It will take many more promotions for v4 to be considered a frontier candidate.
+Interpretation: the training-probe fix committed at `beafb4a07` unstuck the v4 pipeline (previously all iterations failed at the architecture-version-mismatch probe). v4 now completes iterations and has produced one promotion, but it is starting from a `1500` baseline — nowhere near catching the supported fv3 `2327.8` result. It will take many more promotions for v4 to be considered a frontier candidate.
 
-Until a completed v4 iteration crosses the newer `2241.7` frontier, it remains diagnostic rather than a headline strength claim.
+Until a completed v4 iteration crosses the newer `2327.8` frontier, it remains diagnostic rather than a headline strength claim.
 
 ### `hex8_2p` v5-heavy Experiment
 
@@ -107,7 +107,7 @@ A second architecture experiment was launched April 17 on `gh200-11`.
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hypothesis       | A v5-heavy architecture (FiLM-conditioned heuristic features + optional GNN + spatial policy heads) can succeed where v4 attention does not           |
 | Baseline         | Same as v4: `1979.8` Elo from supported v3/v2-family checkpoint                                                                                       |
-| Success criteria | Promote above `1979.8` within the experiment window; the fv3 reference lane has now done this with a `2241.7` frontier                                |
+| Success criteria | Promote above `1979.8` within the experiment window; the fv3 reference lane has now done this with a `2327.8` frontier                                |
 | Hardware         | `gh200-11`                                                                                                                                            |
 | Start date       | April 17, 2026                                                                                                                                        |
 | Status           | Launched; first iteration self-play in progress, no completed iteration yet. Compatibility validation between 40ch bootstrap and export/train pending |
@@ -119,22 +119,22 @@ Prerequisites landed immediately before launch:
 
 Until the first v5-heavy iteration completes the full self-play → export → train → eval cycle, this is _launched_ rather than _working_. We hold the claim language until we see a completed iteration in `metrics.jsonl`.
 
-### `hex8_2p` v5-heavy + fv3 Replication Study (April 24–May 9)
+### `hex8_2p` v5-heavy + fv3 Replication Study (April 24–May 11)
 
 A 4-seed architectural replication of the v5-heavy line with feature-version 3, plus a `gh200-14` reference seed. The frontier checkpoint for the reference seed is preserved as `ai-service/models/canonical_hex8_2p_v5_heavy_fv3.pth` (sidecar + `canonical_hex8_2p_v5_heavy_fv3.provenance.json` checked in; `.pth` artifact gitignored, recoverable from `gh200-14:data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth`).
 
-| Field                     | Value                                                                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reference seed            | `gh200-14` (13 promotions, frontier `2241.7` Elo, iteration 38 evaluation active at the May 9 evidence snapshot)                                                             |
-| Replicas                  | `gh200-8` (seed_a, retired 0/7), `gh200-11` (seed_b, 2/6), `gh200-13` (seed_c, 0/7), `gh200-10` (seed_d, 4/6)                                                                |
-| April 30 replica snapshot | 6 promotions in 26 verdicts = `23%` promotion rate before the reference lane continued to `13` promotions by May 9                                                           |
-| Reference target          | `12.5%` per-iter promotion rate (replication strengthens)                                                                                                                    |
-| seed_d profile            | Hottest replica: `4/6` promotions, frontier Elo `1570.4`, iter 7 in stage 4 grind at the snapshot point                                                                      |
-| Reference jump            | iter 12→13 broke a 4-iter plateau at `1587` Elo. iter 13/14/15 promoted in 3 consecutive verdicts, iter 20 jumped to `2028.3`, then iter 34 lifted the frontier to `2241.7`. |
+| Field                     | Value                                                                                                                                               |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reference seed            | `gh200-14` (16 promotions, frontier `2327.8` Elo, iteration 44 evaluation active at the May 11 evidence snapshot)                                   |
+| Replicas                  | `gh200-8` (seed_a, retired 0/7), `gh200-11` (seed_b, 2/6), `gh200-13` (seed_c, 0/7), `gh200-10` (seed_d, now 20/36 and `2193.4` Elo)                |
+| April 30 replica snapshot | 6 promotions in 26 verdicts = `23%` promotion rate before the reference lane continued to `16` promotions and seed_d to `20` promotions by May 11   |
+| Reference target          | `12.5%` per-iter promotion rate (replication strengthens)                                                                                           |
+| seed_d profile            | Hottest replica: `20/36` promotions, frontier Elo `2193.4`; iter 36 promoted at `53.14%` over `239` games                                           |
+| Reference jump            | iter 12→13 broke a 4-iter plateau at `1587` Elo. iter 20 jumped to `2028.3`, iter 34 lifted the frontier to `2241.7`, and iter 42 reached `2327.8`. |
 
-Reference-lane Elo trajectory: `1500 → 1502 → 1587 → 1787 → 1797 → 1897 → 2028 → 2223 → 2242`.
+Reference-lane Elo trajectory: `1500 → 1502 → 1587 → 1787 → 1797 → 1897 → 2028 → 2223 → 2242 → 2244 → 2314 → 2328`.
 
-The reference lane reaching `2241.7` Elo across 13 promotions, while 3 of 4 replication seeds also promote at least once in the April 30 snapshot, validates that the v5-heavy + fv3 architectural hypothesis produces real iterative improvement on a fresh feature schema, not a single-seed accident.
+The reference lane reaching `2327.8` Elo across 16 promotions, while seed_d independently reached `2193.4` Elo across 20 promotions, validates that the v5-heavy + fv3 architectural hypothesis produces real iterative improvement on a fresh feature schema, not a single-seed accident.
 
 ### `square8_2p`
 
@@ -196,7 +196,7 @@ This configuration has not demonstrated improvement above baseline. It remains s
 
 The most important fact about the April 15 state is that the training claim now depends more on preserving uninterrupted runtime than on adding more orchestration. The minimal loop has already demonstrated the core research result. The new value is selective:
 
-- keep the `2241.7` fv3 `hex8_2p` frontier as the flagship evidence while retaining the `1979.8` v3-family checkpoint as historical context
+- keep the `2327.8` fv3 `hex8_2p` frontier as the flagship evidence while retaining the `1979.8` v3-family checkpoint as historical context
 - keep pushing `square8_2p`, which just promoted to `1782.0`
 - use fresh architecture work on `hex8_2p` while treating the fv3 reference lane as the current frontier
 - keep collecting multiplayer data without overclaiming weak evaluations
@@ -284,10 +284,10 @@ Approximate calibration context for interpreting the headline Elo numbers:
 | Heuristic           |         `~1200` | Hand-built strategic baseline                 |
 | MCTS-medium         |         `~1700` | Search-heavy non-training baseline            |
 | `square8_2p` NN     |        `1782.0` | Now above the approximate MCTS-medium context |
-| `hex8_2p` NN        |        `2241.7` | Current fv3 frontier neural self-play result  |
+| `hex8_2p` NN        |        `2327.8` | Current fv3 frontier neural self-play result  |
 
 These baselines are approximate calibration anchors, not new training results.
-They are included to make the `1782.0` and `2241.7` claims easier to interpret.
+They are included to make the `1782.0` and `2327.8` claims easier to interpret.
 
 ## Limitations
 
@@ -339,7 +339,7 @@ RingRift has credible evidence that its neural self-play system can produce stro
 
 That evidence is real, but it is still narrow. The strongest supported claim is:
 
-- `hex8_2p` improved from `1500` to `2241.7`
+- `hex8_2p` improved from `1500` to `2327.8`
 - `square8_2p` improved from `1500` to `1782.0`
 - the corrected minimal-loop stack, fixed-LR baseline, staged evaluator, and role-based fleet are sufficient to keep pushing that line of evidence forward
 

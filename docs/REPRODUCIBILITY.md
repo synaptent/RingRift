@@ -9,7 +9,7 @@ from claims that require the S3 archive or live operator logs.
 
 ## Headline Result
 
-**hex8_2p**: 1500 → 2241.7 Elo in 34 iterations on the v5-heavy + fv3 reference lane using fixed learning rate self-play. The previous v3-family line reached 1979.8 Elo in 33 iterations and remains documented below as historical context.
+**hex8_2p**: 1500 → 2327.8 Elo in 42 iterations on the v5-heavy + fv3 reference lane using fixed learning rate self-play. The previous v3-family line reached 1979.8 Elo in 33 iterations and remains documented below as historical context.
 
 ## Hardware
 
@@ -26,7 +26,7 @@ from claims that require the S3 archive or live operator logs.
 
 ## Exact Training Command
 
-### hex8_2p fv3 reference (current frontier: 1500 → 2241.7 Elo, 13 promotions)
+### hex8_2p fv3 reference (current frontier: 1500 → 2327.8 Elo, 16 promotions)
 
 ```bash
 cd ai-service
@@ -51,7 +51,7 @@ python scripts/minimal_alphazero_loop.py \
 ```
 
 The checked-in evidence for the current frontier is under
-[`docs/data/training_runs/2026-05-09/gh200-14_fv3_iter34_frontier`](/docs/data/training_runs/2026-05-09/gh200-14_fv3_iter34_frontier).
+[`docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier`](/docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier).
 The promoted binary checkpoint remains gitignored; its SHA256 is recorded in
 [`ai-service/models/canonical_hex8_2p_v5_heavy_fv3.pth.sha256`](/ai-service/models/canonical_hex8_2p_v5_heavy_fv3.pth.sha256).
 
@@ -144,7 +144,7 @@ s3://ringrift-models-20251214/archive/
 │   └── training_data/iter_*.npz
 ├── gh200-10/         # hex8_3p
 ├── gh200-12/         # square8_3p (1534.9 Elo)
-└── gh200-14/         # hex8_2p fv3 reference frontier (2241.7 Elo) and other experiments
+└── gh200-14/         # hex8_2p fv3 reference frontier (2327.8 Elo) and other experiments
 ```
 
 To download and resume training:

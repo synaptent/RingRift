@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-08",
+  "as_of": "2026-05-11",
   "caveats": [
     {
       "id": "multiplayer_elo_formula_pre_dfb3d20c1",
@@ -14,8 +14,8 @@
     {
       "config": "hex8_2p",
       "start_elo": 1500.0,
-      "best_elo": 2241.7,
-      "promotions": 13
+      "best_elo": 2327.8,
+      "promotions": 16
     },
     {
       "config": "square8_2p",
@@ -63,12 +63,21 @@
   "recent_updates": [
     {
       "config": "hex8_2p",
-      "iteration": 34,
-      "win_rate": 0.5275,
+      "iteration": 42,
+      "win_rate": 0.52,
       "games_played": 400,
       "decision": "promote",
-      "estimated_elo": 2241.7,
-      "note": "New v5-heavy + fv3 reference frontier from gh200-14; quality gate passed with a non-critical seat-imbalance warning and candidate_034.pth matches best.pth by SHA256."
+      "estimated_elo": 2327.8,
+      "note": "New v5-heavy + fv3 reference frontier from gh200-14; quality gate passed cleanly and candidate_042.pth matches best.pth by SHA256."
+    },
+    {
+      "config": "hex8_2p",
+      "iteration": 36,
+      "win_rate": 0.5313807531380753,
+      "games_played": 239,
+      "decision": "promote",
+      "estimated_elo": 2193.4,
+      "note": "seed_d replication lane reached 20 promotions; this supports the fv3 result as more than a single-seed artifact."
     },
     {
       "config": "square8_2p",
