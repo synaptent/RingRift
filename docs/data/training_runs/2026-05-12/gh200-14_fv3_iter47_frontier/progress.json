@@ -1,0 +1,9 @@
+{
+  "iteration": 48,
+  "stage": "selfplay_started",
+  "estimated_elo": 2583.9,
+  "total_promotions": 19,
+  "games_target": 100,
+  "selfplay_budget": 128,
+  "updated_at": "2026-05-12T22:16:25.292491+00:00"
+}

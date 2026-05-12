@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-11",
+  "as_of": "2026-05-12",
   "caveats": [
     {
       "id": "multiplayer_elo_formula_pre_dfb3d20c1",
@@ -14,8 +14,8 @@
     {
       "config": "hex8_2p",
       "start_elo": 1500.0,
-      "best_elo": 2327.8,
-      "promotions": 16
+      "best_elo": 2583.9,
+      "promotions": 19
     },
     {
       "config": "square8_2p",
@@ -61,6 +61,15 @@
     ]
   },
   "recent_updates": [
+    {
+      "config": "hex8_2p",
+      "iteration": 47,
+      "win_rate": 0.66,
+      "games_played": 50,
+      "decision": "promote",
+      "estimated_elo": 2583.9,
+      "note": "New v5-heavy + fv3 reference frontier from gh200-14; quality gate passed and candidate_047.pth matches best.pth by SHA256. This is an estimated promotion-ladder Elo; see docs/research/ELO_RATING_DRIFT_AUDIT_2026-05-12.md for drift caveats."
+    },
     {
       "config": "hex8_2p",
       "iteration": 42,

@@ -8,17 +8,17 @@ RingRift is both a deterministic abstract strategy game and a research codebase 
 
 ## What The Project Has Proven So Far
 
-As of May 11, 2026, the strongest reported results are:
+As of May 12, 2026, the strongest reported results are:
 
-| Config       | Best Reported Elo | Promotions | Notes                                                                    |
-| ------------ | ----------------: | ---------: | ------------------------------------------------------------------------ |
-| `hex8_2p`    |          `2327.8` |       `16` | Strongest overall result; v5-heavy + fv3 reference lane crossed 2300 Elo |
-| `square8_2p` |          `1782.0` |        `5` | Clean fixed-LR run now has two consecutive `62%` promotions              |
-| `square8_3p` |          `1534.9` |        `1` | Promising multiplayer evidence, but still too weak to overclaim          |
+| Config       | Best Reported Elo | Promotions | Notes                                                                                               |
+| ------------ | ----------------: | ---------: | --------------------------------------------------------------------------------------------------- |
+| `hex8_2p`    |          `2583.9` |       `19` | Strongest overall result; v5-heavy + fv3 reference lane crossed 2500 estimated promotion-ladder Elo |
+| `square8_2p` |          `1782.0` |        `5` | Clean fixed-LR run now has two consecutive `62%` promotions                                         |
+| `square8_3p` |          `1534.9` |        `1` | Promising multiplayer evidence, but still too weak to overclaim                                     |
 
 These results came from longer GH200 cluster runs. Local reproduction is possible through the supported experiment path, but the same scale of improvement still depends on GPU time and multiple iterations.
 
-The supported claim is therefore narrow and defensible: RingRift has shown iterative NN improvement clearly on `hex8_2p` and `square8_2p`, with only an early multiplayer signal so far. The recent `hex8_2p` v5-heavy + fv3 reference run is now the strongest two-player result, and the seed_d replica crossing `2193.4` Elo makes the feature-schema result less likely to be a single-seed artifact. The next branch of work is extending that kind of evidence to multiplayer and larger boards without overclaiming weak runs.
+The supported claim is therefore narrow and defensible: RingRift has shown iterative NN improvement clearly on `hex8_2p` and `square8_2p`, with only an early multiplayer signal so far. The recent `hex8_2p` v5-heavy + fv3 reference run is now the strongest two-player result, and the seed_d replica crossing `2193.4` Elo makes the feature-schema result less likely to be a single-seed artifact. The `2583.9` number should be read as estimated promotion-ladder Elo until the frontier is anchored against fixed checkpoints. The next branch of work is extending that kind of evidence to multiplayer and larger boards without overclaiming weak runs.
 
 ## The Current Supported Path
 

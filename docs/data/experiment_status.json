@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-05-11T23:05:00+00:00",
+  "generated_at": "2026-05-12T22:25:00+00:00",
   "source_files": [
     "docs/data/training_fleet_manifest.json",
     "docs/data/results_snapshot.json",
@@ -11,7 +11,7 @@
       "claim_id": "hex8_2p_best_elo",
       "config": "hex8_2p",
       "field": "headline[0].best_elo",
-      "value": 2327.8,
+      "value": 2583.9,
       "evidence": {
         "source_type": "results_snapshot",
         "path": "docs/data/results_snapshot.json"
@@ -21,7 +21,7 @@
       "claim_id": "hex8_2p_promotions",
       "config": "hex8_2p",
       "field": "headline[0].promotions",
-      "value": 16,
+      "value": 19,
       "evidence": {
         "source_type": "results_snapshot",
         "path": "docs/data/results_snapshot.json"

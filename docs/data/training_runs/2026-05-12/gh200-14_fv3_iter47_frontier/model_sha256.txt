@@ -1,0 +1,2 @@
+54c4bdb7cf58c28a1d93d64a95c4d6218869b3ecf8da31e4173551ba079e18cf  data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth
+54c4bdb7cf58c28a1d93d64a95c4d6218869b3ecf8da31e4173551ba079e18cf  data/minimal_loop_hex8_2p_v5_heavy_fv3/models/candidate_047.pth

@@ -1,0 +1,132 @@
+{
+  "base_lr": 5e-5,
+  "effective_lr": 5e-5,
+  "estimated_elo": 2583.9,
+  "eval_budget": 128,
+  "evaluation": {
+    "best_wins": 17,
+    "candidate_wins": 33,
+    "decision": "promote",
+    "decision_stage": 1,
+    "draws": 0,
+    "elapsed_s": 5097.135180711746,
+    "games_played": 50,
+    "win_rate": 0.66
+  },
+  "git_sha": "d2840a10c",
+  "gradient_clip_max_norm": null,
+  "iteration": 47,
+  "iteration_time_s": 15613.6,
+  "lr_floor": 1e-5,
+  "lr_schedule": "fixed",
+  "policy_weight": null,
+  "promoted": true,
+  "quality_gate": {
+    "critical": false,
+    "details": {
+      "behavioral_diversity": {
+        "diversity_ratio": 0.46,
+        "games_tracked": 50,
+        "move_tracking_complete": true,
+        "opening_games_tracked": 50,
+        "opening_repeat_rate": 0.02,
+        "opening_sample_coverage": 1.0,
+        "unique_legal_moves_seen": 1948,
+        "unique_moves_chosen": 897,
+        "unique_openings": 50
+      },
+      "seat_fairness": {
+        "chi_square_p_value": 0.8643,
+        "chi_square_stat": 0.0292,
+        "expected_seat_wins": {
+          "1": 15.51,
+          "2": 17.49
+        },
+        "min_games_per_seat": 25,
+        "seat_games": {
+          "1": 25,
+          "2": 25
+        },
+        "seat_wins": {
+          "1": 16,
+          "2": 17
+        },
+        "seat_wr": {
+          "1": 0.64,
+          "2": 0.68
+        },
+        "selfplay_baseline_seat_wins": {
+          "1": 47,
+          "2": 53
+        },
+        "selfplay_baseline_seat_wr": {
+          "1": 0.47,
+          "2": 0.53
+        },
+        "total_observed_wins": 33,
+        "wr_ratio": 1.062
+      },
+      "value_head_health": {
+        "all_negative": false,
+        "all_positive": false,
+        "move_tracking_complete": true,
+        "nonfinite_value_samples": 0,
+        "value_mean": 0.238,
+        "value_samples": 1826,
+        "value_std": 0.207
+      }
+    },
+    "passed": true,
+    "summary": "quality gate passed",
+    "warnings": []
+  },
+  "rank_dist_weight": null,
+  "selfplay": {
+    "completed": 100,
+    "elapsed_s": 10232.367687225342,
+    "p1_wins": 47,
+    "p2_wins": 53
+  },
+  "selfplay_budget": 128,
+  "supplemental_data_dir": "data/minimal_loop_hex8_2p_v5_heavy_fv3/supplemental",
+  "timestamp": "2026-05-12T22:16:24.602532+00:00",
+  "total_promotions": 19,
+  "train_lr_scheduler": "none",
+  "train_window": 3,
+  "training": {
+    "batch_size": 512,
+    "elapsed_s": 103.95759439468384,
+    "epochs": 15,
+    "gradient_clip_max_norm": null,
+    "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=4.3807, mining_active=False, hard_frac=0.00%, lr_scale=1.000",
+    "learning_rate": 5e-5,
+    "policy_weight": null,
+    "rank_dist_weight": null,
+    "scheduler": "none",
+    "target_stats": {
+      "values": {
+        "histogram": {
+          "-1.000": 10560,
+          "1.000": 10982
+        },
+        "max": 1.0,
+        "mean": 0.01959,
+        "min": -1.0,
+        "samples": 21542,
+        "std": 0.999808
+      },
+      "values_mp": {
+        "histogram": {
+          "-1.000": 21542,
+          "0.000": 43084,
+          "1.000": 21542
+        },
+        "mean": 0.0,
+        "samples": 86168,
+        "std": 0.707107
+      }
+    },
+    "value_weight": null
+  },
+  "value_weight": null
+}

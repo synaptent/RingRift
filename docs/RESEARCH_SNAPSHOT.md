@@ -1,6 +1,6 @@
 # RingRift Research Snapshot
 
-This is the shortest shareable summary of the RingRift training project as of May 11, 2026.
+This is the shortest shareable summary of the RingRift training project as of May 12, 2026.
 
 ## What RingRift Is
 
@@ -15,11 +15,11 @@ RingRift is a deterministic abstract strategy game plus a research codebase for 
 
 The project now has credible evidence of iterative neural-network improvement on more than one configuration.
 
-| Config       | Best Reported Elo | Promotions | Interpretation                                                       |
-| ------------ | ----------------: | ---------: | -------------------------------------------------------------------- |
-| `hex8_2p`    |          `2327.8` |       `16` | Strongest result; v5-heavy + fv3 reference lane crossed 2300 Elo     |
-| `square8_2p` |          `1782.0` |        `5` | Second clean 2-player proof now has two consecutive `62%` promotions |
-| `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                   |
+| Config       | Best Reported Elo | Promotions | Interpretation                                                                    |
+| ------------ | ----------------: | ---------: | --------------------------------------------------------------------------------- |
+| `hex8_2p`    |          `2583.9` |       `19` | Strongest result; v5-heavy + fv3 reference lane crossed 2500 estimated ladder Elo |
+| `square8_2p` |          `1782.0` |        `5` | Second clean 2-player proof now has two consecutive `62%` promotions              |
+| `square8_3p` |          `1534.9` |        `1` | Useful multiplayer signal, but still weak evidence                                |
 
 The core research claim is no longer "can the pipeline run at all?" It is now: the RingRift self-play training loop can produce stronger models over time on at least two supported configurations, with one weaker multiplayer signal that is not yet strong enough to generalize from.
 
@@ -40,7 +40,7 @@ In other words, the current evidence is post-fix evidence, not a continuation of
 
 The project is not finished.
 
-- the older `hex8_2p` v3-family line plateaued at `1979.8`, and the newer v5-heavy + fv3 reference lane has now broken above it to `2327.8`; the seed_d replica has also reached `2193.4`
+- the older `hex8_2p` v3-family line plateaued at `1979.8`, and the newer v5-heavy + fv3 reference lane has now broken above it to `2583.9` estimated promotion-ladder Elo; the seed_d replica has also reached `2193.4`
 - `hex8_3p` finally produced a first clean result, but it was a `35%` reject
 - `square8_3p` still needs another clean promotion before it should count as persuasive multiplayer evidence
 - `square8_4p` and the larger-board paths remain unproven

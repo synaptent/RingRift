@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-11",
+  "as_of": "2026-05-12",
   "purpose": "Audit map for public RingRift training claims. It distinguishes claims verifiable from checked-in files from claims that require external artifacts or live operator logs.",
   "checked_in_sources": [
     "docs/data/results_snapshot.json",
@@ -7,6 +7,9 @@
     "docs/REPRODUCIBILITY.md",
     "README.md",
     "docs/assets/results/headline_results.svg",
+    "docs/research/ELO_RATING_DRIFT_AUDIT_2026-05-12.md",
+    "docs/data/training_runs/2026-05-12/gh200-14_fv3_iter47_frontier/model_sha256.txt",
+    "docs/data/training_runs/2026-05-12/gh200-14_fv3_iter47_frontier/iter047_final.json",
     "docs/assets/results/square8_2p_progression.svg",
     "docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier/iter042_final.json",
     "docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier/model_sha256.txt",
@@ -21,17 +24,34 @@
   ],
   "repo_verifiable_claims": [
     {
-      "claim_id": "hex8_2p_headline_2327_8",
-      "statement": "hex8_2p improved from 1500.0 to a 2327.8 Elo v5-heavy + fv3 frontier with 16 promotions on the gh200-14 reference lane.",
+      "claim_id": "hex8_2p_headline_2583_9",
+      "statement": "hex8_2p improved from 1500.0 to a 2583.9 estimated promotion-ladder Elo v5-heavy + fv3 frontier with 19 promotions on the gh200-14 reference lane.",
       "primary_source": "docs/data/results_snapshot.json",
-      "evidence_source": "docs/data/training_runs/2026-05-11/gh200-14_fv3_iter42_frontier/iter042_final.json plus model SHA sidecar; checkpoint artifact remains gitignored and recoverable from gh200-14:data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth.",
+      "evidence_source": "docs/data/training_runs/2026-05-12/gh200-14_fv3_iter47_frontier/iter047_final.json plus model SHA sidecar; checkpoint artifact remains gitignored and recoverable from gh200-14:data/minimal_loop_hex8_2p_v5_heavy_fv3/models/best.pth.",
       "fields": {
         "config": "hex8_2p",
         "start_elo": 1500.0,
-        "best_elo": 2327.8,
-        "promotions": 16
+        "best_elo": 2583.9,
+        "promotions": 19,
+        "elo_interpretation": "estimated promotion-ladder Elo; see docs/research/ELO_RATING_DRIFT_AUDIT_2026-05-12.md"
       },
       "public_docs": ["README.md", "docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
+    },
+    {
+      "claim_id": "hex8_2p_fv3_iter47_promote",
+      "statement": "hex8_2p v5-heavy + fv3 reference iteration 47 promoted at 66.0% over 50 games to an estimated promotion-ladder Elo of 2583.9.",
+      "primary_source": "docs/data/training_runs/2026-05-12/gh200-14_fv3_iter47_frontier/iter047_final.json",
+      "evidence_source": "Live gh200-14 metrics snapshot mirrored on 2026-05-12; docs/data/training_runs/2026-05-12/gh200-14_fv3_iter47_frontier/model_sha256.txt shows best.pth equals candidate_047.pth.",
+      "fields": {
+        "config": "hex8_2p",
+        "iteration": 47,
+        "win_rate": 0.66,
+        "games_played": 50,
+        "decision": "promote",
+        "estimated_elo": 2583.9,
+        "elo_interpretation": "estimated promotion-ladder Elo"
+      },
+      "public_docs": ["docs/RESULTS.md", "docs/REPRODUCIBILITY.md"]
     },
     {
       "claim_id": "square8_2p_headline_1782_0",
