@@ -234,6 +234,8 @@ def _make_ai(
 
 
 def _play_pair_game(
+    env,
+    ai_cache: dict[tuple[str, int], Any],
     a: Participant,
     b: Participant,
     *,
@@ -241,7 +243,6 @@ def _play_pair_game(
     budget: int,
     seed_base: int,
 ) -> tuple[int | None, int]:
-    env = loop._make_env()
     num_players = env.num_players if hasattr(env, "num_players") else loop.NUM_PLAYERS
     a_player = (game_index % num_players) + 1
     gseed = (seed_base + game_index * 7919) & 0xFFFFFFFF
@@ -250,12 +251,15 @@ def _play_pair_game(
     for player in range(1, num_players + 1):
         participant = a if player == a_player else b
         ai_seed = (gseed + player * 97_911) & 0xFFFFFFFF
-        ais[player] = _make_ai(
-            participant,
-            player,
-            budget=budget,
-            seed=ai_seed,
-        )
+        cache_key = (participant.name, player)
+        if cache_key not in ai_cache:
+            ai_cache[cache_key] = _make_ai(
+                participant,
+                player,
+                budget=budget,
+                seed=ai_seed,
+            )
+        ais[player] = ai_cache[cache_key]
         reset = getattr(ais[player], "reset_for_new_game", None)
         if callable(reset):
             reset(rng_seed=ai_seed)
@@ -299,9 +303,13 @@ def run_pair(
     b_wins = 0
     draws = 0
     seat_outcomes: dict[str, dict[str, int]] = {}
+    env = loop._make_env()
+    ai_cache: dict[tuple[str, int], Any] = {}
 
     for game_index in range(games):
         winner, a_player = _play_pair_game(
+            env,
+            ai_cache,
             a,
             b,
             game_index=game_index,
