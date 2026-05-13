@@ -156,6 +156,12 @@ LOOP_INTERVAL_SECONDS = (
 )
 TRAINING_CHECK_INTERVAL = env.training_check_interval  # RINGRIFT_TRAINING_CHECK_INTERVAL (default: 60)
 ALLOCATION_CHECK_INTERVAL = env.allocation_check_interval  # RINGRIFT_ALLOCATION_CHECK_INTERVAL (default: 120)
+COORDINATION_CONNECTION_DIAGNOSTIC_THRESHOLD = int(
+    os.environ.get("RINGRIFT_COORDINATION_CONNECTION_DIAGNOSTIC_THRESHOLD", "64")
+)
+COORDINATION_CONNECTION_DIAGNOSTIC_INTERVAL_SECONDS = int(
+    os.environ.get("RINGRIFT_COORDINATION_CONNECTION_DIAGNOSTIC_INTERVAL_SECONDS", "900")
+)
 
 # Thresholds - now configurable via environment (Dec 2025)
 MIN_GAMES_FOR_EXPORT = env.min_games_for_export  # RINGRIFT_MIN_GAMES_FOR_EXPORT (default: 500)
@@ -540,6 +546,7 @@ class MasterLoopController:
         self._last_allocation_check = 0.0
         self._last_load_snapshot = 0.0  # Load forecasting (Dec 2025)
         self._last_cluster_p2p_recovery = 0.0  # Cluster-wide P2P recovery (Dec 31, 2025)
+        self._last_coordination_connection_diag = 0.0
 
         # Control
         self._running = False
@@ -2627,12 +2634,18 @@ class MasterLoopController:
         """Release SQLite handles left behind by completed worker threads."""
         try:
             from app.coordination.cross_process_events import (
+                event_queue_connection_stats,
                 prune_stale_event_queue_connections,
             )
-            from app.coordination.sync_mutex import prune_stale_sync_mutex_connections
+            from app.coordination.sync_mutex import (
+                prune_stale_sync_mutex_connections,
+                sync_mutex_connection_stats,
+            )
 
             sync_closed = prune_stale_sync_mutex_connections()
             event_closed = prune_stale_event_queue_connections()
+            sync_stats = sync_mutex_connection_stats()
+            event_stats = event_queue_connection_stats()
             if sync_closed or event_closed:
                 logger.info(
                     "[MasterLoop] Pruned stale coordination DB connections: "
@@ -2640,12 +2653,58 @@ class MasterLoopController:
                     sync_closed,
                     event_closed,
                 )
+            self._log_coordination_connection_stats(sync_stats, event_stats)
         except Exception as exc:
             logger.debug(
                 "[MasterLoop] Coordination connection pruning skipped: %s",
                 exc,
                 exc_info=True,
             )
+
+    def _log_coordination_connection_stats(
+        self,
+        sync_stats: dict[str, int],
+        event_stats: dict[str, int],
+    ) -> None:
+        """Log bounded diagnostics when coordination SQLite handles grow."""
+
+        total_connections = int(sync_stats.get("tracked_connections", 0)) + int(
+            event_stats.get("tracked_connections", 0)
+        )
+        total_stale = int(sync_stats.get("stale_threads", 0)) + int(
+            event_stats.get("stale_threads", 0)
+        )
+        python_threads = max(
+            int(sync_stats.get("python_threads", 0)),
+            int(event_stats.get("python_threads", 0)),
+        )
+
+        threshold = COORDINATION_CONNECTION_DIAGNOSTIC_THRESHOLD
+        should_log = (
+            total_connections >= threshold
+            or total_stale > 0
+            or python_threads >= threshold
+        )
+        if not should_log:
+            return
+
+        now = time.time()
+        if (
+            now - self._last_coordination_connection_diag
+            < COORDINATION_CONNECTION_DIAGNOSTIC_INTERVAL_SECONDS
+        ):
+            return
+        self._last_coordination_connection_diag = now
+
+        logger.warning(
+            "[MasterLoop] Coordination connection diagnostic: "
+            "total_connections=%s python_threads=%s "
+            "sync=%s events=%s",
+            total_connections,
+            python_threads,
+            sync_stats,
+            event_stats,
+        )
 
     # =========================================================================
     # Training coordination

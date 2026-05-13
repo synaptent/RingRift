@@ -819,14 +819,18 @@ class CrossProcessEventQueue:
             thread.ident for thread in threading.enumerate() if thread.ident
         }
         with self._connections_lock:
+            tracked_threads = len(self._connections_by_thread)
+            active_threads = sum(
+                1
+                for thread_id in self._connections_by_thread
+                if thread_id in active_thread_ids
+            )
             return {
                 "tracked_connections": len(self._connections_by_thread),
-                "tracked_threads": len(self._connections_by_thread),
-                "active_threads": sum(
-                    1
-                    for thread_id in self._connections_by_thread
-                    if thread_id in active_thread_ids
-                ),
+                "tracked_threads": tracked_threads,
+                "active_threads": active_threads,
+                "stale_threads": max(0, tracked_threads - active_threads),
+                "python_threads": len(active_thread_ids),
             }
 
 
@@ -859,6 +863,23 @@ def prune_stale_event_queue_connections() -> int:
         if _event_queue is None:
             return 0
         return _event_queue.prune_stale_connections()
+
+
+def event_queue_connection_stats() -> dict[str, int]:
+    """Return global event queue connection stats without creating the singleton."""
+    empty = {
+        "tracked_connections": 0,
+        "tracked_threads": 0,
+        "active_threads": 0,
+        "stale_threads": 0,
+        "python_threads": len(
+            {thread.ident for thread in threading.enumerate() if thread.ident}
+        ),
+    }
+    with _queue_lock:
+        if _event_queue is None:
+            return empty
+        return _event_queue.connection_stats()
 
 
 def _cleanup_on_exit() -> None:
@@ -1182,6 +1203,7 @@ __all__ = [
     # Functions
     "get_event_queue",
     "poll_events",
+    "event_queue_connection_stats",
     "prune_stale_event_queue_connections",
     "publish_event",
     "reset_event_queue",

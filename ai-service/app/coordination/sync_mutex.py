@@ -681,14 +681,18 @@ class SyncMutex:
             thread.ident for thread in threading.enumerate() if thread.ident
         }
         with self._connections_lock:
+            tracked_threads = len(self._connections_by_thread)
+            active_threads = sum(
+                1
+                for thread_id in self._connections_by_thread
+                if thread_id in active_thread_ids
+            )
             return {
                 "tracked_connections": len(self._all_connections),
-                "tracked_threads": len(self._connections_by_thread),
-                "active_threads": sum(
-                    1
-                    for thread_id in self._connections_by_thread
-                    if thread_id in active_thread_ids
-                ),
+                "tracked_threads": tracked_threads,
+                "active_threads": active_threads,
+                "stale_threads": max(0, tracked_threads - active_threads),
+                "python_threads": len(active_thread_ids),
             }
 
 
@@ -721,6 +725,23 @@ def prune_stale_sync_mutex_connections() -> int:
         if _sync_mutex is None:
             return 0
         return _sync_mutex.prune_stale_connections()
+
+
+def sync_mutex_connection_stats() -> dict[str, int]:
+    """Return global SyncMutex connection stats without creating the singleton."""
+    empty = {
+        "tracked_connections": 0,
+        "tracked_threads": 0,
+        "active_threads": 0,
+        "stale_threads": 0,
+        "python_threads": len(
+            {thread.ident for thread in threading.enumerate() if thread.ident}
+        ),
+    }
+    with _mutex_lock:
+        if _sync_mutex is None:
+            return empty
+        return _sync_mutex.connection_stats()
 
 
 def _cleanup_on_exit() -> None:
@@ -902,6 +923,7 @@ __all__ = [
     "prune_stale_sync_mutex_connections",
     "release_sync_lock",
     "reset_sync_mutex",
+    "sync_mutex_connection_stats",
     "sync_heartbeat",
     "sync_lock",
     "sync_lock_required",

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "as_of": "2026-04-24",
+  "as_of": "2026-05-12",
   "purpose": "Machine-readable boundary between the supported RingRift AI/training surface and historical, diagnostic, or experimental tooling. This keeps outside review focused on code paths that are current and defended by tests.",
   "supported_ai_surfaces": [
     {
@@ -18,6 +18,10 @@
     {
       "path": "ai-service/scripts/minimal_alphazero_loop.py",
       "role": "Supported AlphaZero-style self-play/train/eval proof harness."
+    },
+    {
+      "path": "ai-service/scripts/run_anchor_gauntlet.py",
+      "role": "Supported fixed-checkpoint anchor gauntlet for Elo calibration using minimal-loop evaluator semantics."
     },
     {
       "path": "ai-service/scripts/generate_canonical_selfplay.py",

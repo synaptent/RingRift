@@ -183,12 +183,29 @@ class TestCrossProcessEventQueue:
 
         before = queue.connection_stats()
         assert before["tracked_threads"] >= 1
+        assert before["stale_threads"] >= 1
+        assert before["python_threads"] >= 1
 
         closed = queue.prune_stale_connections()
         after = queue.connection_stats()
 
         assert closed >= 1
         assert after["tracked_threads"] == 0
+
+    def test_global_connection_stats_do_not_create_singleton(self):
+        """Module-level diagnostics should be safe before first use."""
+        from app.coordination.cross_process_events import (
+            event_queue_connection_stats,
+            reset_event_queue,
+        )
+
+        reset_event_queue()
+
+        stats = event_queue_connection_stats()
+
+        assert stats["tracked_connections"] == 0
+        assert stats["tracked_threads"] == 0
+        assert stats["python_threads"] >= 1
 
     def test_publish_event_creates_record(self, queue, temp_db_path):
         """Test that publish actually creates database record."""

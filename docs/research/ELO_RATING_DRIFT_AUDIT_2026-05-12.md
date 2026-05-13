@@ -61,6 +61,34 @@ for the closest pairs. Estimate a pool rating with a Bradley-Terry, BayesElo, or
 equivalent pairwise model, and keep the promotion-ladder Elo as a separate
 training-progress metric.
 
+The supported executable path is:
+
+```bash
+cd ai-service
+PYTHONPATH=. RINGRIFT_DISABLE_TORCH_COMPILE=1 \
+python scripts/run_anchor_gauntlet.py \
+  --board-type hex8 \
+  --num-players 2 \
+  --model-version v5-heavy \
+  --feature-version 3 \
+  --model frontier=models/canonical_hex8_2p_v5_heavy_fv3.pth \
+  --model iter42=/path/to/candidate_042.pth \
+  --model iter34=/path/to/candidate_034.pth \
+  --model iter20=/path/to/candidate_020.pth \
+  --model seed_d=/path/to/seed_d_best.pth \
+  --baseline heuristic=heuristic \
+  --baseline random=random \
+  --fixed-rating heuristic=1500 \
+  --games 400 \
+  --budget 128 \
+  --output data/elo_calibration/hex8_2p_fv3_anchor_gauntlet.json \
+  --resume
+```
+
+The output is a fixed-pool calibration artifact, not a replacement for the
+promotion-ladder metric. If the calibrated frontier differs materially from the
+ladder Elo, public docs should report both numbers with their source labels.
+
 ## Publication Guidance
 
 - Keep `2583.9` as the current best **estimated promotion-ladder Elo**.
