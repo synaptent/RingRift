@@ -31,7 +31,7 @@ pytest-cov==7.0.0  # Coverage reporting with pytest
 hypothesis==6.116.0
 black==26.3.1
 flake8==7.3.0
-mypy==1.13.0  # Static type checking for Python/TS parity
+mypy==1.19.1  # Static type checking for Python/TS parity
 vulture==2.14  # Dead code detection
 mutmut>=2.5.0,<3.0.0  # Mutation testing for test quality validation (2.x is more stable)
 bandit>=1.7.0  # Security vulnerability scanner
