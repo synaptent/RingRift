@@ -42,3 +42,30 @@ unaffected. Confidence HIGH — changes are additive markdown.
 **Commit**: 4da67a06a. Rollback tag: elves/pre-batch-1.
 **Also**: noted existing public-model-artifacts-2026-04-28 release on issue #102 (E3 partially
 prefigured); progress comment on #101.
+
+### Batch 2: E1 ringrift-env MVP (complete)
+
+**Contract**: pip-installable PettingZoo AEC-style env over the canonical Python engine; all 4
+boards × 2/3/4 players; exact action masks; deterministic replay; torch-free install.
+**Pre-implementation survey**: found existing gym-like `RingRiftEnv` in app/training/env.py
+(canonical bookkeeping synthesis, termination, rewards) — wrapped it instead of reimplementing.
+Canonical action indexing via app/ai/canonical_move_encoding.py.
+**Upstream enablers (behavior-preserving, verified)**:
+
+- app/training/env.py: seed_all import made optional (guarded try/except; module attribute
+  preserved for test patching; seeded reset raises informative ImportError without torch).
+- app/ai/neural_net/**init**.py: PEP 562 lazy exports for torch-dependent symbols; torch-free
+  encoding surface stays eager; canonical_move_encoding re-exports lazy (breaks a latent
+  circular import). Repo precedent: lazy-imports-to-avoid-heavy-startup (ruff E402 note).
+  **Finding**: canonical encoding is intentionally non-injective for choice moves (hex maps ALL
+  special/choice moves to one sentinel; square collapses CHOOSE_LINE_OPTION variants). Env adds a
+  deterministic per-state overflow block (default 256 slots) after canonical indices.
+  **Validation**:
+- Clean venv (numpy/pydantic/psutil, NO torch): install + import OK; fast suite 13 passed;
+  slow suite (full-length square19/hexagonal 2/3/4 + hex8/square8 2p) 8 passed in 45s.
+- With torch: tests/unit/ai 1699 passed 6 skipped; test_training_env.py 53 passed;
+  test_neural_net_architectures.py 54 passed; test_minimal_alphazero_loop.py 30 passed.
+  **Regression attestation**: shared surfaces modified: app/ai/neural_net/**init**.py (imported
+  repo-wide; all **all** symbols verified resolvable with torch; full unit/ai slice green) and
+  app/training/env.py (53/53 module tests + 30/30 minimal-loop tests green). Test totals only
+  increased (21 new package tests). Confidence HIGH.
