@@ -40,13 +40,15 @@ This index catalogs all project documentation organized by topic and location. F
 
 These are the docs most likely to be shared externally. Only the first three should be treated as part of the supported path.
 
-| Document                                                                                   | Purpose                        | Status |
-| ------------------------------------------------------------------------------------------ | ------------------------------ | ------ |
-| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)                                             | Short external-facing brief    | Active |
-| [docs/RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md)                                     | Shareable research summary     | Active |
-| [docs/RESULTS.md](docs/RESULTS.md)                                                         | Full current research evidence | Active |
-| [docs/archive/editorial/CASE_STUDY_DRAFT.md](docs/archive/editorial/CASE_STUDY_DRAFT.md)   | Long-form case-study draft     | Draft  |
-| [docs/archive/editorial/BLOG_POST_OUTLINE.md](docs/archive/editorial/BLOG_POST_OUTLINE.md) | Blog/story outline             | Draft  |
+| Document                                                                                                 | Purpose                                                                  | Status |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------ |
+| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)                                                           | Short external-facing brief                                              | Active |
+| [docs/RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md)                                                   | Shareable research summary                                               | Active |
+| [docs/RESULTS.md](docs/RESULTS.md)                                                                       | Full current research evidence                                           | Active |
+| [docs/research/SILENT_ALPHAZERO_FAILURES_ARTICLE.md](docs/research/SILENT_ALPHAZERO_FAILURES_ARTICLE.md) | Publication article: silent AlphaZero failure modes + portable checklist | Active |
+| [docs/research/SILENT_ALPHAZERO_FAILURES.md](docs/research/SILENT_ALPHAZERO_FAILURES.md)                 | Repo-internal silent-failure catalog (file:line citations)               | Active |
+| [docs/archive/editorial/CASE_STUDY_DRAFT.md](docs/archive/editorial/CASE_STUDY_DRAFT.md)                 | Long-form case-study draft                                               | Draft  |
+| [docs/archive/editorial/BLOG_POST_OUTLINE.md](docs/archive/editorial/BLOG_POST_OUTLINE.md)               | Blog/story outline                                                       | Draft  |
 
 ---
 
