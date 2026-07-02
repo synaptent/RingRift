@@ -8,12 +8,12 @@
   "survival_guide_path": "docs/elves/survival-guide.md",
   "learnings_path": "docs/elves/learnings.md",
   "execution_log_path": "docs/elves/execution-log.md",
-  "pr_number": null,
+  "pr_number": 111,
   "continuation_guard": {
-    "remaining_batches": 4,
+    "remaining_batches": 2,
     "stop_allowed": false,
     "checkpoint_is_stop": false,
-    "next_required_action": "Batch 0 remainder: create epic label + issues E1-E11, commit, push, open PR"
+    "next_required_action": "Batch 2: implement packages/ringrift-env MVP per Explore agent API map"
   },
   "test_baseline": {
     "passed": null,
@@ -23,35 +23,35 @@
     "reason": "Full suites are very large; touched-surface baselines captured per batch"
   },
   "current_batch": {
-    "id": 0,
-    "name": "Session setup + epic recording",
+    "id": 2,
+    "name": "E1: ringrift-env MVP",
     "status": "in_progress"
   },
   "batches": [
     {
       "id": 0,
       "name": "Session setup + epic recording",
-      "status": "in_progress",
-      "commit": null,
+      "status": "complete",
+      "commit": "2e93cb9a8",
       "rollback_tag": null,
       "started_at": "2026-07-01T00:00:00Z",
-      "completed_at": null
+      "completed_at": "2026-07-01T00:00:00Z"
     },
     {
       "id": 1,
       "name": "E2: silent-failures write-up",
-      "status": "pending",
-      "commit": null,
-      "rollback_tag": null,
+      "status": "complete",
+      "commit": "4da67a06a",
+      "rollback_tag": "elves/pre-batch-1",
       "started_at": null,
-      "completed_at": null
+      "completed_at": "2026-07-01T00:00:00Z"
     },
     {
       "id": 2,
       "name": "E1: ringrift-env MVP",
-      "status": "pending",
+      "status": "in_progress",
       "commit": null,
-      "rollback_tag": null,
+      "rollback_tag": "elves/pre-batch-2",
       "started_at": null,
       "completed_at": null
     },
