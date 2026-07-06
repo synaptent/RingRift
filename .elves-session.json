@@ -10,10 +10,10 @@
   "execution_log_path": "docs/elves/execution-log.md",
   "pr_number": 111,
   "continuation_guard": {
-    "remaining_batches": 2,
+    "remaining_batches": 0,
     "stop_allowed": false,
     "checkpoint_is_stop": false,
-    "next_required_action": "Batch 2: implement packages/ringrift-env MVP per Explore agent API map"
+    "next_required_action": "Final review, cleanup, readiness gate"
   },
   "test_baseline": {
     "passed": null,
@@ -23,9 +23,9 @@
     "reason": "Full suites are very large; touched-surface baselines captured per batch"
   },
   "current_batch": {
-    "id": 2,
-    "name": "E1: ringrift-env MVP",
-    "status": "in_progress"
+    "id": 3,
+    "name": "E5: puzzle miner MVP",
+    "status": "complete"
   },
   "batches": [
     {
@@ -49,18 +49,18 @@
     {
       "id": 2,
       "name": "E1: ringrift-env MVP",
-      "status": "in_progress",
-      "commit": null,
+      "status": "complete",
+      "commit": "3c478d332",
       "rollback_tag": "elves/pre-batch-2",
       "started_at": null,
-      "completed_at": null
+      "completed_at": "2026-07-01T00:00:00Z"
     },
     {
       "id": 3,
       "name": "E5: puzzle miner MVP",
-      "status": "pending",
+      "status": "in_progress",
       "commit": null,
-      "rollback_tag": null,
+      "rollback_tag": "elves/pre-batch-3",
       "started_at": null,
       "completed_at": null
     }

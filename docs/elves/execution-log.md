@@ -69,3 +69,18 @@ Canonical action indexing via app/ai/canonical_move_encoding.py.
   repo-wide; all **all** symbols verified resolvable with torch; full unit/ai slice green) and
   app/training/env.py (53/53 module tests + 30/30 minimal-loop tests green). Test totals only
   increased (21 new package tests). Confidence HIGH.
+
+### Batch 3: E5 puzzle miner MVP (complete)
+
+**Contract**: read-only chain-capture puzzle miner over replay DBs; JSON schema documented;
+
+> =50 machine-validated puzzles; self-validation + CLI validate mode.
+> **Done**: `ai-service/scripts/mine_chain_capture_puzzles.py` (structural chain-score metric,
+> no NN required; --copy-to-temp so live DBs are never opened read-write); schema doc
+> `docs/puzzles/PUZZLE_FORMAT.md`; asset `src/client/public/puzzles/hex8_2p_chain_capture.json`
+> (60 puzzles, min-chain 3, min-margin 2, mined from a scratchpad copy of canonical_hex8_2p.db).
+> **Validation**: 4/4 new unit tests pass (in-process random games, no DB dependency);
+> `--validate` reports 60/60 valid; every emitted puzzle self-validated at mine time.
+> **Regression attestation**: additive only (new script, new tests, new docs, new static asset);
+> no shared surfaces touched; no databases modified (mined from a copy). Confidence HIGH.
+> **Note**: client puzzle page is E5 Phase 2, tracked on #104.
