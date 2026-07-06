@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ringrift-env"
+version = "0.1.0"
+description = "RingRift as a multi-agent RL environment (PettingZoo AEC-style API over the canonical Python rules engine)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["reinforcement-learning", "multi-agent", "board-game", "alphazero", "pettingzoo"]
+dependencies = [
+    "numpy>=1.23",
+    "pydantic>=2.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/synaptent/RingRift"
+Documentation = "https://github.com/synaptent/RingRift/tree/main/packages/ringrift-env"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: full-length games on large boards (deselect with '-m \"not slow\"')",
+]

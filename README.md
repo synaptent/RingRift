@@ -141,7 +141,10 @@ The `.pth` files are split into release parts; follow the release
 
 For the current outsider-facing packaging plan, see
 [docs/OUTSIDER_VALUE_ROADMAP.md](/docs/OUTSIDER_VALUE_ROADMAP.md). For the
-reusable AlphaZero implementation lessons, see
+reusable AlphaZero implementation lessons, see the publication article
+[docs/research/SILENT_ALPHAZERO_FAILURES_ARTICLE.md](/docs/research/SILENT_ALPHAZERO_FAILURES_ARTICLE.md)
+("Eight silent ways an AlphaZero implementation can lie to you", with a
+portable detection-gate checklist) and the repo-internal catalog
 [docs/research/SILENT_ALPHAZERO_FAILURES.md](/docs/research/SILENT_ALPHAZERO_FAILURES.md).
 
 ## What Is Proven, And What Is Not

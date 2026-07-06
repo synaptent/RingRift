@@ -14,16 +14,21 @@ The package is organized as follows:
 
 Public symbols are re-exported here so callers can stay on the supported
 package facade while the remaining legacy pieces are retired.
+
+Import layout (PEP 562 lazy exports):
+    The torch-free encoding surface (constants, hex/square action encoders,
+    canonical move encoding) is imported eagerly. Torch-dependent symbols
+    (architectures, blocks, losses, factories, legacy NeuralNetAI) are
+    resolved lazily on first attribute access via module ``__getattr__``.
+    This keeps rules-only consumers (e.g. the ringrift-env RL environment
+    package) importable without torch installed, and follows the repo's
+    existing lazy-import-to-avoid-heavy-startup convention.
 """
 
-# Building blocks - migrated to blocks.py (Phase 1)
-from app.ai.neural_net.blocks import (
-    AttentionResidualBlock,
-    ResidualBlock,
-    SEResidualBlock,
-)
+from importlib import import_module
+from typing import Any
 
-# Constants - fully migrated to constants.py (Phase 1 complete)
+# Constants - fully migrated to constants.py (Phase 1 complete). Torch-free.
 from app.ai.neural_net.constants import (
     BOARD_POLICY_SIZES,
     BOARD_SPATIAL_SIZES,
@@ -84,7 +89,7 @@ from app.ai.neural_net.constants import (
     get_spatial_size_for_board,
 )
 
-# Hex encoding - migrated to hex_encoding.py (Phase 2)
+# Hex encoding - migrated to hex_encoding.py (Phase 2). Torch-free.
 from app.ai.neural_net.hex_encoding import (
     ActionEncoderHex,
     _from_canonical_xy,
@@ -93,7 +98,7 @@ from app.ai.neural_net.hex_encoding import (
     _to_canonical_xy,
 )
 
-# Square encoding - migrated to square_encoding.py (Phase 2)
+# Square encoding - migrated to square_encoding.py (Phase 2). Torch-free.
 from app.ai.neural_net.square_encoding import (
     ActionEncoderSquare,
     ActionEncoderSquare8,
@@ -109,85 +114,93 @@ from app.ai.neural_net.square_encoding import (
     transform_policy_index_square,
 )
 
-# Square architectures - migrated to square_architectures.py (Phase 2)
-# NOTE: RingRiftCNN_v5 (v5.0.0) was removed Dec 2025 - use RingRiftCNN_v5_Heavy instead
-from app.ai.neural_net.square_architectures import (
-    RingRiftCNN_v2,
-    RingRiftCNN_v2_Lite,
-    RingRiftCNN_v3,
-    RingRiftCNN_v3_Flat,  # V3 with flat policy (training compatible, Dec 2025)
-    RingRiftCNN_v3_Lite,
-    RingRiftCNN_v4,
-)
+# Lazily-resolved symbols (PEP 562). Maps exported name -> providing module.
+# Most entries are torch-dependent; canonical_move_encoding is torch-free but
+# must be lazy because it imports app.ai.neural_net.constants, which would
+# recurse into this package while it is still initializing.
+_LAZY_EXPORTS: dict[str, str] = {
+    # Canonical move encoding (migrated from _neural_net_legacy.py)
+    "decode_move_for_board": "app.ai.canonical_move_encoding",
+    "encode_move_for_board": "app.ai.canonical_move_encoding",
+    "get_encoder_for_board": "app.ai.canonical_move_encoding",
+    # Building blocks - blocks.py (Phase 1)
+    "AttentionResidualBlock": "app.ai.neural_net.blocks",
+    "ResidualBlock": "app.ai.neural_net.blocks",
+    "SEResidualBlock": "app.ai.neural_net.blocks",
+    # Square architectures - square_architectures.py (Phase 2)
+    # NOTE: RingRiftCNN_v5 (v5.0.0) was removed Dec 2025 - use RingRiftCNN_v5_Heavy
+    "RingRiftCNN_v2": "app.ai.neural_net.square_architectures",
+    "RingRiftCNN_v2_Lite": "app.ai.neural_net.square_architectures",
+    "RingRiftCNN_v3": "app.ai.neural_net.square_architectures",
+    "RingRiftCNN_v3_Flat": "app.ai.neural_net.square_architectures",
+    "RingRiftCNN_v3_Lite": "app.ai.neural_net.square_architectures",
+    "RingRiftCNN_v4": "app.ai.neural_net.square_architectures",
+    # Hex architectures - hex_architectures.py (Phase 2)
+    "HexNeuralNet_v2": "app.ai.neural_net.hex_architectures",
+    "HexNeuralNet_v2_Lite": "app.ai.neural_net.hex_architectures",
+    "HexNeuralNet_v3": "app.ai.neural_net.hex_architectures",
+    "HexNeuralNet_v3_Flat": "app.ai.neural_net.hex_architectures",
+    "HexNeuralNet_v3_Lite": "app.ai.neural_net.hex_architectures",
+    "HexNeuralNet_v4": "app.ai.neural_net.hex_architectures",
+    # V5 Heavy architectures (December 2025)
+    "HeuristicEncoder": "app.ai.neural_net.v5_heavy",
+    "HexNeuralNet_v5_Heavy": "app.ai.neural_net.v5_heavy",
+    "RingRiftCNN_v5_Heavy": "app.ai.neural_net.v5_heavy",
+    "create_v5_heavy_model": "app.ai.neural_net.v5_heavy",
+    "NUM_HEURISTIC_FEATURES": "app.ai.neural_net.v5_heavy",
+    # Graph encoding - enables GNN-based position evaluation (December 2025)
+    "NODE_FEATURE_IDX": "app.ai.neural_net.graph_encoding",
+    "EDGE_ATTR_IDX": "app.ai.neural_net.graph_encoding",
+    "board_to_graph": "app.ai.neural_net.graph_encoding",
+    "board_to_graph_hex": "app.ai.neural_net.graph_encoding",
+    # Loss functions - neural_losses.py (Phase 3)
+    "multi_player_value_loss": "app.ai.neural_losses",
+    "rank_distribution_loss": "app.ai.neural_losses",
+    "ranks_from_game_result": "app.ai.neural_losses",
+    # Model factory - model_factory.py (Phase 4)
+    "create_model_for_board": "app.ai.neural_net.model_factory",
+    "get_memory_tier": "app.ai.neural_net.model_factory",
+    "get_model_config_for_board": "app.ai.neural_net.model_factory",
+    # Unified neural net factory for tournament daemon
+    "UnifiedNeuralNetFactory": "app.ai.unified_factory",
+    # Classes and functions still in the archived legacy module. Reachable
+    # through app/ai/_neural_net_legacy.py only as a compatibility path.
+    "_MODEL_CACHE": "app.ai._neural_net_legacy",
+    "NeuralNetAI": "app.ai._neural_net_legacy",
+    "clear_model_cache": "app.ai._neural_net_legacy",
+    "create_hex_mask": "app.ai._neural_net_legacy",
+    "get_cached_model_count": "app.ai._neural_net_legacy",
+}
 
-# Hex architectures - migrated to hex_architectures.py (Phase 2)
-from app.ai.neural_net.hex_architectures import (
-    HexNeuralNet_v2,
-    HexNeuralNet_v2_Lite,
-    HexNeuralNet_v3,
-    HexNeuralNet_v3_Flat,  # V3 with flat policy (training compatible, Dec 2025)
-    HexNeuralNet_v3_Lite,
-    HexNeuralNet_v4,
-)
 
-# V5 Heavy architectures - Maximum strength with all features (December 2025)
-from app.ai.neural_net.v5_heavy import (
-    HeuristicEncoder,
-    HexNeuralNet_v5_Heavy,
-    RingRiftCNN_v5_Heavy,
-    create_v5_heavy_model,
-    NUM_HEURISTIC_FEATURES,
-)
+def __getattr__(name: str) -> Any:
+    """Resolve torch-dependent exports lazily (PEP 562).
 
-# Graph encoding - extracted from archive/cage_network.py (December 2025)
-# Enables GNN-based position evaluation
-from app.ai.neural_net.graph_encoding import (
-    NODE_FEATURE_IDX,
-    EDGE_ATTR_IDX,
-    board_to_graph,
-    board_to_graph_hex,
-)
+    Keeps `from app.ai.neural_net import <symbol>` working for every symbol
+    in ``__all__`` while deferring torch imports until a torch-dependent
+    symbol is actually requested.
+    """
+    target = _LAZY_EXPORTS.get(name)
+    if target is not None:
+        if target == "app.ai._neural_net_legacy":
+            # Suppress the deprecation warning for backwards-compatible
+            # re-exports, matching the previous eager-import behaviour.
+            import warnings
 
-# Loss functions - migrated to neural_losses.py (Phase 3)
-from app.ai.neural_losses import (
-    multi_player_value_loss,
-    rank_distribution_loss,
-    ranks_from_game_result,
-)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                module = import_module(target)
+        else:
+            module = import_module(target)
+        value = getattr(module, name)
+        globals()[name] = value  # Cache so subsequent access skips __getattr__
+        return value
+    # Fall back to submodule access (e.g. app.ai.neural_net.blocks).
+    try:
+        return import_module(f"{__name__}.{name}")
+    except ModuleNotFoundError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
 
-# Model factory - migrated to model_factory.py (Phase 4)
-from app.ai.neural_net.model_factory import (
-    create_model_for_board,
-    get_memory_tier,
-    get_model_config_for_board,
-)
-
-# Canonical move encoding (migrated from _neural_net_legacy.py)
-from app.ai.canonical_move_encoding import (
-    decode_move_for_board,
-    encode_move_for_board,
-    get_encoder_for_board,
-)
-
-# Unified neural net factory for tournament daemon
-# Renamed from neural_net.py to unified_factory.py to avoid package name conflict
-from app.ai.unified_factory import UnifiedNeuralNetFactory
-
-# Classes and functions still in legacy module (to be migrated in later phases)
-# NOTE: Archived December 2025 and reachable through app/ai/_neural_net_legacy.py
-# only as a compatibility path while callers stay on this package facade.
-# Suppress deprecation warning for backwards-compatible re-exports
-import warnings as _w
-with _w.catch_warnings():
-    _w.filterwarnings("ignore", category=DeprecationWarning)
-    from app.ai._neural_net_legacy import (
-        _MODEL_CACHE,
-        NeuralNetAI,
-        # Cache functions
-        clear_model_cache,
-        create_hex_mask,
-        get_cached_model_count,
-    )
 
 __all__ = [
     "BOARD_POLICY_SIZES",

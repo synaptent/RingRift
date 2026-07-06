@@ -58,7 +58,13 @@ from app.training.env_mixins import (
     RewardCalculatorMixin,
     TerminationHandlerMixin,
 )
-from app.training.seed_utils import seed_all
+
+try:
+    from app.training.seed_utils import seed_all
+except ImportError:  # pragma: no cover - torch not installed
+    # seed_utils requires torch, which rules-only consumers (e.g. the
+    # ringrift-env package) do not install. Seeded resets then raise below.
+    seed_all = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -531,6 +537,11 @@ class RingRiftEnv(
             # Use the central training seeding utility so that Python
             # random, NumPy, and torch (including CUDA/cuDNN flags) are
             # all initialised consistently for this environment.
+            if seed_all is None:
+                raise ImportError(
+                    "Seeded reset requires app.training.seed_utils, which "
+                    "needs torch. Install torch or call reset() without a seed."
+                )
             seed_all(seed)
 
         # Reuse a shared helper from initial_state.

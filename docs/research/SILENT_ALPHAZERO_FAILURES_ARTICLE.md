@@ -1,8 +1,26 @@
 # Eight silent ways an AlphaZero implementation can lie to you
 
-_Draft. ~2,500 words. Audience: ML engineers who have built or maintain
-self-play training systems. Not yet edited for publication; structured as a
-LessWrong / personal-site post that can be split into a thread or a paper._
+_Audience: ML engineers who build or maintain self-play training systems.
+This is the publication version of RingRift's internal silent-failure
+catalog; the repo-internal version with full file:line citations is
+[SILENT_ALPHAZERO_FAILURES.md](./SILENT_ALPHAZERO_FAILURES.md)._
+
+**Abstract.** The most expensive bugs in AlphaZero-style pipelines do not
+crash. They let every iteration finish on time, with plausible loss curves
+and healthy-looking checkpoints, while the training graph optimizes a
+different objective than the experiment claims. Over two months of running
+a self-play cluster for a novel board game, we found eight such failure
+modes: a model head defined but never returned, a loss-activation flag
+dropped at a subprocess boundary, a checkpoint-migration script that no-ops
+on schema drift, an initialization that saturates the value head at birth,
+a quality gate with a degenerate denominator after evaluation resume, a
+fixed-seat model silently widened to max players, a loop that spends
+self-play compute after failed training steps, and a loss function that
+mistakes storage padding for active players. Each is easy to reproduce in a
+greenfield project. We describe the symptom, root cause, fix, and — most
+usefully — the detection gate that would have caught each one, and distill
+them into a portable checklist (Appendix A) for auditing any self-play
+training system.
 
 ---
 
@@ -355,3 +373,82 @@ mostly an excuse to nudge you into doing it.
 The full reproducer index, with commit links and test paths, is at
 [`docs/research/SILENT_ALPHAZERO_FAILURES.md`](./SILENT_ALPHAZERO_FAILURES.md)
 in the RingRift repository.
+
+## Evidence index
+
+Every bug above is tied to a public commit and a regression test in the
+RingRift repository:
+
+| Bug | Fix commit                                                            | Regression test                                                                               |
+| --- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1   | [`2a659360f`](https://github.com/synaptent/RingRift/commit/2a659360f) | `tests/unit/ai/test_neural_net_architectures.py::TestHexNeuralNet_v4`                         |
+| 2   | [`10ee06181`](https://github.com/synaptent/RingRift/commit/10ee06181) | `tests/unit/scripts/test_minimal_alphazero_loop.py`                                           |
+| 3   | [`19ceb1ceb`](https://github.com/synaptent/RingRift/commit/19ceb1ceb) | `tests/unit/scripts/test_transfer_2p_to_4p.py`                                                |
+| 4   | [`c7aa48f92`](https://github.com/synaptent/RingRift/commit/c7aa48f92) | `tests/unit/ai/test_v5_heavy_film_init.py`                                                    |
+| 5   | [`4e1b7e20e`](https://github.com/synaptent/RingRift/commit/4e1b7e20e) | `tests/unit/scripts/test_model_quality_gate.py`                                               |
+| 6   | [`fe3497e8d`](https://github.com/synaptent/RingRift/commit/fe3497e8d) | `tests/unit/training/test_train_dataset_inference.py`                                         |
+| 7   | [`fe3497e8d`](https://github.com/synaptent/RingRift/commit/fe3497e8d) | `test_minimal_alphazero_loop.py::test_loop_halts_after_training_failure_before_next_selfplay` |
+| 8   | [`3a482e0bd`](https://github.com/synaptent/RingRift/commit/3a482e0bd) | `tests/test_multi_player_value_loss.py`, `tests/unit/ai/test_neural_losses.py`                |
+
+## Appendix A: A portable detection-gate checklist
+
+These gates are independent of RingRift. If you run any AlphaZero-style
+pipeline, each item below is a cheap test that catches an entire class of
+silent failure. "At init" means on a freshly constructed model with random
+inputs; none of these require trained weights or GPUs.
+
+**Model contract**
+
+- [ ] For every named head in `__init__`, a unit test asserts the forward
+      pass returns it, for every supported call signature
+      (e.g. `return_features=True/False`). _(catches Bug 1)_
+- [ ] At init, `value.abs().max() < 0.5` and `policy.std() < 2.0` on random
+      input — saturation-at-birth smoke test. _(catches Bug 4)_
+- [ ] For every conditioning path (FiLM, attention bias, auxiliary inputs):
+      perturb only that input and require a nonzero output delta —
+      sensitivity test. _(catches dead-conditioning variants of Bug 4)_
+- [ ] Constructed model metadata (player count, feature version, channel
+      count) is validated against the experiment config immediately after
+      construction, before any data is spent. _(catches Bug 6)_
+
+**Training contract**
+
+- [ ] Any wrapper that builds a CLI/subprocess command for an inner training
+      script has a unit test capturing the exact emitted command and
+      asserting the loss-activation flags the experiment requires.
+      _(catches Bug 2)_
+- [ ] The active loss terms (and their weights) are written into the metrics
+      stream every iteration, so the actual optimization target is
+      recoverable from artifacts. _(makes Bug 2 visible post-hoc)_
+- [ ] A failed training step halts the loop before the next self-play
+      iteration begins. Liveness is not health. _(catches Bug 7)_
+
+**Checkpoint / migration contract**
+
+- [ ] Every checkpoint-transformation script reports each tensor family it
+      touched, fails loudly if an expected family is absent, and
+      strict-loads its output into the target architecture before saving.
+      _(catches Bug 3)_
+- [ ] Checkpoints saved before an initialization fix are treated as
+      poisoned and excluded from reuse as starting weights.
+      _(containment for Bug 4)_
+
+**Data contract**
+
+- [ ] Losses compare active player domains, not raw tensor widths; padding
+      slots are exercised in a dedicated unit test. _(catches Bug 8)_
+
+**Evaluation contract**
+
+- [ ] Promotion requires strength AND behavioral sanity, recorded as
+      separate fields in the metrics stream.
+- [ ] Every quality gate reports its own sample coverage (games tracked /
+      games counted); partial-coverage gates degrade to non-critical.
+      _(catches Bug 5)_
+- [ ] Evaluation resume persists gate-internal state, not just outcome
+      counts. _(catches Bug 5 at the root)_
+
+If you adopt only one habit from this list: unit-test the exact subprocess
+commands your orchestration layer emits. It is the cheapest gate here, and
+in our experience the boundary between "outer loop config" and "inner
+training process" is where the most expensive lies live.
