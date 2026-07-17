@@ -132,8 +132,8 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
 ## Current Live Evidence
 
 - `origin/main`: `a243b4e5ad1e7359052361a15a6be64c978d2746`
-- E10 draft PR #112: `https://github.com/synaptent/RingRift/pull/112`, head
-  `0c2600030cbb865f42976500711d02f43b96916c`
+- E10 draft PR #112: `https://github.com/synaptent/RingRift/pull/112`; initial Batch 0 commit
+  `0c2600030cbb865f42976500711d02f43b96916c` (always verify the live head before writing)
 - PR #111: open at `f74e0cff0cd891ac08cf79ed921ada7477315939`, currently blocked
 - Known PR #111 failures: stale reviewer manifest, broken lcov comment action, Node production
   audit, and Python dependency audit
