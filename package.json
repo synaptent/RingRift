@@ -5,6 +5,7 @@
   "main": "dist/server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:e2e": "concurrently \"TS_NODE_PROJECT=tsconfig.server.json ts-node src/server/index.ts\" \"npm run dev:client\"",
     "dev:server": "TS_NODE_PROJECT=tsconfig.server.json nodemon --exec ts-node src/server/index.ts",
     "dev:client": "vite",
     "play": "bash scripts/play_local_demo.sh",

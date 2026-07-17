@@ -215,7 +215,7 @@ export async function createGame(page: Page, options: CreateGameOptions = {}): P
   const { boardType = 'square8', vsAI = true, isRated } = options;
 
   // Navigate to lobby
-  await page.getByRole('link', { name: /lobby/i }).click();
+  await page.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page.waitForURL('**/lobby', { timeout: 15_000 });
 
   // Verify lobby page loaded
