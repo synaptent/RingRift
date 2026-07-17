@@ -26,7 +26,7 @@ export class RegisterPage {
     this.page = page;
 
     // Initialize locators
-    this.heading = page.getByRole('heading', { name: /create an account/i });
+    this.heading = page.getByRole('heading', { name: /create your account/i });
     this.emailInput = page.getByLabel('Email');
     this.usernameInput = page.getByLabel('Username');
     this.passwordInput = page.getByLabel('Password', { exact: true });

@@ -112,7 +112,7 @@ export async function registerUser(
 ): Promise<void> {
   await waitForApiReady(page);
   await page.goto('/register');
-  await expect(page.getByRole('heading', { name: /create an account/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /create your account/i })).toBeVisible();
 
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Username').fill(username);

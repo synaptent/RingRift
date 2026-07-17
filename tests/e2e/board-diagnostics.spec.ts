@@ -8,16 +8,18 @@
  * Or debug: npx playwright test tests/e2e/board-diagnostics.spec.ts --debug
  */
 
+/* eslint-disable no-console -- This diagnostic spec intentionally writes human-readable reports. */
+
 import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // Board types and their direct URL presets
 const BOARD_CONFIGS = [
-  { type: 'square8', preset: 'human-vs-ai', label: '8×8 Compact' },
-  { type: 'square19', preset: 'square19-human-vs-ai', label: '19×19 Classic' },
-  { type: 'hex8', preset: 'hex8-vs-ai', label: 'Hex 8 Compact' },
-  { type: 'hexagonal', preset: 'hex-challenge', label: 'Full Hexagonal' },
+  { type: 'square8', preset: 'sq8-1h-1ai', label: '8×8 Compact' },
+  { type: 'square19', preset: 'sq19-1h-1ai', label: '19×19 Classic' },
+  { type: 'hex8', preset: 'hex8-1h-1ai', label: 'Hex 8 Compact' },
+  { type: 'hexagonal', preset: 'hex24-1h-1ai', label: 'Full Hexagonal' },
 ] as const;
 type BoardType = (typeof BOARD_CONFIGS)[number]['type'];
 
