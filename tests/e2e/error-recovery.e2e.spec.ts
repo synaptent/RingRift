@@ -260,7 +260,7 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
     //
     // We expect a process_line / choose_line_option move to appear after
     // the timeout; assert that at least one of these appears in the log.
-    await gamePage.assertMoveLogged(/process_line|choose_line_option/i);
+    await gamePage.assertMoveLogged(/processed \d+ lines?|line processing/i);
 
     // Additionally, assert that the game has progressed out of the original
     // decision snapshot: either a new phase or a different current player.
