@@ -189,10 +189,15 @@ export function applyDecisionPhaseFixtureIfNeeded(
 }
 
 /**
- * Seed a minimal overlength line configuration and enter line_processing
+ * Seed a minimal exact-length line configuration and enter line_processing
  * for Player 1. This mirrors the geometry used in orchestrator-focused
  * tests but is intentionally small and self-contained so it can safely
  * run at runtime in test/dev environments.
+ *
+ * An overlength line requires a second choose_line_option decision after
+ * process_line. The timeout fixture exercises line-order auto-selection, so
+ * an exact-length line gives that decision a terminal, canonical resolution
+ * instead of immediately presenting the same line-order surface again.
  */
 function seedLineProcessingDecisionPhase(engine: GameEngine): void {
   const engineInternal = engine as unknown as GameEngineInternal;
@@ -216,10 +221,10 @@ function seedLineProcessingDecisionPhase(engine: GameEngine): void {
   // elevation on square8 (3 → 4). This matches the enumeration logic in
   // enumerateChooseLineRewardMoves.
   const requiredLength = getEffectiveLineLengthThreshold(state.boardType, numPlayers);
-  const lineLength = requiredLength + 1;
+  const lineLength = requiredLength;
   const rowIndex = 0;
 
-  // Seed a simple horizontal overlength marker line for Player 1.
+  // Seed a simple horizontal exact-length marker line for Player 1.
   for (let x = 0; x < boardSize; x += 1) {
     const key = positionToString({ x, y: rowIndex } as Position);
     board.markers.delete(key);

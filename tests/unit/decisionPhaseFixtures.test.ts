@@ -7,10 +7,15 @@ jest.mock('../../src/server/database/connection', () => ({
 }));
 
 jest.mock('../../src/server/utils/logger', () => ({
-  logger: { info: jest.fn(), warn: jest.fn() },
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { createDecisionPhaseFixtureGame } from '../../src/server/game/testFixtures/decisionPhaseFixtures';
+import { GameEngine } from '../../src/server/game/GameEngine';
+import {
+  applyDecisionPhaseFixtureIfNeeded,
+  createDecisionPhaseFixtureGame,
+} from '../../src/server/game/testFixtures/decisionPhaseFixtures';
+import { BOARD_CONFIGS, type Player, type TimeControl } from '../../src/shared/types/game';
 
 describe('decision-phase fixture persistence', () => {
   beforeEach(() => {
@@ -35,5 +40,38 @@ describe('decision-phase fixture persistence', () => {
         player2Id: 'user-456',
       }),
     });
+  });
+
+  it('lets the canonical adapter resolve the line timeout fixture in one move', async () => {
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+    const players: Player[] = [1, 2].map((playerNumber) => ({
+      id: `player-${playerNumber}`,
+      username: `Player ${playerNumber}`,
+      playerNumber,
+      type: 'human',
+      isReady: true,
+      timeRemaining: 600_000,
+      ringsInHand: BOARD_CONFIGS.square8.ringsPerPlayer,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    }));
+    const engine = new GameEngine('fixture-game-123', 'square8', players, timeControl, false);
+
+    expect(
+      applyDecisionPhaseFixtureIfNeeded(engine, {
+        fixture: { kind: 'decision_phase_fixture', scenario: 'line_processing', version: 1 },
+      })
+    ).toBe(true);
+
+    const processLineMove = engine.getValidMoves(1).find((move) => move.type === 'process_line');
+    expect(processLineMove).toBeDefined();
+    if (!processLineMove) {
+      throw new Error('Expected the line fixture to expose a process_line move');
+    }
+
+    const result = await engine.makeMoveById(1, processLineMove.id);
+
+    expect(result.success).toBe(true);
+    expect(engine.getGameState().currentPhase).not.toBe('line_processing');
   });
 });
