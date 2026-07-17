@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "as_of": "2026-05-12",
+  "as_of": "2026-07-17",
   "purpose": "Machine-readable boundary between the supported RingRift AI/training surface and historical, diagnostic, or experimental tooling. This keeps outside review focused on code paths that are current and defended by tests.",
   "supported_ai_surfaces": [
     {

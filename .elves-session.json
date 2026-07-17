@@ -1,12 +1,13 @@
 {
   "session_id": "elves-2026-07-17-ringrift-e10-ci-trust",
   "version": "1.12.0",
-  "status": "staged",
+  "status": "in_progress",
   "started_at": "2026-07-17T10:36:00-05:00",
+  "launched_at": "2026-07-17T12:20:00-05:00",
   "branch": "codex/e10-ci-trust",
   "base_branch": "origin/main",
   "base_commit": "a243b4e5ad1e7359052361a15a6be64c978d2746",
-  "collision_tripwire": "a243b4e5ad1e7359052361a15a6be64c978d2746",
+  "collision_tripwire": "d95d5659ac5bfc695153279dc128d9a5a9912355",
   "worktree": "/Users/armand/.codex/worktrees/ringrift-e10-ci-trust/RingRift",
   "merge_policy": "user-merges",
   "plan_path": "docs/planning/RINGRIFT_THREE_WAVE_QUALITY_UTILITY_PLAN_2026-07.md",
@@ -17,10 +18,10 @@
   "pr_number": 112,
   "staging_commit": "0c2600030cbb865f42976500711d02f43b96916c",
   "continuation_guard": {
-    "remaining_batches": 3,
-    "stop_allowed": true,
+    "remaining_batches": 2,
+    "stop_allowed": false,
     "checkpoint_is_stop": false,
-    "next_required_action": "Wait for the fresh launch call; then set stop_allowed to false, create elves/pre-batch-1, and start Batch 1."
+    "next_required_action": "Commit and push completed Batch 1, re-read the survival guide, inspect PR feedback, then start Batch 2 dependency audit credibility work."
   },
   "test_baseline": {
     "passed": 11777,
@@ -52,24 +53,24 @@
   "current_batch": {
     "id": 1,
     "name": "Workflow and reviewer policy",
-    "status": "pending"
+    "status": "completed_pending_commit"
   },
   "batches": [
     {
       "id": 1,
       "name": "Workflow and reviewer policy",
-      "status": "pending",
+      "status": "completed_pending_commit",
       "commit": null,
-      "rollback_tag": "elves/pre-batch-1",
-      "started_at": null,
-      "completed_at": null
+      "rollback_tag": "elves/e10-ci-trust/pre-batch-1",
+      "started_at": "2026-07-17T12:20:00-05:00",
+      "completed_at": "2026-07-17T12:38:00-05:00"
     },
     {
       "id": 2,
       "name": "Dependency audit credibility",
       "status": "pending",
       "commit": null,
-      "rollback_tag": "elves/pre-batch-2",
+      "rollback_tag": "elves/e10-ci-trust/pre-batch-2",
       "started_at": null,
       "completed_at": null
     },
@@ -78,7 +79,7 @@
       "name": "E10 final readiness",
       "status": "pending",
       "commit": null,
-      "rollback_tag": "elves/pre-batch-3",
+      "rollback_tag": "elves/e10-ci-trust/pre-batch-3",
       "started_at": null,
       "completed_at": null
     }

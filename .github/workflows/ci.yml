@@ -111,14 +111,6 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
 
-      - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
-        uses: romeovs/lcov-reporter-action@v0.3.1
-        with:
-          lcov-file: ./coverage/lcov.info
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          delete-old-comments: true
-
   ts-rules-engine:
     name: TS Rules Engine (rules-level)
     runs-on: ubuntu-latest

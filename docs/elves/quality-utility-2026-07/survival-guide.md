@@ -12,20 +12,19 @@ the documentation doors, or the puzzle UI in this run.
 ## Run Control
 
 - **Run mode:** finite
-- **Stop policy:** blocker-only after launch; staging handoff is a required stop boundary
+- **Stop policy:** blocker-only
 - **User intent:** "PLEASE IMPLEMENT THIS PLAN" followed by "proceed"
 - **Checkpoint due by:** none
 - **Checkpoint semantics:** none
 - **May continue after checkpoint:** yes
-- **Actual stop conditions:** staging handoff before launch; after launch, all three E10 batches
-  complete, explicit user stop, or a genuine blocker with no safe workaround
+- **Actual stop conditions:** all three E10 batches complete and readiness is clean, explicit user
+  stop, or a genuine blocker with no safe workaround
 - **Workspace ownership:** dedicated worktree at
   `/Users/armand/.codex/worktrees/ringrift-e10-ci-trust/RingRift`
 - **Branch tip at start (collision tripwire):**
   `a243b4e5ad1e7359052361a15a6be64c978d2746`
 - **Merge policy:** user-merges; the agent never merges
-- **Final-response policy:** allowed during staging handoff; disallowed after launch until the Stop
-  Gate permits it
+- **Final-response policy:** disallowed until the Stop Gate permits it
 - **Batch completion rule:** update execution log, update this guide, commit, and push before the
   next batch
 - **Re-read rule:** immediately after every commit and push, re-read this guide before any other
@@ -41,16 +40,16 @@ the documentation doors, or the puzzle UI in this run.
 - **Time budget:** approximately 8 hours after launch; extend only through safe completion of the
   active atomic validation/fix cycle
 - **Average batch time so far:** not started
-- **Batches remaining:** 3 of 3
+- **Batches remaining:** 2 of 3
 
 ## Stop Gate
 
-- **Planned batches remaining:** 3
-- **Stop allowed right now:** yes
-- **Why:** Elves requires staging and unattended execution to be separate calls; this call stops
-  only after launch readiness and a paste-ready launch prompt
-- **Next required action:** on a fresh launch call, set this gate to `no`, create
-  `elves/pre-batch-1`, and start Batch 1
+- **Planned batches remaining:** 2
+- **Stop allowed right now:** no
+- **Why:** Batch 1 is complete but two E10 batches remain and dependency work can proceed despite
+  the separately recorded result-evidence blocker
+- **Next required action:** commit and push Batch 1, re-read this guide, inspect PR feedback, then
+  start Batch 2 dependency audit credibility work
 
 ## Effort Standard
 
@@ -103,15 +102,14 @@ the documentation doors, or the puzzle UI in this run.
 
 ## Current Phase
 
-**Status:** Launch-ready
+**Status:** In progress
 
-**Active batch:** none; Batch 1 is queued
+**Active batch:** Batch 1 completed; commit/push pending
 
-**What was just finished:** Batch 0 was committed and pushed, preflight evidence was captured, and
-draft PR #112 was opened from the isolated branch
+**What was just finished:** Batch 1 implementation, focused and supported-path validation, and an
+independent review/remediation cycle
 
-**Single next action:** hand the user the fresh-call launch prompt and wait for that launch before
-starting Batch 1
+**Single next action:** commit and push Batch 1, re-read this guide, then begin Batch 2
 
 ## Active Compute
 
@@ -143,6 +141,11 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
   to zero
 - Python contracts baseline: 4,960 pass and one supported-doc-link test fails because
   `docs/RESULTS.md` points to missing `docs/research/QUALITY_GATE_RESUME_BUG.md`
+- Batch 1 repaired the supported-doc link, re-attested reviewer and AI surface manifests, added a
+  fail-closed workflow policy registry, and passed its final independent review.
+- The full supported-path command now fails only on the pre-existing May 12 public result snapshot
+  being 66 days old against the 30-day evidence rule. No current local metrics are available, so
+  the run must not redate the evidence or weaken the gate.
 - GitHub auth: active `scarmani` can read but push is denied with 403; configured secondary
   `an0mium` has `ADMIN`. Use a scoped account switch for push/PR operations and restore
   `scarmani` immediately afterward
@@ -153,23 +156,26 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
 
 ## Next Exact Batch
 
-**Batch:** 1: Workflow and reviewer policy
+**Batch:** 2: Dependency audit credibility
 
 **Scope:**
 
-- Remove only the failing lcov comment action while preserving coverage and Codecov semantics.
-- Refresh the reviewer manifest without changing the 45-day validator constant.
-- Add the workflow-policy registry and fail-closed validator/tests.
+- Apply compatible Node dependency upgrades until the production high-severity audit passes.
+- Apply compatible Python dependency upgrades, retaining only evidence-backed, unfixable findings
+  in an expiring machine-readable exception ledger.
+- Add a Python audit wrapper that rejects unknown, fixable, malformed, stale, future-dated, or
+  expired exceptions.
 
 **Acceptance criteria:**
 
-- [ ] Every workflow YAML is classified exactly once as required, scheduled, or informational.
-- [ ] Workflow and reviewer-surface validators pass.
-- [ ] Coverage remains gating and Codecov remains non-gating.
+- [ ] `npm audit --omit=dev --audit-level=high` passes.
+- [ ] Python audit passes with no unknown or fixable advisory exceptions.
+- [ ] Wrapper fixtures cover valid and invalid exception-ledger states.
 
-**Risk:** confusing descriptive workflow policy with externally configured branch protection.
+**Risk:** dependency updates cross framework/model-library versions and may expose runtime or wheel
+compatibility failures.
 
-**Rollback tag:** `elves/pre-batch-1` (create before implementation starts)
+**Rollback tag:** `elves/e10-ci-trust/pre-batch-2` (create and push after the Batch 1 re-read)
 
 ## Post-Checkpoint Control Loop
 
@@ -210,7 +216,8 @@ notification: pr-comment
 
 ## Rollback and Safety Rules
 
-1. Create and push `elves/pre-batch-N` before each implementation batch.
+1. Create and push `elves/e10-ci-trust/pre-batch-N` before each implementation batch; generic
+   `elves/pre-batch-N` tags already belong to older runs.
 2. Never force-push or rebase.
 3. Stage explicit files only; never use blanket `git add -A`.
 4. Recover from the last good rollback tag on a new recovery branch rather than rewriting history.
