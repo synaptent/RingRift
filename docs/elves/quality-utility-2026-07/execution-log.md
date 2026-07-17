@@ -5,14 +5,111 @@ maintained in the survival guide and `.elves-session.json`.
 
 ## Run Digest
 
-- **Last updated:** 2026-07-17 12:38 CDT
+- **Last updated:** 2026-07-17 13:24 CDT
 - **Current phase:** In progress
-- **Active batch:** Batch 1 completed; commit/push pending
-- **Last completed batch:** Batch 1: Workflow and reviewer policy
-- **Next exact batch:** Batch 2: Dependency audit credibility
+- **Active batch:** Batch 2 completion boundary
+- **Last completed batch:** Batch 2: Dependency audit credibility
+- **Next exact batch:** Batch 3: E10 final readiness
 - **Active PR:** #112 (draft)
 - **Docs promoted this run:** none
 - **Latest Elves Report:** not generated
+
+## Batch 2 Completion: 2026-07-17 13:24 CDT
+
+**Delivered:**
+
+- Upgraded compatible production Node dependencies and transitive resolutions; the production
+  audit now reports zero vulnerabilities without reducing its high-severity gate.
+- Raised the supported Node runtime floor to the actual Prisma/Vite-compatible values and kept the
+  root Docker build aligned. The Docker build now copies the bundle-secret verifier invoked by
+  `npm run build`.
+- Upgraded the default Python runtime to FastAPI 0.139.2, Starlette 1.3.1, aiohttp 3.14.1,
+  Torch 2.13.0, TorchVision 0.28.0, and msgpack 1.2.1 across its active Docker surfaces. The
+  legacy Intel requirements remain unchanged because upgrading that separate optional stack
+  increased its advisory count.
+- Added `check_python_dependency_audit.py`, a strict machine-readable exception ledger, 27 policy
+  fixtures, CI wiring, and human-readable security guidance.
+- Recorded the sole unfixable transitive `ecdsa` advisory as an exception expiring 2026-08-31.
+  Dedicated issue #113 requires replacing or isolating `p2pd`, rerunning the wrapper, and removing
+  the exception before closure.
+
+**Proof:**
+
+- Clean install: `npm ci`; `npm audit --omit=dev --audit-level=high`: zero vulnerabilities.
+- Node runtime proof: lint with the same 11 baseline warnings, typecheck, build and bundle-secret
+  scan, 174 routing/API/metrics/reconnection tests, 19 websocket tests (11 pass, 8 skip), and
+  direct AWS/Sentry/Swagger runtime imports all pass.
+- Python clean-environment proof: full dependency installation under Python 3.13 arm64; FastAPI
+  health, aiohttp/msgpack, Torch CPU training/save-load, TorchVision NMS, and 170 focused tests
+  pass.
+- Python contracts: 5,004 pass. Commit-hook contract vectors: 61 pass. Parity healthcheck: 43
+  cases with zero mismatches.
+- Audit policy: Ruff passes, 27 focused wrapper tests pass, live audit passes with exactly one
+  finding and one temporary exception, and 42 combined wrapper/workflow/link contracts pass.
+- Workflow, reviewer-surface, and AI-surface validators pass; `git diff --check` passes.
+- Independent Node/Docker, Python/audit, and workflow/CI re-reviews are clean after remediation.
+
+**Visible external blocker:** the May 12 public results evidence remains stale against the 30-day
+supported-path rule. This batch does not alter public result claims or weaken that required gate.
+
+**Acceptance:** all Batch 2 criteria pass. Final repository-wide validation and live PR readiness
+inspection continue in Batch 3.
+
+## Batch 2 Contract: 2026-07-17 12:41 CDT
+
+**Behaviors:**
+
+- The Node production audit passes at high severity after compatible dependency upgrades; the
+  audit command and severity threshold remain unchanged.
+- The Python audit runs through a repository wrapper that accepts only well-formed pip-audit JSON,
+  rejects tool/resolution errors, and fails on every unknown or fixable advisory.
+- A Python advisory can be excepted only through a machine-readable ledger entry with an exact
+  advisory/package match, non-empty rationale, tracking issue, approval date, and expiry no more
+  than 45 days later.
+- Expired, future-dated, overlong, duplicate, malformed, stale/unused, or fixable-advisory
+  exceptions fail closed.
+
+**Build on:**
+
+- Upgrade the direct Node dependencies identified by the read-only audit scout and let npm refresh
+  safe transitive versions before considering any narrow override.
+- Use pip-audit's JSON output as the wrapper input and keep the wrapper pure enough to exercise
+  ledger/audit combinations through focused fixtures without network access.
+- Mirror Python runtime pins across the main, Intel, and Docker requirement surfaces so CI and
+  deployed images do not silently diverge.
+- Replace the direct CI pip-audit invocation with the wrapper; do not alter the high-severity Node
+  audit command.
+
+**Acceptance criteria:**
+
+- [ ] `npm audit --omit=dev --audit-level=high` exits zero after a clean `npm ci`.
+- [ ] Python candidate dependencies audit clean except for explicitly documented, unfixable
+      `ecdsa` advisory `PYSEC-2026-1325`.
+- [ ] Wrapper unit tests cover clean, unknown, alias, valid exception, expiration/date limits,
+      malformed/duplicate/stale exceptions, fixable findings, and pip-audit failures.
+- [ ] Focused FastAPI/health, CPU Torch import/model, lint/typecheck/build, and dependency-surface
+      checks pass.
+
+**Blast radius:**
+
+- `package.json`/lockfile: production dependency refresh across AWS, Sentry, HTTP, routing,
+  logging, OpenAPI, UUID, and safe transitive packages. Medium runtime risk.
+- Python requirements/Docker pins: FastAPI/Starlette and Torch/TorchVision upgrades cross material
+  framework/library versions. High compatibility risk requiring focused runtime proof.
+- Audit wrapper/ledger and CI wiring: security policy behavior changes fail closed. Medium CI risk.
+- No canonical rules, parity contracts, training-loop logic, live data, or public result claims are
+  in scope.
+
+**Pre-implementation survey:**
+
+- Node audit scout reproduced 23 production findings (8 high, 15 moderate) and identified safe
+  direct-version floors plus transitive versions available within existing ranges.
+- Python audit scout reproduced 24 findings across five packages. A live candidate resolution
+  cleared all but the unfixable transitive `ecdsa` advisory from `p2pd`.
+- The candidate Python set is FastAPI 0.139.2, Starlette 1.3.1, aiohttp 3.14.1, Torch 2.13.0,
+  TorchVision 0.28.0, and msgpack 1.2.1; TorchVision declares an exact Torch 2.13.0 requirement.
+- Scoped rollback tag `elves/e10-ci-trust/pre-batch-2` was created and pushed at Batch 1 head
+  `72206400acdc083921ea49719315ac7368058cdb`.
 
 ## Batch 1 Completion: 2026-07-17 12:38 CDT
 

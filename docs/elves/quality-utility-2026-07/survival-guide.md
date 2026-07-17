@@ -39,17 +39,17 @@ the documentation doors, or the puzzle UI in this run.
 - **Checkpoint expectation:** no checkpoint; produce a review-ready E10 prerequisite PR
 - **Time budget:** approximately 8 hours after launch; extend only through safe completion of the
   active atomic validation/fix cycle
-- **Average batch time so far:** not started
-- **Batches remaining:** 2 of 3
+- **Average batch time so far:** approximately 32 minutes
+- **Batches remaining:** 1 of 3
 
 ## Stop Gate
 
-- **Planned batches remaining:** 2
+- **Planned batches remaining:** 1
 - **Stop allowed right now:** no
-- **Why:** Batch 1 is complete but two E10 batches remain and dependency work can proceed despite
-  the separately recorded result-evidence blocker
-- **Next required action:** commit and push Batch 1, re-read this guide, inspect PR feedback, then
-  start Batch 2 dependency audit credibility work
+- **Why:** Batch 2 implementation and review are complete, but it still must be committed and
+  pushed before the final readiness batch begins
+- **Next required action:** commit and push Batch 2, re-read this guide, inspect live PR state,
+  then execute Batch 3 full validation, report, and run-scaffolding cleanup
 
 ## Effort Standard
 
@@ -104,12 +104,12 @@ the documentation doors, or the puzzle UI in this run.
 
 **Status:** In progress
 
-**Active batch:** Batch 1 completed; commit/push pending
+**Active batch:** Batch 2: Dependency audit credibility (completion boundary)
 
-**What was just finished:** Batch 1 implementation, focused and supported-path validation, and an
-independent review/remediation cycle
+**What was just finished:** compatible Node/Python upgrades, the fail-closed Python audit wrapper
+and exception ledger, clean-environment runtime/contract proof, and clean final independent review
 
-**Single next action:** commit and push Batch 1, re-read this guide, then begin Batch 2
+**Single next action:** commit and push Batch 2, then immediately re-read this guide
 
 ## Active Compute
 
@@ -143,9 +143,18 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
   `docs/RESULTS.md` points to missing `docs/research/QUALITY_GATE_RESUME_BUG.md`
 - Batch 1 repaired the supported-doc link, re-attested reviewer and AI surface manifests, added a
   fail-closed workflow policy registry, and passed its final independent review.
+- Batch 1 commit `72206400acdc083921ea49719315ac7368058cdb` is pushed and matches PR #112's
+  live head; no PR comments or reviews were present at the Batch 2 boundary.
 - The full supported-path command now fails only on the pre-existing May 12 public result snapshot
   being 66 days old against the 30-day evidence rule. No current local metrics are available, so
   the run must not redate the evidence or weaken the gate.
+- Batch 2 now has a zero-finding Node production audit and a Python audit that reports one
+  unfixable `ecdsa` finding covered by an exception approved 2026-07-17 and expiring 2026-08-31.
+  Dedicated issue #113 tracks removal before expiry.
+- Batch 2 clean-environment proof includes 5,004 Python contracts, 170 focused FastAPI/Torch tests,
+  61 Python contract-vector tests, 43 parity-healthcheck cases with zero mismatches, lint,
+  typecheck, build, focused Node runtime suites, and clean independent Node/Python/workflow
+  re-reviews.
 - GitHub auth: active `scarmani` can read but push is denied with 403; configured secondary
   `an0mium` has `ADMIN`. Use a scoped account switch for push/PR operations and restore
   `scarmani` immediately afterward
@@ -156,26 +165,28 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
 
 ## Next Exact Batch
 
-**Batch:** 2: Dependency audit credibility
+**Batch:** 3: E10 final readiness
 
 **Scope:**
 
-- Apply compatible Node dependency upgrades until the production high-severity audit passes.
-- Apply compatible Python dependency upgrades, retaining only evidence-backed, unfixable findings
-  in an expiring machine-readable exception ledger.
-- Add a Python audit wrapper that rejects unknown, fixable, malformed, stale, future-dated, or
-  expired exceptions.
+- Run the complete Node, Python, parity, supported-path, clean-environment, puzzle-asset, and
+  Docker-backed CI validation surface in proportion to repository risk.
+- Inspect and remediate live PR checks and review feedback without weakening the truthful stale
+  result-evidence gate.
+- Generate the finite-run HTML report, remove `.elves-session.json` and `docs/elves/**` from the
+  final PR surface, and leave PR #112 review-ready or documented at the genuine external blocker.
 
 **Acceptance criteria:**
 
-- [ ] `npm audit --omit=dev --audit-level=high` passes.
-- [ ] Python audit passes with no unknown or fixable advisory exceptions.
-- [ ] Wrapper fixtures cover valid and invalid exception-ledger states.
+- [ ] All intended E10 checks pass except any independently verified external-evidence blocker.
+- [ ] Final independent readiness review is clean and live PR feedback is resolved.
+- [ ] Elves report exists outside the repository and run scaffolding is absent from the PR diff.
 
-**Risk:** dependency updates cross framework/model-library versions and may expose runtime or wheel
-compatibility failures.
+**Risk:** the required supported-path gate may remain red because current public result evidence is
+not available locally; the run must report this honestly rather than fabricate freshness.
 
-**Rollback tag:** `elves/e10-ci-trust/pre-batch-2` (create and push after the Batch 1 re-read)
+**Rollback tag:** `elves/e10-ci-trust/pre-batch-3` (create and push at the Batch 2 head after the
+required commit/push/re-read boundary)
 
 ## Post-Checkpoint Control Loop
 

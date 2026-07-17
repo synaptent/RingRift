@@ -702,12 +702,16 @@ jobs:
       - name: Install pip-audit
         run: python -m pip install 'pip-audit>=2.7.0,<3.0.0'
 
+      - name: Test Python dependency audit policy
+        working-directory: ai-service
+        run: PYTHONPATH=. python -m pytest tests/contracts/test_python_dependency_audit.py -q
+
       - name: Run pip-audit against ai-service requirements
         working-directory: ai-service
         run: |
           # Canonical invocation for local runs:
-          #   cd ai-service && pip-audit -r requirements.txt --progress-spinner off
-          pip-audit -r requirements.txt --progress-spinner off
+          #   cd ai-service && python scripts/check_python_dependency_audit.py
+          python scripts/check_python_dependency_audit.py
 
       - name: Install CycloneDX SBOM generator
         run: python -m pip install cyclonedx-bom

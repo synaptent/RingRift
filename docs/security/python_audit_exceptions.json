@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+      "advisory_id": "PYSEC-2026-1325",
+      "package": "ecdsa",
+      "rationale": "Transitive dependency of p2pd 5.0; upstream publishes no fixed release. Replacement or isolation is tracked.",
+      "tracking_issue": "https://github.com/synaptent/RingRift/issues/113",
+      "approved_on": "2026-07-17",
+      "expires_on": "2026-08-31"
+    }
+  ]
+}

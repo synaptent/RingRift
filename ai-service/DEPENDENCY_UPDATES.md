@@ -10,6 +10,20 @@
 
 Updated all dependencies to be compatible with **NumPy 2.2.1** and **Python 3.13**.
 
+### E10 audit credibility refresh (2026-07-17)
+
+The E10 CI-trust refresh moves the audited runtime pins to FastAPI `0.139.2`, Starlette `1.3.1`,
+aiohttp `3.14.1`, Torch `2.13.0`, TorchVision `0.28.0`, and msgpack `1.2.1`. The synchronized Torch
+pair is mirrored in the main requirements and hard-coded Docker pins. The pre-existing Intel
+macOS requirements are unchanged by E10 because PyPI publishes no x86_64 macOS wheels for the
+fixed shared runtime pair; that local-only surface cannot claim audit parity.
+
+Python CI now runs `scripts/check_python_dependency_audit.py` instead of invoking pip-audit
+directly. The wrapper rejects unknown or fixable findings and validates the expiring exception
+ledger documented in [`../docs/security/PYTHON_AUDIT_EXCEPTIONS.md`](../docs/security/PYTHON_AUDIT_EXCEPTIONS.md).
+The only temporary exception at this refresh is the unfixable transitive `ecdsa` advisory
+`PYSEC-2026-1325`; it expires on 2026-08-31.
+
 ### Wave 3 status snapshot (2025-11-29)
 
 - **Wave 3‑A – Test/tooling stack:** Completed and validated. `pytest`, `pytest-asyncio`,

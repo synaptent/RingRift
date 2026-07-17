@@ -278,13 +278,13 @@ Location: `.github/workflows/ci.yml`
 
 ### Node.js Version
 
-Currently using Node.js 18 (LTS). Update in workflow file if needed:
+Workflows use Node.js 20. The package engine requires Node.js 20.19+, 22.12+, or 24+:
 
 ```yaml
 - name: Setup Node.js
   uses: actions/setup-node@v4
   with:
-    node-version: '18'
+    node-version: '20'
 ```
 
 ### Caching
@@ -540,7 +540,7 @@ npm run validate:monitoring
 
 | File                                       | Tool Used | Checks                          |
 | ------------------------------------------ | --------- | ------------------------------- |
-| `monitoring/prometheus.yml`     | promtool  | Config syntax, scrape configs   |
+| `monitoring/prometheus.yml`                | promtool  | Config syntax, scrape configs   |
 | `monitoring/prometheus/alerts.yml`         | promtool  | PromQL syntax, rule format      |
 | `monitoring/alertmanager/alertmanager.yml` | amtool    | Routing, receivers, inhibitions |
 

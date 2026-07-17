@@ -6,13 +6,14 @@
 # environment, and documentation remain aligned.
 
 # Core FastAPI dependencies (Python 3.13 compatible)
-fastapi==0.122.0
+fastapi==0.139.2
+starlette==1.3.1
 uvicorn[standard]==0.38.0
 pydantic==2.10.5
 
 # Utilities
 python-dotenv==1.2.2
-aiohttp==3.13.4
+aiohttp==3.14.1
 aiohttp-socks==0.10.1  # SOCKS proxy for userspace Tailscale in containers (Vast.ai, RunPod)
 redis==7.1.0
 httpx==0.28.1
@@ -45,10 +46,10 @@ scikit-learn==1.6.1
 
 # Deep Learning for Self-Improving AI
 # PyTorch - Neural networks for position evaluation and policy learning
-# Note: torchvision 0.21.0 requires torch==2.9.1; this pair is validated for
-# Python 3.10/3.11 and numpy 2.2.x via Wave 3-D (dl-torch) guardrails.
-torch==2.9.1
-torchvision==0.24.1
+# TorchVision 0.28.0 declares an exact torch 2.13.0 requirement. Keep this pair
+# synchronized and validate it with the dl-torch guardrails after either pin moves.
+torch==2.13.0
+torchvision==0.28.0
 
 # TensorBoard - Training monitoring and visualization
 tensorboard==2.20.0
@@ -81,7 +82,7 @@ matplotlib==3.10.0
 # JIT compilation can be added later when numba supports Python 3.13
 
 # Memory optimization for experience replay
-msgpack==1.1.2
+msgpack==1.2.1
 lz4==4.4.5
 
 # Progress bars and monitoring

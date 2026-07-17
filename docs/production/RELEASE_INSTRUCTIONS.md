@@ -76,7 +76,7 @@ npm run dev
 
 ### Requirements
 
-- Node.js 18+
+- Node.js 20.19+, 22.12+, or 24+
 - Docker and Docker Compose
 - PostgreSQL 14+ and Redis 6+ (or use Docker)
 

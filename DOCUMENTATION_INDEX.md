@@ -276,11 +276,12 @@ and `ai-service/docs/archive/` for current archival material.
 
 Security documentation and threat modeling.
 
-| Document                                                                         | Purpose            |
-| -------------------------------------------------------------------------------- | ------------------ |
-| [DATA_LIFECYCLE_AND_PRIVACY.md](docs/security/DATA_LIFECYCLE_AND_PRIVACY.md)     | Data handling/GDPR |
-| [SECURITY_THREAT_MODEL.md](docs/security/SECURITY_THREAT_MODEL.md)               | Security analysis  |
-| [SUPPLY_CHAIN_AND_CI_SECURITY.md](docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md) | CI/CD security     |
+| Document                                                                         | Purpose                                           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------- |
+| [DATA_LIFECYCLE_AND_PRIVACY.md](docs/security/DATA_LIFECYCLE_AND_PRIVACY.md)     | Data handling/GDPR                                |
+| [PYTHON_AUDIT_EXCEPTIONS.md](docs/security/PYTHON_AUDIT_EXCEPTIONS.md)           | Expiring Python dependency audit exception policy |
+| [SECURITY_THREAT_MODEL.md](docs/security/SECURITY_THREAT_MODEL.md)               | Security analysis                                 |
+| [SUPPLY_CHAIN_AND_CI_SECURITY.md](docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md) | CI/CD security                                    |
 
 ### /docs/planning/
 
