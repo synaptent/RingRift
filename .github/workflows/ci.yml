@@ -810,9 +810,12 @@ jobs:
       # E2E traffic exercises the orchestrator adapter path with TS authoritative.
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
-      ORCHESTRATOR_ROLLOUT_PERCENTAGE:
-        100
-        # Database and Redis URLs for E2E tests
+      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
+      # The Chromium gate contains 244 tests. One worker consistently exhausts
+      # the 30-minute job timeout on main, while Playwright still keeps tests
+      # sequential within each file when using this bounded file-level pool.
+      PLAYWRIGHT_WORKERS: 4
+      # Database and Redis URLs for E2E tests
       DATABASE_URL: postgresql://ringrift:ringrift@localhost:5432/ringrift_test
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: e2e-test-jwt-secret
