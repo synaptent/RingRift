@@ -14,7 +14,7 @@ import {
   MoveSchema,
   type MoveInput,
 } from '../../shared/validation/schemas';
-import { validateQuery, validateParams } from '../middleware/validateRequest';
+import { getValidatedQuery, validateQuery, validateParams } from '../middleware/validateRequest';
 import { GameStatus, GameState } from '../../shared/types/game';
 import { GameEngine } from '../game/GameEngine';
 import { getDisplayUsername } from './user';
@@ -630,7 +630,7 @@ router.get(
   '/',
   validateQuery(GameListingQuerySchema),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { status, limit, offset } = req.query as unknown as GameListingQueryInput;
+    const { status, limit, offset } = getValidatedQuery<GameListingQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -2285,7 +2285,7 @@ router.get(
   '/lobby/available',
   validateQuery(GameListingQuerySchema),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { boardType, maxPlayers, limit } = req.query as unknown as GameListingQueryInput;
+    const { boardType, maxPlayers, limit } = getValidatedQuery<GameListingQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {

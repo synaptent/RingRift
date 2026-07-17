@@ -4,7 +4,7 @@ import { getDatabaseClient, withQueryTimeoutStrict } from '../../database/connec
 import { AuthenticatedRequest } from '../../middleware/auth';
 import { createError, asyncHandler } from '../../middleware/errorHandler';
 import { ErrorCodes } from '../../errors';
-import { UUIDSchema } from '../../../shared/validation/schemas';
+import { DatabaseIdSchema } from '../../../shared/validation/schemas';
 import { BoardType, GameStatus } from '../../../shared/types/game';
 import { getDisplayUsername } from '../user';
 
@@ -110,7 +110,7 @@ export function registerUserGamesRoute(router: Router): void {
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const { userId } = req.params;
 
-      const userIdResult = UUIDSchema.safeParse(userId);
+      const userIdResult = DatabaseIdSchema.safeParse(userId);
       if (!userIdResult.success) {
         throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
       }

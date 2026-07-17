@@ -11,6 +11,7 @@ import {
   CreateGameSchema,
   ChatMessageSchema,
   UUIDSchema,
+  DatabaseIdSchema,
   GameIdParamSchema,
   GameListingQuerySchema,
   UserSearchQuerySchema,
@@ -64,6 +65,19 @@ describe('Validation Schemas', () => {
       const invalidUUIDs = ['not-a-uuid', '123e4567-e89b-12d3-a456', '', '   '];
       for (const uuid of invalidUUIDs) {
         expect(UUIDSchema.safeParse(uuid).success).toBe(false);
+      }
+    });
+  });
+
+  describe('DatabaseIdSchema', () => {
+    it('accepts UUID and Prisma CUID entity IDs', () => {
+      expect(DatabaseIdSchema.safeParse('123e4567-e89b-12d3-a456-426614174000').success).toBe(true);
+      expect(DatabaseIdSchema.safeParse('cmrpi4gaw00003r1mlog3og0v').success).toBe(true);
+    });
+
+    it('rejects malformed entity IDs', () => {
+      for (const id of ['user-123', 'c123', '', '   ', 'cmrpi4gaw00003r1mlog3og0!']) {
+        expect(DatabaseIdSchema.safeParse(id).success).toBe(false);
       }
     });
   });

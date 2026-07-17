@@ -59,7 +59,7 @@ test.describe('AI Game E2E Tests', () => {
     await gamePage.clickFirstValidTarget();
 
     // Wait for the game log to update - AI should respond
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
+    await gamePage.assertPlayerMoveLogged(1);
 
     // After human move, AI should make a move - look for P2 (AI) move in log
     // Allow time for AI service to respond
@@ -117,7 +117,7 @@ test.describe('AI Game E2E Tests', () => {
 
     // Make first human move
     await gamePage.clickFirstValidTarget();
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
+    await gamePage.assertPlayerMoveLogged(1);
 
     // Wait for AI to respond
     await page.waitForTimeout(10_000);
@@ -130,7 +130,7 @@ test.describe('AI Game E2E Tests', () => {
       await gamePage.clickFirstValidTarget();
 
       // Verify move was logged
-      await expect(gamePage.recentMovesSection).toBeVisible();
+      await gamePage.assertPlayerMoveLogged(1);
     }
 
     // Game should still be functional

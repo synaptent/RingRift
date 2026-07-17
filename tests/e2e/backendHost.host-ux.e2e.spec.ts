@@ -83,7 +83,6 @@ test.describe('backend host @host-ux', () => {
     await confirmRingPlacementIfPrompted(page);
 
     // Move triggered via keyboard should show up in the event log.
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
     await gamePage.assertPlayerMoveLogged(1);
   });
 

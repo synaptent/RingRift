@@ -175,6 +175,10 @@ export class GamePage {
    * Assert that a move was logged.
    */
   async assertMoveLogged(pattern: RegExp | string): Promise<void> {
+    // The desktop sidebar can extend below the initial viewport. Bring the
+    // canonical log container into view before asserting on its contents.
+    await this.gameLogSection.scrollIntoViewIfNeeded();
+    await expect(this.gameLogSection).toBeVisible({ timeout: 15_000 });
     await expect(this.recentMovesSection).toBeVisible({ timeout: 15_000 });
     const moveEntry = this.gameLogSection.locator('li').filter({
       hasText: pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i'),
