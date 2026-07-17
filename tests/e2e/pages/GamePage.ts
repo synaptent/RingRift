@@ -180,7 +180,8 @@ export class GamePage {
     await this.gameLogSection.scrollIntoViewIfNeeded();
     await expect(this.gameLogSection).toBeVisible({ timeout: 15_000 });
     await expect(this.recentMovesSection).toBeVisible({ timeout: 15_000 });
-    const moveEntry = this.gameLogSection.locator('li').filter({
+    const recentMoveList = this.recentMovesSection.locator('xpath=following-sibling::ul[1]');
+    const moveEntry = recentMoveList.locator('li').filter({
       hasText: pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i'),
     });
     await expect(moveEntry).toBeVisible({ timeout: 10_000 });
