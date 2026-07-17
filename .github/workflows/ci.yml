@@ -818,6 +818,11 @@ jobs:
       # Database and Redis URLs for E2E tests
       DATABASE_URL: postgresql://ringrift:ringrift@localhost:5432/ringrift_test
       REDIS_URL: redis://localhost:6379
+      # The functional browser suite creates many isolated users from one loopback
+      # address. Rate-limit behavior is covered by dedicated mocked 429 scenarios,
+      # so allow only this job's local traffic through the supported test bypass.
+      RATE_LIMIT_BYPASS_ENABLED: 'true'
+      RATE_LIMIT_BYPASS_IPS: 127.0.0.1
       JWT_SECRET: e2e-test-jwt-secret
       NODE_ENV: test
 

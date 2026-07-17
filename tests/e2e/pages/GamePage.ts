@@ -32,9 +32,9 @@ export class GamePage {
     // Playwright strict mode does not match event-log entries like
     // "Connection restored".
     this.connectionStatus = page.getByTestId('game-hud').getByText('Connection:', { exact: false });
-    // Scope the "Turn" label to the HUD container and require an exact text
-    // match so that strict mode does not conflict with "Current Turn".
-    this.turnIndicator = page.getByTestId('game-hud').getByText('Turn', { exact: true });
+    // The score summary also contains an exact "Turn" badge. The progress
+    // label is rendered first within the HUD and remains the interaction target.
+    this.turnIndicator = page.getByTestId('game-hud').getByText('Turn', { exact: true }).first();
     this.gameLogSection = page.locator('text=/Game log/i');
     this.recentMovesSection = page.locator('text=/Recent moves/i');
     this.phaseIndicator = page.locator('text=/Phase/i');
