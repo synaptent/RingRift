@@ -194,9 +194,15 @@ export class GamePage {
    * Bring the move-log subsection into view and assert that it is rendered.
    */
   async assertRecentMovesVisible(timeout = 15_000): Promise<void> {
-    // The desktop sidebar extends below the initial viewport. Scrolling only
-    // the outer log can still leave this child clipped, so target the stable
-    // subsection heading itself.
+    // The event log has its own overflow container. Playwright's generic
+    // scrollIntoViewIfNeeded() can scroll the page while leaving this child
+    // clipped inside that container, so move the log's scroll position first.
+    await this.recentMovesSection.evaluate((heading) => {
+      const eventLog = heading.closest<HTMLElement>('[data-testid="game-event-log"]');
+      if (eventLog) {
+        eventLog.scrollTop = Math.max(0, (heading as HTMLElement).offsetTop - 12);
+      }
+    });
     await this.recentMovesSection.scrollIntoViewIfNeeded();
     await expect(this.recentMovesSection).toBeVisible({ timeout });
   }
