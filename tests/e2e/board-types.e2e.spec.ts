@@ -227,26 +227,7 @@ test.describe('Board Type E2E Tests', () => {
 
     test('sandbox hexagonal board has valid move targets', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
-
-      // Switch to hexagonal if possible
-      const boardTypeSelector = page.locator('select').filter({ hasText: /hex/i }).first();
-
-      if (await boardTypeSelector.isVisible({ timeout: 5_000 })) {
-        await boardTypeSelector.selectOption({ index: 2 }); // Usually hex is third
-        await page.waitForTimeout(1000);
-      }
-
-      // Look for new game button
-      const newGameButton = page
-        .locator('button')
-        .filter({ hasText: /new game|start|reset/i })
-        .first();
-
-      if (await newGameButton.isVisible({ timeout: 3_000 })) {
-        await newGameButton.click();
-        await page.waitForTimeout(500);
-      }
+      await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
 
       // Valid targets should be highlighted
       const validTargets = page.getByTestId('board-view').locator('button.valid-move-cell');

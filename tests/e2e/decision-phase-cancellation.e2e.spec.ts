@@ -17,7 +17,7 @@ import { createNetworkAwareCoordinator } from '../helpers/NetworkSimulator';
  * account deletion for one player via DELETE /api/users/me. The backend
  * uses WebSocketServer.terminateUserSessions for that user, and we assert:
  *
- * - The opponent receives a terminal game_over event for the fixture game.
+ * - The terminated user's socket closes while the opponent stays connected.
  * - The terminated user does not receive any new game_state or
  *   player_choice_required events after terminateUserSessions, even under
  *   packet loss.
@@ -140,10 +140,10 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
       });
       expect(deleteResponse.ok()).toBeTruthy();
 
-      // The opponent should eventually receive a terminal game_over for this game.
-      const p2GameOver = (await coordinator.waitForGameOver('player2', 30_000)) as any;
-      expect(p2GameOver?.data?.gameResult).toBeDefined();
-      expect(p2GameOver.data.gameId).toBe(gameId);
+      // Account deletion terminates only the deleted user's transport and
+      // cancels session work; it does not fabricate a game_over outcome.
+      await expect.poll(() => coordinator.isConnected('player1'), { timeout: 10_000 }).toBe(false);
+      expect(coordinator.isConnected('player2')).toBe(true);
 
       // Allow a short grace period for any in-flight messages to be delivered.
       await page2.waitForTimeout(2_000);

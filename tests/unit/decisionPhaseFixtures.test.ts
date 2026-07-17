@@ -103,4 +103,34 @@ describe('decision-phase fixture persistence', () => {
     expect(territoryMoves.length).toBeGreaterThan(0);
     expect(territoryMoves[0]?.disconnectedRegions?.[0]?.isDisconnected).toBe(true);
   });
+
+  it('exposes canonical continuation moves from the chain-capture timeout fixture', () => {
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+    const players: Player[] = [1, 2].map((playerNumber) => ({
+      id: `player-${playerNumber}`,
+      username: `Player ${playerNumber}`,
+      playerNumber,
+      type: 'human',
+      isReady: true,
+      timeRemaining: 600_000,
+      ringsInHand: BOARD_CONFIGS.square8.ringsPerPlayer,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    }));
+    const engine = new GameEngine('fixture-game-123', 'square8', players, timeControl, false);
+
+    expect(
+      applyDecisionPhaseFixtureIfNeeded(engine, {
+        fixture: { kind: 'decision_phase_fixture', scenario: 'chain_capture_choice', version: 1 },
+      })
+    ).toBe(true);
+
+    const state = engine.getGameState();
+    const continuationMoves = engine
+      .getValidMoves(1)
+      .filter((move) => move.type === 'continue_capture_segment');
+
+    expect(state.currentPhase).toBe('chain_capture');
+    expect(continuationMoves.length).toBeGreaterThan(1);
+  });
 });

@@ -225,10 +225,9 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
     await gamePage.goto(gameId);
     await gamePage.waitForReady(30_000);
 
-    // The HUD should indicate we're in a decision-centric phase. The
-    // decision-phase banner is our primary signal here.
-    const decisionBanner = page.getByTestId('decision-phase-banner');
-    await expect(decisionBanner).toBeVisible({ timeout: 15_000 });
+    // The canonical phase indicator is present before the timeout is
+    // scheduled; a separate PlayerChoice banner is not required here.
+    await gamePage.assertPhase('Line Processing');
 
     // 4) Simulate a client-side disconnect while the decision is pending by
     //    explicitly closing any tracked WebSocket connections.
@@ -301,11 +300,8 @@ test.describe('Error Recovery - API Error Responses', () => {
     // Wait for error state
     await page.waitForTimeout(3000);
 
-    // Should show error message or stay on form (not crash)
-    const formOrError = page
-      .getByRole('heading', { name: /Create Backend Game/i })
-      .or(page.locator('.text-red-300, .text-red-400, [class*="error"]'));
-    await expect(formOrError).toBeVisible({ timeout: 10_000 });
+    // The form remains usable and reports the backend failure.
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
 
     // Remove the route to restore normal behavior
     await page.unroute('**/api/games**');
@@ -363,13 +359,19 @@ test.describe('Error Recovery - API Error Responses', () => {
     await page.waitForTimeout(3000);
 
     // Should show error or redirect (not crash)
-    const errorOrRedirect = page
-      .locator('text=/not found/i')
-      .or(page.locator('text=/error/i'))
-      .or(page.getByRole('heading', { name: /lobby/i }))
-      .or(page.getByRole('heading', { name: /welcome/i }));
-
-    await expect(errorOrRedirect).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          const errorVisible = await page.locator('text=/not found|error/i').first().isVisible();
+          const safeRedirectVisible = await page
+            .getByRole('heading', { name: /lobby|welcome/i })
+            .first()
+            .isVisible();
+          return errorVisible || safeRedirectVisible;
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true);
   });
 });
 
@@ -393,12 +395,7 @@ test.describe('Error Recovery - Session Expiry', () => {
     await page.waitForTimeout(3000);
 
     // Should redirect to login or show authentication required
-    const loginOrAuth = page
-      .getByRole('heading', { name: /login/i })
-      .or(page.locator('text=/sign in/i'))
-      .or(page.locator('text=/authentication required/i'));
-
-    await expect(loginOrAuth).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({ timeout: 15_000 });
   });
 
   test('handles expired token on API request', async ({ page, context }) => {
@@ -424,13 +421,14 @@ test.describe('Error Recovery - Session Expiry', () => {
     await page.waitForTimeout(3000);
 
     // Should show login page or auth error
-    const loginOrError = page
-      .getByRole('heading', { name: /login/i })
-      .or(page.locator('.text-red-300, .text-red-400'))
-      .or(page.locator('text=/unauthorized/i'))
-      .or(page.locator('text=/session/i'));
-
-    await expect(loginOrError).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () =>
+          (await page.getByRole('heading', { name: /login/i }).isVisible()) ||
+          (await page.getByRole('alert').isVisible()),
+        { timeout: 15_000 }
+      )
+      .toBe(true);
 
     await page.unroute('**/api/**');
   });
@@ -467,10 +465,7 @@ test.describe('Error Recovery - Rate Limiting', () => {
     await page.waitForTimeout(2000);
 
     // Should show rate limit error or general error (page shouldn't crash)
-    const errorOrForm = page
-      .locator('.text-red-300, .text-red-400, [class*="error"]')
-      .or(page.getByRole('heading', { name: /login/i }));
-    await expect(errorOrForm).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
 
     await page.unroute('**/api/auth/login');
   });
@@ -502,10 +497,7 @@ test.describe('Error Recovery - Rate Limiting', () => {
     await page.waitForTimeout(3000);
 
     // Form should still be visible or error shown
-    const formOrError = page
-      .getByRole('heading', { name: /Create Backend Game/i })
-      .or(page.locator('.text-red-300, .text-red-400'));
-    await expect(formOrError).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
 
     await page.unroute('**/api/games**');
   });
@@ -566,10 +558,7 @@ test.describe('Error Recovery - Form Validation', () => {
     await page.waitForTimeout(2000);
 
     // Should show error or stay on form
-    const errorOrForm = page
-      .locator('.text-red-300, .text-red-400, [class*="error"]')
-      .or(registerPage.heading);
-    await expect(errorOrForm).toBeVisible({ timeout: 10_000 });
+    await expect(registerPage.heading).toBeVisible({ timeout: 10_000 });
   });
 
   test('preserves form state after validation error', async ({ page }) => {
@@ -654,11 +643,14 @@ test.describe('Error Recovery - Page Reload', () => {
     await page.waitForTimeout(3000);
 
     // Should end up on a valid page (not crashed)
-    const validPage = page
-      .getByRole('heading', { name: /Game Lobby/i })
-      .or(page.getByRole('heading', { name: /Welcome/i }))
-      .or(page.getByRole('heading', { name: /Login/i }));
-
-    await expect(validPage).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () =>
+          (await page.getByRole('heading', { name: /Game Lobby/i }).isVisible()) ||
+          (await page.getByRole('heading', { name: /Welcome/i }).isVisible()) ||
+          (await page.getByRole('heading', { name: /Login/i }).isVisible()),
+        { timeout: 15_000 }
+      )
+      .toBe(true);
   });
 });

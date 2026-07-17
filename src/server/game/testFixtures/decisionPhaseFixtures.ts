@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/types/game';
 import { BOARD_CONFIGS, positionToString } from '../../../shared/types/game';
 import { getEffectiveLineLengthThreshold } from '../../../shared/engine/rulesConfig';
+import type { ChainCaptureState } from '../../../shared/engine/aggregates/CaptureAggregate';
 import { generateGameSeed } from '../../../shared/utils/rng';
 import { getDatabaseClient } from '../../database/connection';
 import { logger } from '../../utils/logger';
@@ -21,6 +22,7 @@ import type { GameEngine } from '../GameEngine';
  */
 interface GameEngineInternal {
   gameState: GameState;
+  chainCaptureState?: ChainCaptureState;
 }
 
 export type DecisionPhaseScenario =
@@ -411,15 +413,19 @@ function seedChainCaptureChoiceDecisionPhase(engine: GameEngine): void {
     board.stacks.set(positionToString(pos), opponentStack);
   }
 
-  // Ensure the game is active and in the chain capture decision phase.
+  // Enter the canonical chain_capture phase and seed the backend's internal
+  // continuation state. GameEngine intentionally keeps this state off the
+  // wire-level GameState, so a synthetic pending field cannot drive legality.
   state.gameStatus = 'active';
   state.currentPlayer = activePlayerNumber;
-  const stateRecord = state as unknown as Record<string, unknown>;
-  stateRecord.currentPhase = 'chain_capture_choice';
-  stateRecord.pendingChainCapture = {
-    captureFrom: landingPos,
-    availableTargets: capturablePositions,
-    capturedSoFar: [],
+  state.currentPhase = 'chain_capture';
+  engineInternal.chainCaptureState = {
+    playerNumber: activePlayerNumber,
+    startPosition: landingPos,
+    currentPosition: landingPos,
+    segments: [],
+    availableMoves: [],
+    visitedPositions: new Set([positionToString(landingPos)]),
   };
 }
 
