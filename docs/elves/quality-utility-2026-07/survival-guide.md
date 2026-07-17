@@ -46,10 +46,10 @@ the documentation doors, or the puzzle UI in this run.
 
 - **Planned batches remaining:** 1
 - **Stop allowed right now:** no
-- **Why:** Batch 2 implementation and review are complete, but it still must be committed and
-  pushed before the final readiness batch begins
-- **Next required action:** commit and push Batch 2, re-read this guide, inspect live PR state,
-  then execute Batch 3 full validation, report, and run-scaffolding cleanup
+- **Why:** Batch 3 full validation, live PR inspection, report generation, and run-scaffolding
+  cleanup remain
+- **Next required action:** execute the complete local and remote readiness surface, remediate any
+  in-scope failure, and preserve the truthful external-evidence blocker if it remains
 
 ## Effort Standard
 
@@ -104,12 +104,14 @@ the documentation doors, or the puzzle UI in this run.
 
 **Status:** In progress
 
-**Active batch:** Batch 2: Dependency audit credibility (completion boundary)
+**Active batch:** Batch 3: E10 final readiness
 
-**What was just finished:** compatible Node/Python upgrades, the fail-closed Python audit wrapper
-and exception ledger, clean-environment runtime/contract proof, and clean final independent review
+**What was just finished:** full local readiness validation found and fixed the AWS/Jest
+conditional-export regression; the complete Jest command, clean Python core/contracts, audits,
+build, parity, and focused policy gates now pass
 
-**Single next action:** commit and push Batch 2, then immediately re-read this guide
+**Single next action:** complete final independent re-review, commit and push the Jest remediation,
+then inspect its fresh remote checks
 
 ## Active Compute
 
@@ -155,6 +157,14 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
   61 Python contract-vector tests, 43 parity-healthcheck cases with zero mismatches, lint,
   typecheck, build, focused Node runtime suites, and clean independent Node/Python/workflow
   re-reviews.
+- Batch 2 commit `1cb521f83f3e56ab77845ffd0c13f8e969173c93` is pushed and matches PR #112's
+  live head. The scoped Batch 3 rollback tag points to the same commit.
+- Full local Jest after the narrow Node-condition mapping passes 592 suites and 11,807 tests with
+  216 skips and 1 todo. Clean Python core passes 2,525 tests; full contracts pass 5,006 tests.
+- Remote CI at the Batch 2 head passes every completed audit, Docker, Python, rules, parity,
+  integration, self-play, evaluation, pipeline, and configuration job. Its full Jest job
+  reproduced the now-remediated AWS conditional-export failure. Supported Path fails only on the
+  independently confirmed stale result evidence.
 - GitHub auth: active `scarmani` can read but push is denied with 403; configured secondary
   `an0mium` has `ADMIN`. Use a scoped account switch for push/PR operations and restore
   `scarmani` immediately afterward

@@ -5,14 +5,56 @@ maintained in the survival guide and `.elves-session.json`.
 
 ## Run Digest
 
-- **Last updated:** 2026-07-17 13:24 CDT
+- **Last updated:** 2026-07-17 13:30 CDT
 - **Current phase:** In progress
-- **Active batch:** Batch 2 completion boundary
+- **Active batch:** Batch 3: E10 final readiness
 - **Last completed batch:** Batch 2: Dependency audit credibility
 - **Next exact batch:** Batch 3: E10 final readiness
 - **Active PR:** #112 (draft)
 - **Docs promoted this run:** none
 - **Latest Elves Report:** not generated
+
+## Batch 3 Validation and Remediation: 2026-07-17 13:56 CDT
+
+**Regression found and fixed:** the full Jest coverage run exposed a jsdom conditional-export
+conflict introduced by the current AWS SES dependency. The CommonJS SES client imports
+`@aws-sdk/core/client`, but Jest's global jsdom resolver selected the package's untransformed ESM
+browser entry. `jest.config.js` now pre-resolves only that server-only subpath with Node's normal
+conditions; client/browser package resolution remains unchanged. Supported Path watches this test
+configuration in both push and pull-request filters.
+
+**Local proof after remediation:**
+
+- Full CI coverage command: 592 suites pass, 11,807 tests pass, 216 skip, 1 todo; no failures.
+- Clean Python 3.13 environment: 2,525 core tests pass, 49 skip, 25 deselect, 1 expected failure.
+  A first host-Python run had four S3 mock failures because a user AWS login profile leaked into
+  botocore; the isolated CI-like environment passes all 15 applicable storage tests.
+- Python contracts: 5,006 pass. Commit-hook contracts: 61 pass. Parity healthcheck: 43 cases,
+  zero mismatches. Orchestrator parity: 13 suites and 69 tests pass.
+- Lint passes with the unchanged 11 warnings; typecheck, build, bundle-secret scan, workflow,
+  reviewer, AI-surface, Node audit, Python audit, and 42 focused audit/workflow/link contracts pass.
+- The full local Supported Path command and remote required check both fail only on the truthful
+  May 12 results snapshot, now 66 days old against the unchanged 30-day rule.
+
+**Remote proof at Batch 2 head:** Security Scan, Python Dependency Audit, Python Core, AI Docker,
+root Docker configuration build, rules/parity/integration, self-play, evaluation, strength,
+pipeline, deployment, and monitoring jobs pass. The old-head full Jest job reproduced the AWS
+resolution failure now fixed locally.
+
+**Next:** obtain clean final independent review, commit and push the Jest remediation, verify the
+fresh remote run, generate the HTML report, and remove all disposable run scaffolding.
+
+## Batch 3 Launch: 2026-07-17 13:30 CDT
+
+**State:** Batch 2 commit `1cb521f83f3e56ab77845ffd0c13f8e969173c93` is pushed and is the
+exact live PR #112 head. No review comments or reviews are present. Fresh required Actions checks
+have started.
+
+**Rollback:** created and pushed `elves/e10-ci-trust/pre-batch-3` at the Batch 2 head.
+
+**Next:** run the complete local readiness surface in parallel with remote CI, inspect and
+remediate every in-scope failure, independently review the final diff, generate the HTML report,
+then remove all run scaffolding before the final commit.
 
 ## Batch 2 Completion: 2026-07-17 13:24 CDT
 
