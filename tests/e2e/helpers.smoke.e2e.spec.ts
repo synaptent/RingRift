@@ -109,15 +109,13 @@ test.describe('E2E Helpers Smoke Tests', () => {
       await homePage.assertUsernameDisplayed(user.username);
     });
 
-    test('logout redirects to login page', async ({ page }) => {
+    test('logout returns to the public shell', async ({ page }) => {
       await registerAndLogin(page);
 
       // Logout
       await logout(page);
 
-      // Should be on login page
-      const loginPage = new LoginPage(page);
-      await loginPage.waitForReady();
+      await expect(page.getByRole('link', { name: /sign in/i }).first()).toBeVisible();
     });
   });
 
@@ -203,7 +201,7 @@ test.describe('E2E Helpers Smoke Tests', () => {
 
       // Heading is asserted inside goToSandbox; here we also sanity-check
       // that the sandbox pre-game controls are present.
-      await expect(page.getByRole('button', { name: /Launch Game/i })).toBeVisible({
+      await expect(page.getByRole('button', { name: /Launch(?: Local)? Game/i })).toBeVisible({
         timeout: 10_000,
       });
     });

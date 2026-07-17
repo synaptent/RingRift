@@ -131,18 +131,8 @@ test.describe('Board Type E2E Tests', () => {
       const boardView = gamePage.boardView;
       await expect(boardView).toBeVisible();
 
-      // Hexagonal cells should have distinct arrangement
-      // Look for hex-specific CSS classes or data attributes
-      const hexCells = page.locator('[data-hex="true"], .hex-cell, [data-board-type="hexagonal"]');
-      const boardContainer = page.locator('[data-board-type]');
-
-      // Either hex cells exist or board type attribute indicates hexagonal
-      const hasHexIndicator =
-        (await hexCells.count()) > 0 ||
-        (await boardContainer.getAttribute('data-board-type')) === 'hexagonal';
-
-      // The board view itself should be visible regardless
-      await expect(gamePage.boardView).toBeVisible();
+      // BoardView exposes the geometry in its accessible region label.
+      await expect(page.getByRole('region', { name: /Hexagonal game board/i })).toBeVisible();
     });
 
     test('hexagonal board allows ring placement', async ({ page }) => {

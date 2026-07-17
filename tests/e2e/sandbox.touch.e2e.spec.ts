@@ -25,7 +25,7 @@ test.describe('Sandbox touch-first flows (mobile)', () => {
 
     // Launch Game: for unauthenticated runs this typically fails backend
     // /games creation and falls back to local ClientSandboxEngine on /sandbox.
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // We expect to remain on /sandbox with a local board; tolerate environments
     // where routing may briefly change but ensure the sandbox layout is present.
@@ -53,14 +53,12 @@ test.describe('Sandbox touch-first flows (mobile)', () => {
 
     // Verify that at least one stack is present on the board (H* C* label),
     // indicating that a ring was placed and a follow-up move/capture completed.
-    await expect(
-      boardView.locator('text=/H[1-9][0-9]* C[1-9][0-9]*/')
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(boardView.locator('text=/H[1-9][0-9]* C[1-9][0-9]*/')).toBeVisible({
+      timeout: 15_000,
+    });
 
     // Touch controls panel should still be visible and show a valid phase label.
     await expect(page.getByTestId('sandbox-touch-controls')).toBeVisible();
-    await expect(
-      page.getByTestId('sandbox-touch-controls').getByText(/Phase:/i)
-    ).toBeVisible();
+    await expect(page.getByTestId('sandbox-touch-controls').getByText(/Phase:/i)).toBeVisible();
   });
 });

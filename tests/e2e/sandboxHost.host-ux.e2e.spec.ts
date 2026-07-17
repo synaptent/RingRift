@@ -35,7 +35,7 @@ test.describe('sandbox host @host-ux', () => {
 
     await goToSandbox(page);
 
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // We should remain on /sandbox and see a local sandbox game view.
     await expect(page).toHaveURL(/\/sandbox/);
@@ -87,7 +87,7 @@ test.describe('sandbox host @host-ux', () => {
     const player2Card = page.getByText('Player 2').locator('..').locator('..');
     await player2Card.getByRole('button', { name: /Computer/i }).click();
 
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // Local sandbox game should start on /sandbox with board + touch controls.
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
@@ -138,7 +138,7 @@ test.describe('sandbox host @host-ux', () => {
     });
 
     await goToSandbox(page);
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     const board = page.getByTestId('board-view');
 
@@ -191,7 +191,7 @@ test.describe('sandbox host @host-ux', () => {
     });
 
     await goToSandbox(page);
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('sandbox-touch-controls')).toBeVisible({ timeout: 15_000 });

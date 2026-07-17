@@ -146,16 +146,19 @@ export async function loginUser(page: Page, email: string, password: string): Pr
 }
 
 /**
- * Logs out the current user.
- * Waits for redirect to login page after logout.
+ * Logs out the current user and waits for the public shell to replace the
+ * authenticated navigation. The app intentionally keeps the current public
+ * route instead of forcing a redirect to /login.
  */
 export async function logout(page: Page): Promise<void> {
   const logoutButton = page.getByRole('button', { name: /logout/i });
   await expect(logoutButton).toBeVisible({ timeout: 10_000 });
   await logoutButton.click();
 
-  // After logout, should redirect to /login
-  await page.waitForURL('**/login', { timeout: 10_000 });
+  await expect(logoutButton).toBeHidden({ timeout: 10_000 });
+  await expect(page.getByRole('link', { name: /sign in/i }).first()).toBeVisible({
+    timeout: 10_000,
+  });
 }
 
 /**
@@ -328,6 +331,23 @@ export async function placePiece(page: Page, position: string): Promise<void> {
   // Find and click the cell at the specified position
   const cell = boardView.locator(`button[data-x="${x}"][data-y="${y}"]`);
   await cell.click();
+  await confirmRingPlacementIfPrompted(page);
+}
+
+/** Completes either dialog-based or inline click-to-accumulate ring placement. */
+export async function confirmRingPlacementIfPrompted(page: Page): Promise<void> {
+  const placementDialog = page.getByTestId('ring-placement-count-overlay');
+  const placementPrompted = await placementDialog
+    .waitFor({ state: 'visible', timeout: 1_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (placementPrompted) {
+    await placementDialog.getByRole('button', { name: 'Place', exact: true }).click();
+    await expect(placementDialog).toHaveCount(0);
+  } else {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Enter');
+  }
 }
 
 /**
@@ -345,6 +365,7 @@ export async function clickValidPlacementTarget(page: Page): Promise<void> {
 
   const targetCell = page.locator(validTargetSelector).first();
   await targetCell.click();
+  await confirmRingPlacementIfPrompted(page);
 }
 
 // ============================================================================
@@ -409,11 +430,14 @@ export async function assertGamePhase(page: Page, phase: string): Promise<void> 
  * @param movePattern - Regex pattern to match in the move log (e.g., /P1.*placed/)
  */
 export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise<void> {
+  const gameLog = page.getByTestId('game-event-log');
   // Wait for "Recent moves" section to appear
-  await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout: 15_000 });
+  await expect(gameLog.getByText('Recent moves', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Check for the move pattern in the log
-  const moveEntry = page.locator('li').filter({ hasText: movePattern });
+  const moveEntry = gameLog.locator('li').filter({ hasText: movePattern });
   await expect(moveEntry).toBeVisible({ timeout: 10_000 });
 }
 
@@ -421,8 +445,9 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
  * Waits for the game log to show recent moves.
  */
 export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void> {
-  await expect(page.locator('text=/Game log/i')).toBeVisible({ timeout });
-  await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout });
+  const gameLog = page.getByTestId('game-event-log');
+  await expect(gameLog).toBeVisible({ timeout });
+  await expect(gameLog.getByText('Recent moves', { exact: true })).toBeVisible({ timeout });
 }
 
 // ============================================================================
@@ -788,8 +813,16 @@ export async function createFixtureGame(
 ): Promise<FixtureGameResult> {
   const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
   const url = `${apiBaseUrl.replace(/\/$/, '')}/api/games/fixtures/decision-phase`;
+  const token = await page.evaluate(() => window.localStorage.getItem('token'));
+
+  if (!token) {
+    throw new Error('Cannot create fixture game without an authenticated browser token');
+  }
 
   const response = await page.request.post(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     data: {
       scenario: options.scenario,
       isRated: options.isRated ?? false,

@@ -198,12 +198,9 @@ test.describe('User Profile E2E Tests', () => {
       if (await logoutButton.isVisible({ timeout: 5_000 })) {
         await logoutButton.click();
 
-        // Should redirect to login page
-        await page.waitForURL('**/login**', { timeout: 10_000 });
-
-        // Login form should be visible
-        await expect(page.locator('input[type="email"], input[name="email"]').first()).toBeVisible({
-          timeout: 5_000,
+        // Logout returns to the public shell without forcing /login.
+        await expect(page.getByRole('link', { name: /sign in/i }).first()).toBeVisible({
+          timeout: 10_000,
         });
       }
     });

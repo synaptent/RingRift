@@ -24,7 +24,7 @@ test.describe('Sandbox host E2E', () => {
     await goToSandbox(page);
 
     // Click the Launch Game button in the sandbox host.
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // Prefer the happy path where the sandbox host creates a real backend game
     // and navigates to /game/:gameId on success, but tolerate environments
@@ -69,7 +69,7 @@ test.describe('Sandbox host E2E', () => {
     await goToSandbox(page);
 
     // Click the Launch Game button in the sandbox host.
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // Require navigation to /game/:gameId.
     await page.waitForURL('**/game/**', { timeout: 30_000 });
@@ -91,14 +91,14 @@ test.describe('Sandbox host E2E', () => {
     await goToSandbox(page);
 
     // Launch a local sandbox game (fallback is acceptable here).
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // Either we navigated to /game/:id (backend) or remained on /sandbox.
     // For the rules-lab overlays we specifically want the local sandbox host.
     if (page.url().includes('/game/')) {
       // Go back to sandbox explicitly.
       await goToSandbox(page);
-      await page.getByRole('button', { name: /Launch Game/i }).click();
+      await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
     }
 
     // Wait for a sandbox board to be visible.

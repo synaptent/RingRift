@@ -86,7 +86,10 @@ export class HomePage {
    */
   async logout(): Promise<void> {
     await this.logoutButton.click();
-    await this.page.waitForURL('**/login', { timeout: 10_000 });
+    await expect(this.logoutButton).toBeHidden({ timeout: 10_000 });
+    await expect(this.page.getByRole('link', { name: /sign in/i }).first()).toBeVisible({
+      timeout: 10_000,
+    });
   }
 
   /**

@@ -35,8 +35,10 @@ export class GamePage {
     // The score summary also contains an exact "Turn" badge. The progress
     // label is rendered first within the HUD and remains the interaction target.
     this.turnIndicator = page.getByTestId('game-hud').getByText('Turn', { exact: true }).first();
-    this.gameLogSection = page.locator('text=/Game log/i');
-    this.recentMovesSection = page.locator('text=/Recent moves/i');
+    // Scope log assertions to the canonical event-log container. Generic text
+    // locators can resolve hidden copies while responsive hosts reflow.
+    this.gameLogSection = page.getByTestId('game-event-log');
+    this.recentMovesSection = this.gameLogSection.getByText('Recent moves', { exact: true });
     this.phaseIndicator = page.locator('text=/Phase/i');
     this.currentPlayerIndicator = page.locator('text=/Current player/i');
     this.chatInput = page.locator('input[placeholder*="Type a message"]');
@@ -112,6 +114,23 @@ export class GamePage {
     const validTargets = this.getValidTargets();
     await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
     await validTargets.first().click();
+
+    // Canonical ring placement supports choosing how many rings to place.
+    // Confirm the default count when this helper is used for a complete move.
+    const placementDialog = this.page.getByTestId('ring-placement-count-overlay');
+    const placementPrompted = await placementDialog
+      .waitFor({ state: 'visible', timeout: 1_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (placementPrompted) {
+      await placementDialog.getByRole('button', { name: 'Place', exact: true }).click();
+      await expect(placementDialog).toHaveCount(0);
+    } else {
+      // A normal click uses the inline click-to-accumulate interaction. Blur
+      // the board cell so Enter reaches the host-level confirmation handler.
+      await this.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await this.page.keyboard.press('Enter');
+    }
   }
 
   /**
@@ -157,7 +176,7 @@ export class GamePage {
    */
   async assertMoveLogged(pattern: RegExp | string): Promise<void> {
     await expect(this.recentMovesSection).toBeVisible({ timeout: 15_000 });
-    const moveEntry = this.page.locator('li').filter({
+    const moveEntry = this.gameLogSection.locator('li').filter({
       hasText: pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i'),
     });
     await expect(moveEntry).toBeVisible({ timeout: 10_000 });
