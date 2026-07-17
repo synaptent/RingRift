@@ -65,6 +65,7 @@ playwright-report/
 playwright/.cache/
 # E2E test snapshots (platform-specific, not committed)
 tests/e2e/__snapshots__/
+.playwright-mcp/
 
 # Temporary files
 *.tmp
@@ -214,6 +215,7 @@ ai-service/data/*evaluation_bundle*.json
 # Lint / tooling reports
 eslint-report*.json
 ci-results.json
+docs/audit/
 
 # Load test result artifacts
 tests/load/*.load.results.json

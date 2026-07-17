@@ -1,0 +1,99 @@
+{
+  "session_id": "elves-2026-07-17-ringrift-e10-ci-trust",
+  "version": "1.12.0",
+  "status": "staged",
+  "started_at": "2026-07-17T10:36:00-05:00",
+  "branch": "codex/e10-ci-trust",
+  "base_branch": "origin/main",
+  "base_commit": "a243b4e5ad1e7359052361a15a6be64c978d2746",
+  "collision_tripwire": "a243b4e5ad1e7359052361a15a6be64c978d2746",
+  "worktree": "/Users/armand/.codex/worktrees/ringrift-e10-ci-trust/RingRift",
+  "merge_policy": "user-merges",
+  "plan_path": "docs/planning/RINGRIFT_THREE_WAVE_QUALITY_UTILITY_PLAN_2026-07.md",
+  "plan_hash_md5": "1af49204f730bee8d233d935b6e2e887",
+  "survival_guide_path": "docs/elves/quality-utility-2026-07/survival-guide.md",
+  "learnings_path": "docs/elves/quality-utility-2026-07/learnings.md",
+  "execution_log_path": "docs/elves/quality-utility-2026-07/execution-log.md",
+  "pr_number": null,
+  "continuation_guard": {
+    "remaining_batches": 3,
+    "stop_allowed": true,
+    "checkpoint_is_stop": false,
+    "next_required_action": "Wait for the fresh launch call; then set stop_allowed to false, create elves/pre-batch-1, and start Batch 1."
+  },
+  "test_baseline": {
+    "passed": 11777,
+    "total": 11978,
+    "skipped": 200,
+    "todo": 1,
+    "status": "captured_with_known_gate_failures",
+    "reason": "All 587 executed Jest suites passed. The standalone test:coverage command exited 1 only because the main-branch global 80 percent thresholds are above measured coverage; CI intentionally supplies a zero global threshold override while still gating test execution and coverage generation."
+  },
+  "python_test_baseline": {
+    "passed": 4960,
+    "total": 4961,
+    "skipped": 0,
+    "status": "captured_with_known_failure",
+    "reason": "tests/contracts/test_supported_docs_links.py fails on the pre-existing docs/RESULTS.md link to missing docs/research/QUALITY_GATE_RESUME_BUG.md."
+  },
+  "preflight": {
+    "status": "warn",
+    "npm_ci": "pass",
+    "lint": "pass_with_11_existing_warnings",
+    "typecheck": "pass",
+    "build": "pass",
+    "workflow_check": "pass_10_workflows",
+    "reviewer_surface": "expected_fail_manifest_79_days_old",
+    "node_audit": "expected_fail_23_vulnerabilities_8_high",
+    "github_push": "active_scarmani_denied_403_secondary_an0mium_has_admin",
+    "sleep_prevention": "pass_caffeinate_active"
+  },
+  "current_batch": {
+    "id": 1,
+    "name": "Workflow and reviewer policy",
+    "status": "pending"
+  },
+  "batches": [
+    {
+      "id": 1,
+      "name": "Workflow and reviewer policy",
+      "status": "pending",
+      "commit": null,
+      "rollback_tag": "elves/pre-batch-1",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 2,
+      "name": "Dependency audit credibility",
+      "status": "pending",
+      "commit": null,
+      "rollback_tag": "elves/pre-batch-2",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 3,
+      "name": "E10 final readiness",
+      "status": "pending",
+      "commit": null,
+      "rollback_tag": "elves/pre-batch-3",
+      "started_at": null,
+      "completed_at": null
+    }
+  ],
+  "protected_shared_checkout": {
+    "path": "/Users/armand/Development/RingRift",
+    "branch": "feat/improvement-epics",
+    "dirty_paths_at_staging": [
+      ".elves-session.json",
+      "ai-service/archive/deprecated_ai/_game_engine_legacy.py",
+      "ai-service/scripts/export_replay_dataset.py",
+      ".security/",
+      "ai-service/scripts/experiments/cmaes_nnue_shadow.py",
+      "docs/planning/CMAES_ONLINE_NNUE_ADAPTATION_PLAN.md"
+    ]
+  },
+  "active_compute": [],
+  "review_comments": []
+}
