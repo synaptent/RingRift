@@ -870,8 +870,11 @@ jobs:
       - name: Run Playwright E2E tests
         # Runs only Chromium in CI by default
         # For multi-browser CI (e.g., on releases), use: npm run test:e2e:all
-        # Playwright config has retries: 2 in CI for flaky test resilience
-        run: npm run test:e2e:chromium
+        # Playwright config has retries: 2 in CI for flaky test resilience. Stop
+        # after 10 confirmed failures so the required gate reports actionable
+        # evidence instead of exhausting its 30-minute timeout. Green runs still
+        # execute the complete 244-test suite.
+        run: npm run test:e2e:chromium -- --max-failures=10
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -883,12 +886,13 @@ jobs:
 
       - name: Upload E2E test artifacts on failure
         uses: actions/upload-artifact@v4
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         with:
           name: e2e-test-results
           path: |
             test-results/
             playwright-report/
+            diagnostics-output/
           retention-days: 7
 
   load-tests-validation:
