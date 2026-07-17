@@ -95,7 +95,7 @@ the documentation doors, or the puzzle UI in this run.
 - [x] Execution log initialized with batch breakdown
 - [x] Branch created from exact `origin/main`
 - [x] Dedicated worktree ownership confirmed
-- [ ] Draft PR opened and recorded
+- [x] Draft PR #112 opened and recorded
 - [x] Preflight run and known baseline failures recorded
 - [x] Run mode, stop behavior, merge policy, and non-negotiables recorded
 - [x] Stop Gate explicitly permits the required staging handoff
@@ -103,15 +103,15 @@ the documentation doors, or the puzzle UI in this run.
 
 ## Current Phase
 
-**Status:** Staging
+**Status:** Launch-ready
 
 **Active batch:** none; Batch 1 is queued
 
-**What was just finished:** preflight captured the green build/tooling baseline and the exact
-expected audit, freshness, coverage-threshold, and supported-doc-link failures
+**What was just finished:** Batch 0 was committed and pushed, preflight evidence was captured, and
+draft PR #112 was opened from the isolated branch
 
-**Single next action:** finish preflight, commit/push Batch 0, open the draft PR, record its number,
-and hand the user the launch prompt
+**Single next action:** hand the user the fresh-call launch prompt and wait for that launch before
+starting Batch 1
 
 ## Active Compute
 
@@ -132,6 +132,8 @@ The shared checkout was dirty before this run. Preserve these paths exactly as f
 ## Current Live Evidence
 
 - `origin/main`: `a243b4e5ad1e7359052361a15a6be64c978d2746`
+- E10 draft PR #112: `https://github.com/synaptent/RingRift/pull/112`, head
+  `0c2600030cbb865f42976500711d02f43b96916c`
 - PR #111: open at `f74e0cff0cd891ac08cf79ed921ada7477315939`, currently blocked
 - Known PR #111 failures: stale reviewer manifest, broken lcov comment action, Node production
   audit, and Python dependency audit
@@ -220,8 +222,8 @@ notification: pr-comment
 - **Learnings:** `docs/elves/quality-utility-2026-07/learnings.md`
 - **Execution log:** `docs/elves/quality-utility-2026-07/execution-log.md`
 - **Branch:** `codex/e10-ci-trust`
-- **PR number:** not created yet
-- **Plan hash at session start:** `1af49204f730bee8d233d935b6e2e887`
+- **PR number:** #112
+- **Plan hash after staging formatter:** `cc190eb242d71897caaec0717ddd1cc5`
 
 ## After Any Compaction
 

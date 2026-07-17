@@ -5,18 +5,18 @@ maintained in the survival guide and `.elves-session.json`.
 
 ## Run Digest
 
-- **Last updated:** 2026-07-17 10:46 CDT
-- **Current phase:** Staging
+- **Last updated:** 2026-07-17 10:49 CDT
+- **Current phase:** Launch-ready
 - **Active batch:** none; Batch 1 queued
 - **Last completed batch:** none
 - **Next exact batch:** Batch 1: Workflow and reviewer policy
-- **Active PR:** not created yet
+- **Active PR:** #112 (draft)
 - **Docs promoted this run:** none
 - **Latest Elves Report:** not generated
 
 ## Session Setup: 2026-07-17 10:36 CDT
 
-**Phase:** staging in progress
+**Phase:** staging complete
 
 **Plan:** `docs/planning/RINGRIFT_THREE_WAVE_QUALITY_UTILITY_PLAN_2026-07.md`
 
@@ -28,7 +28,7 @@ maintained in the survival guide and `.elves-session.json`.
 
 **Branch:** `codex/e10-ci-trust`
 
-**PR:** not created yet
+**PR:** #112 — `https://github.com/synaptent/RingRift/pull/112`
 
 **Run mode:** finite; user return unknown
 
@@ -85,7 +85,11 @@ next action is a fresh launch call followed by Batch 1
   and restore `scarmani` immediately.
 - `caffeinate` is active; no paid or long-running project compute exists.
 
-**Launch readiness:** pending staging commit, push, and draft PR creation.
+**Launch readiness:** READY.
+
+**Staging completion:** Batch 0 committed as `0c2600030cbb865f42976500711d02f43b96916c`,
+pushed to `origin/codex/e10-ci-trust`, and opened as draft PR #112. The active GitHub account was
+restored to `scarmani` after the scoped push/PR operations. Launch readiness is **READY**.
 
 **Launch prompt:**
 
