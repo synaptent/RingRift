@@ -431,13 +431,19 @@ export async function assertGamePhase(page: Page, phase: string): Promise<void> 
  */
 export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise<void> {
   const gameLog = page.getByTestId('game-event-log');
+  await gameLog.scrollIntoViewIfNeeded();
+  await expect(gameLog).toBeVisible({ timeout: 15_000 });
   // Wait for "Recent moves" section to appear
-  await expect(gameLog.getByText('Recent moves', { exact: true })).toBeVisible({
+  const recentMoves = gameLog.getByText('Recent moves', { exact: true });
+  await expect(recentMoves).toBeVisible({
     timeout: 15_000,
   });
 
-  // Check for the move pattern in the log
-  const moveEntry = gameLog.locator('li').filter({ hasText: movePattern });
+  // Check only the Recent moves list, excluding the neighbouring system log.
+  const moveEntry = recentMoves
+    .locator('xpath=following-sibling::ul[1]')
+    .locator('li')
+    .filter({ hasText: movePattern });
   await expect(moveEntry).toBeVisible({ timeout: 10_000 });
 }
 
@@ -446,6 +452,7 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
  */
 export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void> {
   const gameLog = page.getByTestId('game-event-log');
+  await gameLog.scrollIntoViewIfNeeded();
   await expect(gameLog).toBeVisible({ timeout });
   await expect(gameLog.getByText('Recent moves', { exact: true })).toBeVisible({ timeout });
 }
@@ -458,7 +465,7 @@ export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void
  * Navigates to the lobby page.
  */
 export async function goToLobby(page: Page): Promise<void> {
-  await page.getByRole('link', { name: /lobby/i }).click();
+  await page.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page.waitForURL('**/lobby', { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible();
 }
@@ -614,7 +621,7 @@ export async function setupMultiplayerGame(browser: Browser): Promise<Multiplaye
   await registerUser(page2, user2.username, user2.email, user2.password);
 
   // Player 1 creates a game
-  await page1.getByRole('link', { name: /lobby/i }).click();
+  await page1.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page1.waitForURL('**/lobby', { timeout: 15_000 });
   await expect(page1.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
     timeout: 10_000,
@@ -687,7 +694,7 @@ export async function coordinateTurn(
   // Wait for WebSocket to propagate the move to the waiting player
   // We look for the move to appear in their game log
   await waitingPlayer.waitForTimeout(2000); // Initial delay for WebSocket sync
-  await expect(waitingPlayer.locator('text=/Recent moves/i')).toBeVisible({ timeout: 15_000 });
+  await waitForMoveLog(waitingPlayer, 15_000);
 }
 
 /**

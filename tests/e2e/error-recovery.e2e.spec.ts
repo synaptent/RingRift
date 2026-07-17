@@ -5,6 +5,7 @@ import {
   loginUser,
   registerAndLogin,
   createGame,
+  createFixtureGame,
   waitForGameReady,
 } from './helpers/test-utils';
 import { LoginPage, RegisterPage, GamePage } from './pages';
@@ -40,7 +41,7 @@ test.describe('Error Recovery - Network Failures', () => {
     await registerAndLogin(page);
 
     // Navigate to lobby
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
     await page.waitForURL('**/lobby', { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
       timeout: 10_000,
@@ -94,11 +95,11 @@ test.describe('Error Recovery - Network Failures', () => {
     // Wait for potential error state
     await page.waitForTimeout(3000);
 
-    // Page should still be usable - either showing login form or error
-    const loginFormOrError = page
-      .getByRole('heading', { name: /login/i })
-      .or(page.locator('.text-red-300, .text-red-400'));
-    await expect(loginFormOrError).toBeVisible({ timeout: 10_000 });
+    // Page should still be usable after the transient failure. The login
+    // heading is the stable recovery surface; an alert may also be present.
+    await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 
@@ -194,6 +195,7 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
 
   test('reconnects after decision timeout and shows auto-resolved outcome in HUD', async ({
     page,
+    browser,
   }) => {
     // This scenario uses the backend decision-phase fixture route and the
     // DECISION_PHASE_TIMEOUT_* env overrides to exercise end-to-end
@@ -202,27 +204,25 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
     // 1) Register and obtain an authenticated session.
     await registerAndLogin(page);
 
-    // 2) Create a backend game that starts in a line_processing decision phase
-    //    via the test-only /api/games/fixtures/decision-phase endpoint.
-    const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
-    const fixtureResponse = await page.request.post(
-      `${apiBaseUrl.replace(/\/$/, '')}/api/games/fixtures/decision-phase`,
-      {
-        data: {
-          scenario: 'line_processing',
-          isRated: true,
-        },
-      }
-    );
-
-    expect(fixtureResponse.ok()).toBeTruthy();
-    const fixtureJson = await fixtureResponse.json();
-    const gameId: string | undefined = fixtureJson?.data?.gameId;
-    expect(gameId).toBeTruthy();
+    // 2) Register the required opponent and create a valid two-player backend
+    //    fixture in line_processing via the authenticated test helper.
+    const opponentContext = await browser.newContext();
+    const opponentPage = await opponentContext.newPage();
+    const opponent = generateTestUser();
+    try {
+      await registerUser(opponentPage, opponent.username, opponent.email, opponent.password);
+    } finally {
+      await opponentContext.close();
+    }
+    const { gameId } = await createFixtureGame(page, {
+      scenario: 'line_processing',
+      isRated: true,
+      secondPlayerUsername: opponent.username,
+    });
 
     // 3) Navigate to the game and wait for WebSocket connection.
     const gamePage = new GamePage(page);
-    await gamePage.goto(gameId!);
+    await gamePage.goto(gameId);
     await gamePage.waitForReady(30_000);
 
     // The HUD should indicate we're in a decision-centric phase. The
@@ -260,11 +260,7 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
     //
     // We expect a process_line / choose_line_option move to appear after
     // the timeout; assert that at least one of these appears in the log.
-    await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout: 15_000 });
-    const decisionMoveEntry = page
-      .locator('li')
-      .filter({ hasText: /process_line|choose_line_option/i });
-    await expect(decisionMoveEntry).toBeVisible({ timeout: 15_000 });
+    await gamePage.assertMoveLogged(/process_line|choose_line_option/i);
 
     // Additionally, assert that the game has progressed out of the original
     // decision snapshot: either a new phase or a different current player.
@@ -283,7 +279,7 @@ test.describe('Error Recovery - API Error Responses', () => {
     await registerAndLogin(page);
 
     // Navigate to lobby
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
     await page.waitForURL('**/lobby', { timeout: 15_000 });
 
     // Intercept game API calls and return 500 error
@@ -319,7 +315,7 @@ test.describe('Error Recovery - API Error Responses', () => {
     await registerAndLogin(page);
 
     // Navigate to lobby
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
     await page.waitForURL('**/lobby', { timeout: 15_000 });
 
     // Intercept and return 400 error
@@ -391,7 +387,7 @@ test.describe('Error Recovery - Session Expiry', () => {
     await context.clearCookies();
 
     // Navigate to a protected page (lobby)
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
 
     // Wait for redirect or error
     await page.waitForTimeout(3000);
@@ -409,7 +405,7 @@ test.describe('Error Recovery - Session Expiry', () => {
     await registerAndLogin(page);
 
     // Navigate to lobby first
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
     await page.waitForURL('**/lobby', { timeout: 15_000 });
 
     // Intercept API to return 401 unauthorized
@@ -483,7 +479,7 @@ test.describe('Error Recovery - Rate Limiting', () => {
     await registerAndLogin(page);
 
     // Navigate to lobby
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
     await page.waitForURL('**/lobby', { timeout: 15_000 });
 
     // Intercept games API with rate limit
@@ -649,7 +645,7 @@ test.describe('Error Recovery - Page Reload', () => {
     await registerAndLogin(page);
 
     // Start navigating to lobby
-    await page.getByRole('link', { name: /lobby/i }).click();
+    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
 
     // Immediately reload (during potential loading state)
     await page.reload();

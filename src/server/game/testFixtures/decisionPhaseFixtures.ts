@@ -264,9 +264,9 @@ function seedLineProcessingDecisionPhase(engine: GameEngine): void {
  * for Player 1. This creates a small ring formation that forms an enclosed
  * territory requiring a region order choice decision.
  *
- * The geometry places a 3x3 ring pattern in the corner of the board, where
- * the outer perimeter is controlled by Player 1 and the center is empty,
- * triggering the territory detection logic.
+ * The geometry places a 3x3 marker enclosure in the corner of the board,
+ * with Player 1 stacks on its perimeter to establish the active colour and
+ * provide legal self-elimination targets outside the enclosed region.
  */
 function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
   const engineInternal = engine as unknown as GameEngineInternal;
@@ -283,7 +283,7 @@ function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
   const activePlayerNumber = 1;
 
   // Create a minimal 3x3 territory enclosure in the corner.
-  // Place rings in a perimeter pattern around position (1,1).
+  // Place markers and rings in a perimeter pattern around position (1,1).
   //
   //   0 1 2 3
   // 0 R R R .
@@ -306,6 +306,13 @@ function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
 
   for (const pos of perimeterPositions) {
     const key = positionToString(pos);
+    const marker: MarkerInfo = {
+      player: activePlayerNumber,
+      position: pos,
+      type: 'regular',
+    };
+    board.markers.set(key, marker);
+
     // Each perimeter position gets a height-3 stack controlled by Player 1.
     const stack: RingStack = {
       position: pos,
@@ -323,7 +330,7 @@ function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
   const territory: Territory = {
     spaces: [enclosedPosition],
     controllingPlayer: activePlayerNumber,
-    isDisconnected: false,
+    isDisconnected: true,
   };
   board.territories.set(territoryId, territory);
 

@@ -81,8 +81,8 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
         scenario: 'line_processing',
         isRated: false,
         secondPlayerUsername: user2.username,
-        shortTimeoutMs: 4_000,
-        shortWarningBeforeMs: 2_000,
+        shortTimeoutMs: 8_000,
+        shortWarningBeforeMs: 6_000,
       });
 
       // Connect both players via WebSocket.
@@ -104,17 +104,19 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
       // Drive into the line_processing decision phase per P18.3‑1.
       await coordinator.waitForPhase('player1', 'line_processing', 15_000);
 
-      // Ensure a player_choice_required has been emitted for the active player.
-      const choicePayload = await coordinator.waitFor('player1', {
+      // The fixture schedules a timeout for the canonical line decision. Wait
+      // for its warning event, leaving six seconds to delete the account
+      // before auto-resolution fires.
+      const warningPayload = await coordinator.waitFor('player1', {
         type: 'event',
-        eventName: 'player_choice_required',
+        eventName: 'decision_phase_timeout_warning',
         predicate: (payload) => {
-          const choice = payload as any;
-          return choice?.gameId === gameId;
+          const warning = payload as { data?: { gameId?: string; phase?: string } };
+          return warning?.data?.gameId === gameId && warning?.data?.phase === 'line_processing';
         },
         timeout: 30_000,
       });
-      expect(choicePayload).toBeDefined();
+      expect(warningPayload).toBeDefined();
 
       // Apply degraded network conditions (packet loss + latency) to player1
       // before terminating their sessions.

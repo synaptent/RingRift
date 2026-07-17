@@ -249,7 +249,7 @@ test.describe('Board Type E2E Tests', () => {
       }
 
       // Valid targets should be highlighted
-      const validTargets = page.locator('.outline-emerald-300\\/90, [data-valid="true"]');
+      const validTargets = page.getByTestId('board-view').locator('button.valid-move-cell');
       await expect(validTargets.first()).toBeVisible({ timeout: 10_000 });
     });
   });

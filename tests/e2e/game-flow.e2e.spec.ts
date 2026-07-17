@@ -75,13 +75,9 @@ test.describe('Backend game flow E2E', () => {
     // Click on a valid placement target (highlighted with outline-emerald)
     await gamePage.clickFirstValidTarget();
 
-    // After making a move, the game log should update
-    await expect(gamePage.gameLogSection).toBeVisible();
-
-    // Wait for move to be logged - should show "Recent moves" section
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 15_000 });
-
-    // The move entry should mention P1 (player 1) for the first human move
+    // The move entry should mention P1 (player 1) for the first human move.
+    // The page object scrolls the desktop sidebar and scopes this assertion
+    // to the Recent moves list rather than the neighbouring system events.
     await gamePage.assertPlayerMoveLogged(1);
   });
 
