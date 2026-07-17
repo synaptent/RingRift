@@ -765,6 +765,8 @@ export type FixtureScenario =
 export interface CreateFixtureGameOptions {
   scenario: FixtureScenario;
   isRated?: boolean;
+  /** Registered opponent to persist as Player 2 for multiplayer fixtures. */
+  secondPlayerUsername?: string;
   /**
    * Optional short timeout for decision phase (milliseconds).
    * Used for testing timeout behavior without long waits.
@@ -826,6 +828,9 @@ export async function createFixtureGame(
     data: {
       scenario: options.scenario,
       isRated: options.isRated ?? false,
+      ...(options.secondPlayerUsername !== undefined && {
+        secondPlayerUsername: options.secondPlayerUsername,
+      }),
       ...(options.shortTimeoutMs !== undefined && { shortTimeoutMs: options.shortTimeoutMs }),
       ...(options.shortWarningBeforeMs !== undefined && {
         shortWarningBeforeMs: options.shortWarningBeforeMs,

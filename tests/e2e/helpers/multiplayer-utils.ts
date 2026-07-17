@@ -353,6 +353,7 @@ export async function setupMultiplayerFixtureGame(
   const { gameId } = await createFixtureGame(page1, {
     scenario: options.scenario,
     isRated: options.isRated ?? false,
+    secondPlayerUsername: user2.username,
     ...(options.shortTimeoutMs !== undefined && { shortTimeoutMs: options.shortTimeoutMs }),
     ...(options.shortWarningBeforeMs !== undefined && {
       shortWarningBeforeMs: options.shortWarningBeforeMs,

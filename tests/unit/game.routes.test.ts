@@ -23,6 +23,7 @@ const mockGameCount = jest.fn();
 const mockUserFindUnique = jest.fn();
 const mockMoveFindMany = jest.fn();
 const mockMoveCount = jest.fn();
+const mockCreateDecisionPhaseFixtureGame = jest.fn().mockResolvedValue('fixture-game-123');
 
 jest.mock('../../src/server/database/connection', () => ({
   getDatabaseClient: jest.fn(() => ({
@@ -94,7 +95,7 @@ jest.mock('../../src/server/services/AIServiceClient', () => ({
 }));
 
 jest.mock('../../src/server/game/testFixtures/decisionPhaseFixtures', () => ({
-  createDecisionPhaseFixtureGame: jest.fn().mockResolvedValue('fixture-game-123'),
+  createDecisionPhaseFixtureGame: mockCreateDecisionPhaseFixtureGame,
 }));
 
 jest.mock('../../src/server/services/RatingService', () => ({
@@ -158,6 +159,49 @@ describe('Game HTTP routes', () => {
       const res = await request(app).get('/api/games').expect(401);
 
       expect(res.body.success).toBe(false);
+    });
+  });
+
+  describe('POST /api/games/fixtures/decision-phase', () => {
+    it('persists a distinct registered second player for multiplayer fixtures', async () => {
+      mockUserFindUnique.mockResolvedValue({ id: 'user-456' });
+      const app = createTestApp();
+
+      const res = await request(app)
+        .post('/api/games/fixtures/decision-phase')
+        .send({
+          scenario: 'line_processing',
+          isRated: false,
+          secondPlayerUsername: 'opponent',
+        })
+        .expect(201);
+
+      expect(res.body.data.gameId).toBe('fixture-game-123');
+      expect(mockUserFindUnique).toHaveBeenCalledWith({
+        where: { username: 'opponent' },
+        select: { id: true },
+      });
+      expect(mockCreateDecisionPhaseFixtureGame).toHaveBeenCalledWith(
+        expect.objectContaining({
+          creatorUserId: 'user-123',
+          secondPlayerUserId: 'user-456',
+          scenario: 'line_processing',
+          isRated: false,
+        })
+      );
+    });
+
+    it('rejects an unknown second player', async () => {
+      mockUserFindUnique.mockResolvedValue(null);
+      const app = createTestApp();
+
+      const res = await request(app)
+        .post('/api/games/fixtures/decision-phase')
+        .send({ scenario: 'line_processing', secondPlayerUsername: 'missing-user' })
+        .expect(400);
+
+      expect(res.body.error.code).toBe('VALIDATION_INVALID_REQUEST');
+      expect(mockCreateDecisionPhaseFixtureGame).not.toHaveBeenCalled();
     });
   });
 

@@ -84,6 +84,8 @@ const routeContext: GameRouteContext = {
  *                 enum: [line_processing, territory_processing, chain_capture_choice, near_victory_elimination, near_victory_territory]
  *               isRated:
  *                 type: boolean
+ *               secondPlayerUsername:
+ *                 type: string
  *               shortTimeoutMs:
  *                 type: integer
  *               shortWarningBeforeMs:
@@ -122,6 +124,8 @@ router.post(
         | 'near_victory_elimination'
         | 'near_victory_territory';
       isRated?: boolean;
+      /** Optional second registered player for multiplayer E2E fixtures. */
+      secondPlayerUsername?: string;
       /** Optional short timeout for E2E testing (milliseconds) */
       shortTimeoutMs?: number;
       /** Optional short warning time (milliseconds before timeout) */
@@ -159,8 +163,39 @@ router.post(
       );
     }
 
+    const creatorUserId = getAuthUserId(req);
+    let secondPlayerUserId: string | undefined;
+    if (body.secondPlayerUsername !== undefined) {
+      const secondPlayerUsername = body.secondPlayerUsername.trim();
+      if (!secondPlayerUsername) {
+        throw createError(
+          'secondPlayerUsername must not be empty',
+          400,
+          ErrorCodes.VALIDATION_INVALID_REQUEST
+        );
+      }
+
+      const prisma = getDatabaseClient();
+      if (!prisma) {
+        throw createError('Database not available', 503, 'DATABASE_UNAVAILABLE');
+      }
+      const secondPlayer = await prisma.user.findUnique({
+        where: { username: secondPlayerUsername },
+        select: { id: true },
+      });
+      if (!secondPlayer || secondPlayer.id === creatorUserId) {
+        throw createError(
+          'secondPlayerUsername must identify a different registered user',
+          400,
+          ErrorCodes.VALIDATION_INVALID_REQUEST
+        );
+      }
+      secondPlayerUserId = secondPlayer.id;
+    }
+
     const gameId = await createDecisionPhaseFixtureGame({
-      creatorUserId: getAuthUserId(req),
+      creatorUserId,
+      ...(secondPlayerUserId && { secondPlayerUserId }),
       scenario,
       isRated,
       ...(shortTimeoutMs !== undefined && { shortTimeoutMs }),

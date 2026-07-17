@@ -785,6 +785,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const fixture = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: true,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4_000,
           shortWarningBeforeMs: 2_000,
         });
@@ -862,6 +863,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: true,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4000,
           shortWarningBeforeMs: 2000,
         });
@@ -944,6 +946,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const rated = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: true,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4_000,
           shortWarningBeforeMs: 2_000,
         });
@@ -990,6 +993,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const unrated = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: false,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4_000,
           shortWarningBeforeMs: 2_000,
         });

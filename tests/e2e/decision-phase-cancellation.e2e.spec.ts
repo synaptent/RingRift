@@ -80,6 +80,7 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
       const { gameId } = await createFixtureGame(page1, {
         scenario: 'line_processing',
         isRated: false,
+        secondPlayerUsername: user2.username,
         shortTimeoutMs: 4_000,
         shortWarningBeforeMs: 2_000,
       });

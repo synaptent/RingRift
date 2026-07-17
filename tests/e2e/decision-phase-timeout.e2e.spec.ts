@@ -131,6 +131,7 @@ test.describe('Decision-phase timeout E2E', () => {
       const { gameId } = await createFixtureGame(page1, {
         scenario: 'line_processing',
         isRated: false,
+        secondPlayerUsername: user2.username,
         shortTimeoutMs: 4_000,
         shortWarningBeforeMs: 2_000,
       });
@@ -175,6 +176,7 @@ test.describe('Decision-phase timeout E2E', () => {
       const { gameId } = await createFixtureGame(page1, {
         scenario: 'territory_processing',
         isRated: false,
+        secondPlayerUsername: user2.username,
         shortTimeoutMs: 4_000,
         shortWarningBeforeMs: 2_000,
       });
@@ -219,6 +221,7 @@ test.describe('Decision-phase timeout E2E', () => {
       const { gameId } = await createFixtureGame(page1, {
         scenario: 'chain_capture_choice',
         isRated: false,
+        secondPlayerUsername: user2.username,
         shortTimeoutMs: 4_000,
         shortWarningBeforeMs: 2_000,
       });
@@ -275,6 +278,7 @@ test.describe('Decision-phase timeout E2E', () => {
       const { gameId } = await createFixtureGame(page1, {
         scenario: 'line_processing',
         isRated: false,
+        secondPlayerUsername: user2.username,
         shortTimeoutMs: 4_000,
         shortWarningBeforeMs: 2_000,
       });

@@ -479,6 +479,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'chain_capture_choice',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
 
         await coordinator.connect('player1', {
@@ -549,6 +550,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'chain_capture_choice',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
 
         await coordinator.connect('player1', {
@@ -684,6 +686,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'near_victory_territory',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
 
         // Connect both players via WebSocket.
@@ -746,6 +749,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'near_victory_elimination',
           isRated: true,
+          secondPlayerUsername: user2.username,
         });
 
         // Connect both players via WebSocket.
@@ -836,6 +840,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const eliminationFixture = await createFixtureGame(page1, {
           scenario: 'near_victory_elimination',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
         const gameId1 = eliminationFixture.gameId;
 
@@ -881,6 +886,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const territoryFixture = await createFixtureGame(page1, {
           scenario: 'near_victory_territory',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
         const gameId2 = territoryFixture.gameId;
 

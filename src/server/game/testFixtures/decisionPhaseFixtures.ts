@@ -48,6 +48,8 @@ export interface DecisionPhaseFixtureMetadata {
 
 export interface CreateDecisionPhaseFixtureOptions {
   creatorUserId: string;
+  /** Optional second human player for multiplayer fixtures. */
+  secondPlayerUserId?: string;
   scenario?: DecisionPhaseScenario;
   isRated?: boolean;
   /**
@@ -115,6 +117,7 @@ export async function createDecisionPhaseFixtureGame(
       allowSpectators: true,
       status: 'active' as PrismaGameStatus,
       player1Id: options.creatorUserId,
+      ...(options.secondPlayerUserId && { player2Id: options.secondPlayerUserId }),
       gameState: JSON.stringify(initialGameState),
       rngSeed,
       createdAt: now,
@@ -127,6 +130,7 @@ export async function createDecisionPhaseFixtureGame(
     gameId: game.id,
     scenario,
     isRated,
+    playerCount: options.secondPlayerUserId ? 2 : 1,
   });
 
   return game.id;
