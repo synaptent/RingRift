@@ -64,9 +64,7 @@ test.describe('AI Game E2E Tests', () => {
     // After human move, AI should make a move - look for P2 (AI) move in log
     // Allow time for AI service to respond
     await expect(async () => {
-      // Check for AI move (P2) in the recent moves
-      const moveLog = page.locator('text=/P2/i');
-      await expect(moveLog).toBeVisible({ timeout: 5_000 });
+      await gamePage.assertPlayerMoveLogged(2);
     }).toPass({ timeout: 60_000 });
   });
 
