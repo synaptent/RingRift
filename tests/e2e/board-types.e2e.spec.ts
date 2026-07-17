@@ -225,13 +225,17 @@ test.describe('Board Type E2E Tests', () => {
       }
     });
 
-    test('sandbox hexagonal board has valid move targets', async ({ page }) => {
-      await registerAndLogin(page);
+    test('sandbox hexagonal board exposes interactive placement cells', async ({ page }) => {
+      // Keep this on the local sandbox path. Authenticated presets intentionally
+      // prefer a backend game, which would make this test cover the wrong host.
       await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
 
-      // Valid targets should be highlighted
-      const validTargets = page.getByTestId('board-view').locator('button.valid-move-cell');
-      await expect(validTargets.first()).toBeVisible({ timeout: 10_000 });
+      // Ring placement is a direct-cell action in the sandbox: empty cells are
+      // enabled rather than pre-highlighted as movement destinations.
+      const placementCells = page.getByTestId('board-view').locator('button');
+      await expect(placementCells).toHaveCount(61);
+      await expect(placementCells.first()).toBeVisible();
+      await expect(placementCells.first()).toBeEnabled();
     });
   });
 });

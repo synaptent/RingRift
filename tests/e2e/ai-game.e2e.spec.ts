@@ -142,8 +142,8 @@ test.describe('AI Game E2E Tests', () => {
     const gamePage = new GamePage(page);
     await gamePage.waitForReady();
 
-    // Should start in ring_placement phase.
-    await gamePage.assertPhase('Ring Placement');
+    // The canonical ring_placement phase is presented to players as "Place Rings".
+    await gamePage.assertPhase('Place Rings');
   });
 
   test('AI game maintains connection after multiple turns', async ({ page }) => {

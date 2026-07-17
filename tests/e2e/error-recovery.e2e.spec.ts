@@ -227,7 +227,7 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
 
     // The canonical phase indicator is present before the timeout is
     // scheduled; a separate PlayerChoice banner is not required here.
-    await gamePage.assertPhase('Line Processing');
+    await gamePage.assertPhase('Line Formed!');
 
     // 4) Simulate a client-side disconnect while the decision is pending by
     //    explicitly closing any tracked WebSocket connections.
@@ -380,22 +380,21 @@ test.describe('Error Recovery - Session Expiry', () => {
 
   test('redirects to login on session expiry', async ({ page, context }) => {
     // Register and login
-    const user = await registerAndLogin(page);
+    await registerAndLogin(page);
 
     // Verify we're authenticated
     await expect(page.getByRole('button', { name: /logout/i })).toBeVisible();
 
-    // Clear all cookies to simulate session expiry
+    // Authentication is bearer-token based, so expiring only cookies leaves
+    // the real session intact. Remove both browser credential stores and force
+    // a fresh protected-route evaluation.
     await context.clearCookies();
+    await page.evaluate(() => localStorage.removeItem('token'));
 
-    // Navigate to a protected page (lobby)
-    await page.getByRole('link', { name: 'Lobby', exact: true }).click();
+    await page.goto('/lobby');
 
-    // Wait for redirect or error
-    await page.waitForTimeout(3000);
-
-    // Should redirect to login or show authentication required
-    await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: /RingRift.*Login/i })).toBeVisible();
   });
 
   test('handles expired token on API request', async ({ page, context }) => {

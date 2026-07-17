@@ -514,7 +514,11 @@ export async function goToSandbox(page: Page, url = '/sandbox'): Promise<void> {
   const setupHeading = page.getByRole('heading', { name: /Start a Game \(Sandbox\)/i });
   const boardView = page.getByTestId('board-view');
 
-  await expect(setupHeading.or(boardView)).toBeVisible({ timeout: 30_000 });
+  if (/[?&]preset=/.test(url)) {
+    await expect(boardView).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(setupHeading.or(boardView)).toBeVisible({ timeout: 30_000 });
+  }
 }
 
 /**
@@ -529,18 +533,12 @@ export async function goToGame(page: Page, gameId: string): Promise<void> {
  * Navigates to the root route ("/") and waits for whichever shell is appropriate
  * for the current authentication state:
  *
- * - Authenticated users: the Home page with "Welcome to RingRift".
- * - Guests: the Login page.
- *
- * This keeps navigation helpers resilient to auth routing changes while still
- * asserting that the app renders a valid entry shell.
+ * The root route is the public landing page for both authenticated users and
+ * guests, so assert its stable primary heading.
  */
 export async function goToHome(page: Page): Promise<void> {
   await page.goto('/');
-  const homeHeading = page.getByRole('heading', { name: /Welcome to RingRift/i });
-  const loginHeading = page.getByRole('heading', { name: /login/i });
-
-  await expect(homeHeading.or(loginHeading)).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'RingRift', exact: true })).toBeVisible({
     timeout: 10_000,
   });
 }

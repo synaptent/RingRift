@@ -126,9 +126,7 @@ test.describe('Backend game flow E2E', () => {
     const gamePage = new GamePage(page);
     await gamePage.waitForReady();
 
-    // Should be in ring placement phase at start
-    await expect(page.locator('text=/ring_placement|Ring Placement|placement/i')).toBeVisible({
-      timeout: 10_000,
-    });
+    // The canonical ring_placement phase is presented to players as "Place Rings".
+    await gamePage.assertPhase('Place Rings');
   });
 });

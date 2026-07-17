@@ -373,15 +373,18 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
 
         // Create a standard 2-player backend game; server defaults swapRuleEnabled=true.
         const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
-        const createResponse = await page1.request.post(`${apiBaseUrl.replace(/\/$/, '')}/games`, {
-          data: {
-            boardType: 'square8',
-            timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
-            isRated: false,
-            isPrivate: false,
-            maxPlayers: 2,
-          },
-        });
+        const createResponse = await page1.request.post(
+          `${apiBaseUrl.replace(/\/$/, '')}/api/games`,
+          {
+            data: {
+              boardType: 'square8',
+              timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+              isRated: false,
+              isPrivate: false,
+              maxPlayers: 2,
+            },
+          }
+        );
         if (!createResponse.ok()) {
           throw new Error(`Failed to create game: ${createResponse.status()}`);
         }
