@@ -189,11 +189,8 @@ test.describe('E2E Helpers Smoke Tests', () => {
       // Then to home (guest or authenticated, depending on prior helpers).
       await goToHome(page);
 
-      // Root should resolve to either the authenticated home shell or the login page.
-      const homeHeading = page.getByRole('heading', { name: /Welcome to RingRift/i });
-      const loginHeading = page.getByRole('heading', { name: /login/i });
-
-      await expect(homeHeading.or(loginHeading)).toBeVisible();
+      // The root route is the public landing page regardless of authentication.
+      await expect(page.getByRole('heading', { name: 'RingRift', exact: true })).toBeVisible();
     });
 
     test('goToSandbox navigates to sandbox pre-game page', async ({ page }) => {

@@ -376,6 +376,9 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const createResponse = await page1.request.post(
           `${apiBaseUrl.replace(/\/$/, '')}/api/games`,
           {
+            headers: {
+              Authorization: `Bearer ${token1}`,
+            },
             data: {
               boardType: 'square8',
               timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },

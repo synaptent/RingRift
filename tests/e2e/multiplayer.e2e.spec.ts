@@ -79,7 +79,7 @@ test.describe('Multiplayer Game E2E', () => {
    */
   async function setupPlayer(page: Page, user: TestUser): Promise<void> {
     await registerUser(page, user.username, user.email, user.password);
-    await expect(page.getByText(user.username)).toBeVisible({ timeout: 10_000 });
+    await new HomePage(page).assertUsernameDisplayed(user.username);
   }
 
   /**
