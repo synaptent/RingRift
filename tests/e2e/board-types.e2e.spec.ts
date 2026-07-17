@@ -226,6 +226,16 @@ test.describe('Board Type E2E Tests', () => {
     });
 
     test('sandbox hexagonal board exposes interactive placement cells', async ({ page }) => {
+      const renderLoopErrors: string[] = [];
+      page.on('console', (message) => {
+        if (
+          message.type() === 'error' &&
+          message.text().includes('Maximum update depth exceeded')
+        ) {
+          renderLoopErrors.push(message.text());
+        }
+      });
+
       // Keep this on the local sandbox path. Authenticated presets intentionally
       // prefer a backend game, which would make this test cover the wrong host.
       await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
@@ -236,6 +246,9 @@ test.describe('Board Type E2E Tests', () => {
       await expect(placementCells).toHaveCount(61);
       await expect(placementCells.first()).toBeVisible();
       await expect(placementCells.first()).toBeEnabled();
+      await expect(page).toHaveURL(/\/sandbox$/);
+      await page.waitForTimeout(1_000);
+      expect(renderLoopErrors).toEqual([]);
     });
   });
 });

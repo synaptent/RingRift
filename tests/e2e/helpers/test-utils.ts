@@ -438,7 +438,9 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
   await recentMoves.evaluate((heading) => {
     const eventLog = heading.closest<HTMLElement>('[data-testid="game-event-log"]');
     if (eventLog) {
-      eventLog.scrollTop = Math.max(0, (heading as HTMLElement).offsetTop - 12);
+      const logRect = eventLog.getBoundingClientRect();
+      const headingRect = heading.getBoundingClientRect();
+      eventLog.scrollTop = Math.max(0, eventLog.scrollTop + headingRect.top - logRect.top - 12);
     }
   });
   await recentMoves.scrollIntoViewIfNeeded();
@@ -460,10 +462,14 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
 export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void> {
   const gameLog = page.getByTestId('game-event-log');
   const recentMoves = gameLog.getByText('Recent moves', { exact: true });
+  await gameLog.scrollIntoViewIfNeeded();
+  await expect(gameLog).toBeVisible({ timeout });
   await recentMoves.evaluate((heading) => {
     const eventLog = heading.closest<HTMLElement>('[data-testid="game-event-log"]');
     if (eventLog) {
-      eventLog.scrollTop = Math.max(0, (heading as HTMLElement).offsetTop - 12);
+      const logRect = eventLog.getBoundingClientRect();
+      const headingRect = heading.getBoundingClientRect();
+      eventLog.scrollTop = Math.max(0, eventLog.scrollTop + headingRect.top - logRect.top - 12);
     }
   });
   await recentMoves.scrollIntoViewIfNeeded();

@@ -194,13 +194,19 @@ export class GamePage {
    * Bring the move-log subsection into view and assert that it is rendered.
    */
   async assertRecentMovesVisible(timeout = 15_000): Promise<void> {
+    await this.gameLogSection.scrollIntoViewIfNeeded();
+    await expect(this.gameLogSection).toBeVisible({ timeout });
+
     // The event log has its own overflow container. Playwright's generic
     // scrollIntoViewIfNeeded() can scroll the page while leaving this child
-    // clipped inside that container, so move the log's scroll position first.
+    // clipped inside that container, so move the log's scroll position using
+    // viewport-relative geometry before asking Playwright to align the page.
     await this.recentMovesSection.evaluate((heading) => {
       const eventLog = heading.closest<HTMLElement>('[data-testid="game-event-log"]');
       if (eventLog) {
-        eventLog.scrollTop = Math.max(0, (heading as HTMLElement).offsetTop - 12);
+        const logRect = eventLog.getBoundingClientRect();
+        const headingRect = heading.getBoundingClientRect();
+        eventLog.scrollTop = Math.max(0, eventLog.scrollTop + headingRect.top - logRect.top - 12);
       }
     });
     await this.recentMovesSection.scrollIntoViewIfNeeded();

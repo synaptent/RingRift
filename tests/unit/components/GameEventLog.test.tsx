@@ -79,7 +79,7 @@ describe('GameEventLog', () => {
     it('has scrollable container with max height', () => {
       render(<GameEventLog history={[]} />);
       const container = screen.getByTestId('game-event-log');
-      expect(container).toHaveClass('max-h-64', 'overflow-y-auto');
+      expect(container).toHaveClass('min-h-20', 'max-h-64', 'overflow-y-auto');
     });
   });
 
