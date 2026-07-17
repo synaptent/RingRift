@@ -87,7 +87,7 @@ test.describe('Multiplayer Game E2E', () => {
    */
   async function createMultiplayerGame(page: Page): Promise<string> {
     await test.step('Navigate to lobby', async () => {
-      await page.getByRole('link', { name: /lobby/i }).click();
+      await page.getByRole('link', { name: 'Lobby', exact: true }).click();
       await page.waitForURL('**/lobby', { timeout: 15_000 });
       await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
         timeout: 10_000,
@@ -169,7 +169,7 @@ test.describe('Multiplayer Game E2E', () => {
     // Wait for the last move indicator or any visual change
     // This is a simplistic approach - wait for any recent move to appear
     await page.waitForTimeout(1000); // Small delay to allow WebSocket propagation
-    await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout });
+    await new GamePage(page).assertRecentMovesVisible(timeout);
   }
 
   // ============================================================================
@@ -280,7 +280,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p2GamePage.clickFirstValidTarget();
         } catch {
           // If no valid targets, game may have auto-progressed
-          console.log('No valid targets for P2, game may have different state');
+          console.debug('No valid targets for P2, game may have different state');
         }
       });
     });
@@ -337,8 +337,7 @@ test.describe('Multiplayer Game E2E', () => {
         await player2Page.waitForTimeout(3000);
 
         // Check if move is logged on P2's screen
-        const moveLog = player2Page.locator('text=/Recent moves/i');
-        await expect(moveLog).toBeVisible({ timeout: 15_000 });
+        await new GamePage(player2Page).assertRecentMovesVisible(15_000);
       });
     });
 
@@ -362,7 +361,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p1GamePage.assertValidTargetsVisible();
           await p1GamePage.clickFirstValidTarget();
         } catch {
-          console.log('P1 could not make move - may not be their turn');
+          console.debug('P1 could not make move - may not be their turn');
         }
       });
 
@@ -502,9 +501,7 @@ test.describe('Multiplayer Game E2E', () => {
           expect(newGameIdP1).not.toBe(originalGameId);
 
           // Basic sanity check that HUD and moves are reset for the new session
-          await expect(setup!.player1.gamePage.recentMovesSection).toBeVisible({
-            timeout: 15_000,
-          });
+          await setup!.player1.gamePage.assertRecentMovesVisible(15_000);
         });
       } finally {
         if (setup) {
@@ -595,7 +592,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p1GamePage.assertValidTargetsVisible();
           await p1GamePage.clickFirstValidTarget();
         } catch {
-          console.log('Could not make move - continuing test');
+          console.debug('Could not make move - continuing test');
         }
         await player1Page.waitForTimeout(2000);
       });
@@ -875,7 +872,7 @@ test.describe('Multiplayer Game E2E', () => {
         await test.step('Player 2 sees game state after reconnect', async () => {
           await expect(setup!.player2.gamePage.boardView).toBeVisible();
           // Should see the move log indicating game state was preserved
-          await expect(setup!.player2.gamePage.recentMovesSection).toBeVisible({ timeout: 15_000 });
+          await setup!.player2.gamePage.assertRecentMovesVisible(15_000);
         });
       } finally {
         if (setup) {
@@ -920,8 +917,8 @@ test.describe('Multiplayer Game E2E', () => {
 
         await test.step('Game state is consistent', async () => {
           // Both players should see the game log
-          await expect(setup!.player1.gamePage.recentMovesSection).toBeVisible({ timeout: 10_000 });
-          await expect(setup!.player2.gamePage.recentMovesSection).toBeVisible({ timeout: 10_000 });
+          await setup!.player1.gamePage.assertRecentMovesVisible(10_000);
+          await setup!.player2.gamePage.assertRecentMovesVisible(10_000);
         });
       } finally {
         if (setup) {
@@ -983,7 +980,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p1GamePage.clickFirstValidTarget();
           await player1Page.waitForTimeout(3000);
         } catch {
-          console.log('P1 could not make initial move');
+          console.debug('P1 could not make initial move');
         }
 
         // P2 makes a move
@@ -993,7 +990,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p2GamePage.clickFirstValidTarget();
           await player2Page.waitForTimeout(3000);
         } catch {
-          console.log('P2 could not make move');
+          console.debug('P2 could not make move');
         }
       });
 

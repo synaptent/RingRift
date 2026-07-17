@@ -39,7 +39,7 @@ export class GamePage {
     // locators can resolve hidden copies while responsive hosts reflow.
     this.gameLogSection = page.getByTestId('game-event-log');
     this.recentMovesSection = this.gameLogSection.getByText('Recent moves', { exact: true });
-    this.phaseIndicator = page.locator('text=/Phase/i');
+    this.phaseIndicator = page.getByTestId('phase-indicator');
     this.currentPlayerIndicator = page.locator('text=/Current player/i');
     this.chatInput = page.locator('input[placeholder*="Type a message"]');
     this.chatSendButton = page.locator('button:has-text("Send")');
@@ -175,11 +175,7 @@ export class GamePage {
    * Assert that a move was logged.
    */
   async assertMoveLogged(pattern: RegExp | string): Promise<void> {
-    // The desktop sidebar can extend below the initial viewport. Bring the
-    // canonical log container into view before asserting on its contents.
-    await this.gameLogSection.scrollIntoViewIfNeeded();
-    await expect(this.gameLogSection).toBeVisible({ timeout: 15_000 });
-    await expect(this.recentMovesSection).toBeVisible({ timeout: 15_000 });
+    await this.assertRecentMovesVisible();
     const recentMoveList = this.recentMovesSection.locator('xpath=following-sibling::ul[1]');
     const moveEntry = recentMoveList.locator('li').filter({
       hasText: pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i'),
@@ -195,10 +191,22 @@ export class GamePage {
   }
 
   /**
+   * Bring the move-log subsection into view and assert that it is rendered.
+   */
+  async assertRecentMovesVisible(timeout = 15_000): Promise<void> {
+    // The desktop sidebar extends below the initial viewport. Scrolling only
+    // the outer log can still leave this child clipped, so target the stable
+    // subsection heading itself.
+    await this.recentMovesSection.scrollIntoViewIfNeeded();
+    await expect(this.recentMovesSection).toBeVisible({ timeout });
+  }
+
+  /**
    * Assert the current game phase.
    */
   async assertPhase(phase: string): Promise<void> {
-    await expect(this.page.locator(`text=/${phase}/i`)).toBeVisible({ timeout: 5_000 });
+    await this.phaseIndicator.scrollIntoViewIfNeeded();
+    await expect(this.phaseIndicator).toContainText(phase, { timeout: 10_000 });
   }
 
   /**
@@ -245,7 +253,7 @@ export class GamePage {
    * Navigate back to lobby.
    */
   async goToLobby(): Promise<void> {
-    await this.page.getByRole('link', { name: /lobby/i }).click();
+    await this.page.getByRole('link', { name: 'Lobby', exact: true }).click();
     await this.page.waitForURL('**/lobby', { timeout: 10_000 });
   }
 

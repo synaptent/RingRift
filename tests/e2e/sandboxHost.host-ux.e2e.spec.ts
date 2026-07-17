@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { goToSandbox, assertNoErrors } from './helpers/test-utils';
+import { goToSandbox, assertNoErrors, waitForMoveLog } from './helpers/test-utils';
 
 /**
  * E2E Test Suite: Sandbox Host UX (@host-ux)
@@ -109,8 +109,7 @@ test.describe('sandbox host @host-ux', () => {
     await firstTarget.click();
 
     // After the human move, the sandbox event log should show activity.
-    await expect(page.locator('text=/Game log/i')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout: 30_000 });
+    await waitForMoveLog(page, 30_000);
 
     // Allow time for the local AI (Player 2) to respond, then look for a P2
     // entry in the log, mirroring the backend AI E2E tests.

@@ -276,7 +276,7 @@ export async function setupMultiplayerGameAdvanced(
   await registerUser(page2, user2.username, user2.email, user2.password);
 
   // Player 1 creates the game
-  await page1.getByRole('link', { name: /lobby/i }).click();
+  await page1.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page1.waitForURL('**/lobby', { timeout: 15_000 });
   await expect(page1.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
     timeout: 10_000,
@@ -424,7 +424,7 @@ export async function coordinatePlayerTurn(
   await waitingPlayer.page.waitForTimeout(waitAfterMove);
 
   // Verify waiting player sees the update
-  await expect(waitingPlayer.gamePage.recentMovesSection).toBeVisible({ timeout: 10_000 });
+  await waitingPlayer.gamePage.assertRecentMovesVisible(10_000);
 }
 
 /**

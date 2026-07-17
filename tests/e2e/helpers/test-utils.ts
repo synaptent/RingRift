@@ -435,6 +435,7 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
   await expect(gameLog).toBeVisible({ timeout: 15_000 });
   // Wait for "Recent moves" section to appear
   const recentMoves = gameLog.getByText('Recent moves', { exact: true });
+  await recentMoves.scrollIntoViewIfNeeded();
   await expect(recentMoves).toBeVisible({
     timeout: 15_000,
   });
@@ -452,9 +453,9 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
  */
 export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void> {
   const gameLog = page.getByTestId('game-event-log');
-  await gameLog.scrollIntoViewIfNeeded();
-  await expect(gameLog).toBeVisible({ timeout });
-  await expect(gameLog.getByText('Recent moves', { exact: true })).toBeVisible({ timeout });
+  const recentMoves = gameLog.getByText('Recent moves', { exact: true });
+  await recentMoves.scrollIntoViewIfNeeded();
+  await expect(recentMoves).toBeVisible({ timeout });
 }
 
 // ============================================================================

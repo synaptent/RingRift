@@ -142,10 +142,8 @@ test.describe('AI Game E2E Tests', () => {
     const gamePage = new GamePage(page);
     await gamePage.waitForReady();
 
-    // Should start in ring_placement phase
-    await expect(page.locator('text=/ring_placement|Ring Placement|placement/i')).toBeVisible({
-      timeout: 10_000,
-    });
+    // Should start in ring_placement phase.
+    await gamePage.assertPhase('Ring Placement');
   });
 
   test('AI game maintains connection after multiple turns', async ({ page }) => {
