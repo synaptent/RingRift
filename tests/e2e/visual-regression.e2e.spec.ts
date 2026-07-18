@@ -9,6 +9,27 @@ async function startSquare8Tutorial(page: Page): Promise<void> {
     .click();
 }
 
+async function selectFirstEmptyPlacement(page: Page): Promise<void> {
+  const target = page
+    .getByTestId('board-view')
+    .locator('button[class*="outline-emerald"][aria-label*="Empty cell"]')
+    .first();
+  await expect(target).toBeVisible({ timeout: 25_000 });
+  await target.click();
+  await expect(target).toHaveAttribute('aria-pressed', 'true');
+}
+
+async function placeRingOnFirstEmptyCell(page: Page): Promise<void> {
+  await selectFirstEmptyPlacement(page);
+  await page.keyboard.press('Enter');
+  await expect(
+    page
+      .getByTestId('board-view')
+      .getByRole('button', { name: /Stack height/i })
+      .first()
+  ).toBeVisible({ timeout: 10_000 });
+}
+
 /**
  * Visual Regression Test Suite
  * ============================================================================
@@ -93,9 +114,11 @@ test.describe('Visual Regression Tests', () => {
       await expect(boardView).toHaveScreenshot('initial-game-board.png');
     });
 
-    test('game board with valid placement targets highlighted', async ({ page }) => {
+    test('game board highlights landing targets after selecting a placement', async ({ page }) => {
       await goToSandbox(page);
       await startSquare8Tutorial(page);
+
+      await selectFirstEmptyPlacement(page);
 
       const validTargets = page
         .getByTestId('board-view')
@@ -113,14 +136,7 @@ test.describe('Visual Regression Tests', () => {
       await goToSandbox(page);
       await startSquare8Tutorial(page);
 
-      const validTargets = page
-        .getByTestId('board-view')
-        .locator('button[class*="outline-emerald"]');
-      await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
-      await validTargets.first().click();
-
-      // Wait for the move to be processed and board to update
-      await page.waitForTimeout(1500);
+      await placeRingOnFirstEmptyCell(page);
 
       const boardView = page.getByTestId('board-view');
       await expect(boardView).toBeVisible();
@@ -146,12 +162,7 @@ test.describe('Visual Regression Tests', () => {
       await startSquare8Tutorial(page);
 
       // Make a move to populate the event log
-      const validTargets = page
-        .getByTestId('board-view')
-        .locator('button[class*="outline-emerald"]');
-      await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
-      await validTargets.first().click();
-      await page.waitForTimeout(1500);
+      await placeRingOnFirstEmptyCell(page);
 
       // Open advanced panels to reveal the event log in sandbox mode.
       const advancedPanels = page.getByTestId('sandbox-advanced-sidebar-panels');

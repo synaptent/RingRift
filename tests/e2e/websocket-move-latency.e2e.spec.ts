@@ -15,7 +15,7 @@ import { GamePage } from './pages';
  * - Creates a backend human-vs-AI game (square8) via the normal lobby flow
  * - Waits for the game board and WebSocket connection to be ready
  * - Plays a series of simple human moves via the UI
- * - For each move, measures click-to-GameEventLog update latency
+ * - For each move, measures confirmation-to-GameEventLog update latency
  * - Asserts p95 and p99 RTTs are within the staging-level SLOs from
  *   STRATEGIC_ROADMAP.md §2.2
  */
@@ -106,19 +106,24 @@ test.describe('WebSocket move latency E2E', () => {
  *
  * The RTT is defined as:
  *
- *   performance.now() at click-time → first "Recent moves" entry change
- *   in the GameEventLog corresponding to that move's game_state update.
+ *   performance.now() at placement confirmation → first "Recent moves"
+ *   signature change corresponding to that move's game_state update.
  *
  * The implementation uses a DOM-based detector that:
- * - Counts the number of move entries under the "Recent moves" section
- *   before the move
- * - Clicks the first valid target on the board (human move)
- * - Waits (in the browser context) until the move count increases
+ * - Selects an empty placement target before timing begins
+ * - Confirms the selected placement with Enter (human move)
+ * - Waits (in the browser context) until the move signature changes
  *   and returns the elapsed performance.now() delta in milliseconds
  */
 async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
-  // Ensure we are at a point where the human can make a move.
-  await gamePage.assertValidTargetsVisible();
+  // Ring placement is a two-step interaction: select an empty cell, then
+  // confirm. Start timing only after the deterministic selection is ready.
+  const placementTarget = gamePage.boardView
+    .locator('button[class*="outline-emerald"][aria-label*="Empty cell"]')
+    .first();
+  await expect(placementTarget).toBeVisible({ timeout: 25_000 });
+  await placementTarget.click();
+  await expect(placementTarget).toHaveAttribute('aria-pressed', 'true');
 
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.
@@ -139,14 +144,14 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
       .join('|');
   });
 
-  // Capture start time as close as possible to the click that triggers the move.
+  // Capture start time as close as possible to confirmation that submits the move.
   const startTime = await page.evaluate(() => performance.now());
 
-  // Trigger a simple, deterministic human move via the UI.
-  await gamePage.clickFirstValidTarget();
+  // Submit the selected placement through the same keyboard path a player uses.
+  await page.keyboard.press('Enter');
 
-  // Wait in the browser context until the number of move entries increases,
-  // then return the elapsed time since startTime.
+  // Wait in the browser context until the move signature changes, then return
+  // the elapsed time since startTime.
   const timeoutMs = 10_000;
   const rttHandle = await page.waitForFunction(
     (state: { previousSignature: string; startedAt: number }) => {

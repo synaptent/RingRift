@@ -14,7 +14,7 @@
  * @module ClockManager
  */
 
-import { config } from '../../config';
+import { isJestRuntime } from '../../../shared/utils/envFlags';
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
@@ -45,8 +45,9 @@ export class ClockManager {
 
   constructor(clockConfig: ClockManagerConfig) {
     this.config = clockConfig;
-    // Disable timers in test environments to avoid Jest warnings
-    this.isDisabled = clockConfig.disableTimers ?? config.isTest === true;
+    // Disable timers only inside Jest workers. Browser E2E servers also run
+    // with NODE_ENV=test, but must exercise production-like clock expiry.
+    this.isDisabled = clockConfig.disableTimers ?? isJestRuntime();
   }
 
   /**

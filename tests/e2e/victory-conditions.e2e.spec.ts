@@ -167,7 +167,7 @@ test.describe('Victory Conditions E2E Tests', () => {
       await expect(victoryHelp).toBeVisible();
 
       // The text should mention eliminating rings (ringsPerPlayer = starting supply)
-      await expect(victoryHelp.locator('text=/eliminate.*ring|ring.*eliminat/i')).toBeVisible();
+      await expect(victoryHelp.getByText('Ring Elimination', { exact: true })).toBeVisible();
     });
 
     test('game understands territory control victory condition', async ({ page }) => {

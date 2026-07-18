@@ -768,18 +768,24 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           (state) => state.currentPhase === 'territory_processing',
           30_000
         );
-        await coordinator.sendMoveById('player1', gameId, territoryMove!.id);
-
         // Resolving the region canonically requires choosing the controlled
-        // stack whose cap is eliminated. Complete that interaction before
-        // waiting for the terminal broadcast.
-        const eliminationChoice = (await coordinator.waitForEvent(
+        // stack whose cap is eliminated. Arm the event wait before sending the
+        // move so a fast server response cannot outrun the test listener.
+        const eliminationChoicePromise = coordinator.waitForEvent(
           'player1',
           'player_choice_required',
           (payload) => (payload as RingEliminationChoice)?.type === 'ring_elimination',
           30_000
-        )) as RingEliminationChoice;
+        );
+        await coordinator.sendMoveById('player1', gameId, territoryMove!.id);
+
+        const eliminationChoice = (await eliminationChoicePromise) as RingEliminationChoice;
         expect(eliminationChoice.options.length).toBeGreaterThan(0);
+        const resultsPromise = coordinator.waitForAll(['player1', 'player2'], {
+          type: 'gameOver',
+          predicate: (data) => isGameOverMessage(data),
+          timeout: 30_000,
+        });
         await coordinator.send('player1', 'player_choice_response', {
           choiceId: eliminationChoice.id,
           playerNumber: eliminationChoice.playerNumber,
@@ -788,11 +794,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         });
 
         // Wait for game_over on both clients.
-        const results = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: (data) => isGameOverMessage(data),
-          timeout: 30_000,
-        });
+        const results = await resultsPromise;
 
         const p1Msg = results.get('player1') as GameOverMessage | undefined;
         const p2Msg = results.get('player2') as GameOverMessage | undefined;
@@ -1012,15 +1014,24 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
             30_000
           ),
         ]);
-        await coordinator.sendMoveById('player1', gameId2, territoryMove!.id);
-
-        const eliminationChoice = (await coordinator.waitForEvent(
+        const eliminationChoicePromise = coordinator.waitForEvent(
           'player1',
           'player_choice_required',
           (payload) => (payload as RingEliminationChoice)?.type === 'ring_elimination',
           30_000
-        )) as RingEliminationChoice;
+        );
+        await coordinator.sendMoveById('player1', gameId2, territoryMove!.id);
+
+        const eliminationChoice = (await eliminationChoicePromise) as RingEliminationChoice;
         expect(eliminationChoice.options.length).toBeGreaterThan(0);
+        const territoryResultsPromise = coordinator.waitForAll(
+          ['player1', 'player2', 'spectator'],
+          {
+            type: 'gameOver',
+            predicate: (data) => isGameOverMessage(data) && data.data.gameId === gameId2,
+            timeout: 45_000,
+          }
+        );
         await coordinator.send('player1', 'player_choice_response', {
           choiceId: eliminationChoice.id,
           playerNumber: eliminationChoice.playerNumber,
@@ -1028,11 +1039,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           selectedOption: eliminationChoice.options[0],
         });
 
-        const territoryResults = await coordinator.waitForAll(['player1', 'player2', 'spectator'], {
-          type: 'gameOver',
-          predicate: (data) => isGameOverMessage(data) && data.data.gameId === gameId2,
-          timeout: 45_000,
-        });
+        const territoryResults = await territoryResultsPromise;
 
         const terrP1 = territoryResults.get('player1') as GameOverMessage | undefined;
         const terrP2 = territoryResults.get('player2') as GameOverMessage | undefined;

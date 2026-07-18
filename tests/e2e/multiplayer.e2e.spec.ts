@@ -768,10 +768,14 @@ test.describe('Multiplayer Game E2E', () => {
           // board interaction a player uses in a live territory decision.
           await setup!.player1.gamePage.getCell(4, 4).click();
           const eliminationStack = setup!.player1.gamePage.getCell(7, 7);
-          await expect(eliminationStack).toBeEnabled({ timeout: 10_000 });
+          await expect(eliminationStack).toHaveClass(/decision-pulse-elimination/, {
+            timeout: 10_000,
+          });
           await eliminationStack.click();
-          const p1Victory = await waitForVictoryModal(setup!.player1, { timeout: 30_000 });
-          const p2Victory = await waitForVictoryModal(setup!.player2, { timeout: 30_000 });
+          const [p1Victory, p2Victory] = await Promise.all([
+            waitForVictoryModal(setup!.player1, { timeout: 30_000 }),
+            waitForVictoryModal(setup!.player2, { timeout: 30_000 }),
+          ]);
 
           expect(p1Victory || p2Victory).toBeTruthy();
         });
@@ -955,9 +959,11 @@ test.describe('Multiplayer Game E2E', () => {
         await player2Page.waitForTimeout(2000);
 
         // Look for the message in P2's chat area
-        await expect(player2Page.locator('text=/Hello Player 2/i')).toBeVisible({
-          timeout: 10_000,
-        });
+        await expect(player2Page.getByText('Hello Player 2!', { exact: true }).first()).toBeVisible(
+          {
+            timeout: 10_000,
+          }
+        );
       });
     });
 
