@@ -26,10 +26,10 @@ export class HomePage {
     // Initialize locators
     this.heading = page.getByRole('heading', { name: /Welcome to RingRift/i });
     this.logoutButton = page.getByRole('button', { name: /logout/i });
-    this.lobbyLink = page.getByRole('link', { name: /Enter Lobby|lobby/i });
-    this.sandboxLink = page.getByRole('link', { name: /Open Local Sandbox|sandbox/i });
+    this.lobbyLink = page.getByRole('link', { name: 'Lobby', exact: true });
+    this.sandboxLink = page.getByRole('link', { name: 'Practice', exact: true });
     this.leaderboardLink = page.getByRole('link', { name: 'Leaderboard', exact: true });
-    this.profileLink = page.getByRole('link', { name: /Profile|profile/i });
+    this.profileLink = page.getByRole('link', { name: 'Profile', exact: true });
     this.welcomeText = page.locator("text=You're signed in");
   }
 

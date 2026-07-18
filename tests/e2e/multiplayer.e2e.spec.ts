@@ -438,12 +438,12 @@ test.describe('Multiplayer Game E2E', () => {
       });
 
       await test.step('Both players see victory condition explanations', async () => {
-        const victoryHelpP1 = player1Page.locator(
-          '[data-testid="victory-conditions-help"]:visible'
-        );
-        const victoryHelpP2 = player2Page.locator(
-          '[data-testid="victory-conditions-help"]:visible'
-        );
+        const victoryHelpP1 = player1Page
+          .locator('[data-testid="victory-conditions-help"]:visible')
+          .first();
+        const victoryHelpP2 = player2Page
+          .locator('[data-testid="victory-conditions-help"]:visible')
+          .first();
 
         await expect(victoryHelpP1).toBeVisible({ timeout: 15_000 });
         await expect(victoryHelpP2).toBeVisible({ timeout: 15_000 });

@@ -449,7 +449,16 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
 
         await coordinator.sendMoveById('player1', gameId, (firstPlacement as any).id);
 
-        // After P1's first move, swap_sides should be offered to P2.
+        const p1Movement = (await coordinator.waitForGameState(
+          'player1',
+          (state) => state.currentPhase === 'movement' && state.currentPlayer === 1,
+          30_000
+        )) as GameStateUpdateMessage;
+        const firstMovement = p1Movement.data.validMoves.find((move) => move.type === 'move_stack');
+        expect(firstMovement).toBeDefined();
+        await coordinator.sendMoveById('player1', gameId, firstMovement!.id);
+
+        // The pie rule is offered after Player 1 completes the canonical turn.
         const p2Turn = (await coordinator.waitForTurn(
           'player2',
           2,
@@ -507,6 +516,8 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           scenario: 'chain_capture_choice',
           isRated: false,
           secondPlayerUsername: user2.username,
+          shortTimeoutMs: 60_000,
+          shortWarningBeforeMs: 30_000,
         });
 
         await coordinator.connect('player1', {
@@ -578,6 +589,8 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           scenario: 'chain_capture_choice',
           isRated: false,
           secondPlayerUsername: user2.username,
+          shortTimeoutMs: 60_000,
+          shortWarningBeforeMs: 30_000,
         });
 
         await coordinator.connect('player1', {

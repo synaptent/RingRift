@@ -94,6 +94,29 @@ async function joinMultiPlayerGame(
   }
 }
 
+async function completePlacementTurn(
+  coordinator: ReturnType<typeof createMultiClientCoordinator>,
+  clientId: string,
+  gameId: string,
+  turnState: GameStateUpdateMessage
+): Promise<void> {
+  const playerNumber = turnState.data.gameState.currentPlayer;
+  const placement = turnState.data.validMoves.find((move) => move.type === 'place_ring');
+  expect(placement).toBeDefined();
+  if (!placement) throw new Error(`Player ${playerNumber} has no placement move`);
+  await coordinator.sendMoveById(clientId, gameId, placement.id);
+
+  const movementState = (await coordinator.waitForGameState(
+    clientId,
+    (state) => state.currentPhase === 'movement' && state.currentPlayer === playerNumber,
+    30_000
+  )) as GameStateUpdateMessage;
+  const movement = movementState.data.validMoves.find((move) => move.type === 'move_stack');
+  expect(movement).toBeDefined();
+  if (!movement) throw new Error(`Player ${playerNumber} has no movement move`);
+  await coordinator.sendMoveById(clientId, gameId, movement.id);
+}
+
 test.describe('3-4 Player Game Flows', () => {
   test.slow();
   test.setTimeout(180_000); // 3 minutes per test for multiplayer coordination
@@ -237,10 +260,7 @@ test.describe('3-4 Player Game Flows', () => {
 
         expect(p1Turn.data.gameState.currentPlayer).toBe(1);
 
-        // P1 makes a move
-        const p1Move = p1Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p1Move).toBeDefined();
-        await coordinator.sendMoveById('player1', gameId, p1Move!.id);
+        await completePlacementTurn(coordinator, 'player1', gameId, p1Turn);
 
         // Wait for P2's turn
         const p2Turn = (await coordinator.waitForTurn(
@@ -250,10 +270,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p2Turn.data.gameState.currentPlayer).toBe(2);
 
-        // P2 makes a move
-        const p2Move = p2Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p2Move).toBeDefined();
-        await coordinator.sendMoveById('player2', gameId, p2Move!.id);
+        await completePlacementTurn(coordinator, 'player2', gameId, p2Turn);
 
         // Wait for P3's turn (verifies 3-player rotation)
         const p3Turn = (await coordinator.waitForTurn(
@@ -263,10 +280,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p3Turn.data.gameState.currentPlayer).toBe(3);
 
-        // P3 makes a move
-        const p3Move = p3Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p3Move).toBeDefined();
-        await coordinator.sendMoveById('player3', gameId, p3Move!.id);
+        await completePlacementTurn(coordinator, 'player3', gameId, p3Turn);
 
         // Wait for rotation back to P1 (confirms full cycle)
         const p1Again = (await coordinator.waitForTurn(
@@ -442,10 +456,7 @@ test.describe('3-4 Player Game Flows', () => {
 
         expect(p1Turn.data.gameState.currentPlayer).toBe(1);
 
-        // P1 makes a move
-        const p1Move = p1Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p1Move).toBeDefined();
-        await coordinator.sendMoveById('player1', gameId, p1Move!.id);
+        await completePlacementTurn(coordinator, 'player1', gameId, p1Turn);
 
         // Wait for P2's turn
         const p2Turn = (await coordinator.waitForTurn(
@@ -455,9 +466,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p2Turn.data.gameState.currentPlayer).toBe(2);
 
-        const p2Move = p2Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p2Move).toBeDefined();
-        await coordinator.sendMoveById('player2', gameId, p2Move!.id);
+        await completePlacementTurn(coordinator, 'player2', gameId, p2Turn);
 
         // Wait for P3's turn
         const p3Turn = (await coordinator.waitForTurn(
@@ -467,9 +476,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p3Turn.data.gameState.currentPlayer).toBe(3);
 
-        const p3Move = p3Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p3Move).toBeDefined();
-        await coordinator.sendMoveById('player3', gameId, p3Move!.id);
+        await completePlacementTurn(coordinator, 'player3', gameId, p3Turn);
 
         // Wait for P4's turn (verifies 4-player rotation)
         const p4Turn = (await coordinator.waitForTurn(
@@ -479,9 +486,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p4Turn.data.gameState.currentPlayer).toBe(4);
 
-        const p4Move = p4Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p4Move).toBeDefined();
-        await coordinator.sendMoveById('player4', gameId, p4Move!.id);
+        await completePlacementTurn(coordinator, 'player4', gameId, p4Turn);
 
         // Wait for rotation back to P1 (confirms full 4-player cycle)
         const p1Again = (await coordinator.waitForTurn(
@@ -569,9 +574,7 @@ test.describe('3-4 Player Game Flows', () => {
           1,
           30_000
         )) as GameStateUpdateMessage;
-        const p1Move = p1State.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p1Move).toBeDefined();
-        await coordinator.sendMoveById('player1', gameId, p1Move!.id);
+        await completePlacementTurn(coordinator, 'player1', gameId, p1State);
 
         // Verify spectator sees the move
         const specStateAfterP1 = (await coordinator.waitForGameState(
@@ -588,14 +591,13 @@ test.describe('3-4 Player Game Flows', () => {
           2,
           30_000
         )) as GameStateUpdateMessage;
-        const p2Move = p2State.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p2Move).toBeDefined();
-        await coordinator.sendMoveById('player2', gameId, p2Move!.id);
+        const moveCountAfterP1 = specStateAfterP1.data.gameState.moveHistory.length;
+        await completePlacementTurn(coordinator, 'player2', gameId, p2State);
 
         // Verify spectator sees P2's move too
         const specStateAfterP2 = (await coordinator.waitForGameState(
           'spectator',
-          (state) => state.moveHistory && state.moveHistory.length > 1,
+          (state) => state.moveHistory && state.moveHistory.length > moveCountAfterP1,
           30_000
         )) as GameStateUpdateMessage;
 
