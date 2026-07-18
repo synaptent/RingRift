@@ -1,5 +1,20 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { registerAndLogin, goToSandbox } from './helpers/test-utils';
+
+async function openReplayPanel(page: Page, expand = true) {
+  const advancedPanels = page.getByTestId('sandbox-advanced-sidebar-panels');
+  await expect(advancedPanels).toBeVisible();
+  if (!(await advancedPanels.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await advancedPanels.locator('summary').click();
+  }
+
+  const replayPanel = page.getByTestId('replay-panel');
+  await expect(replayPanel).toBeVisible();
+  if (expand) {
+    await replayPanel.getByRole('button', { name: /Game Replay/i }).click();
+  }
+  return replayPanel;
+}
 
 /**
  * E2E Test Suite: Game Replay Functionality
@@ -31,49 +46,33 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // ReplayPanel should be visible in the sandbox sidebar
-      // It starts collapsed by default
-      const replaySection = page.locator('text=/Game Replay|Replay Database/i').first();
-
-      // The panel heading or toggle should be visible
-      await expect(replaySection).toBeVisible({ timeout: 15_000 });
+      await openReplayPanel(page, false);
     });
 
     test('replay panel can be expanded and collapsed', async ({ page }) => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Find the replay panel toggle/header
-      const replayToggle = page
-        .locator('[data-testid="replay-panel-toggle"]')
-        .or(page.locator('button:has-text("Replay")').first());
+      const replayPanel = await openReplayPanel(page);
+      const expanded = replayPanel
+        .locator('text=/Loading games|No games found|Service unavailable/i')
+        .first();
+      await expect(expanded).toBeVisible({ timeout: 10_000 });
 
-      // Click to expand if collapsed
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-
-        // After expanding, should show game list or service unavailable message
-        const expanded = page
-          .locator('text=/Game List|No games found|Service unavailable/i')
-          .first();
-        await expect(expanded).toBeVisible({ timeout: 10_000 });
-      }
+      await replayPanel.getByRole('button', { name: /Game Replay/i }).click();
+      await expect(expanded).not.toBeVisible();
     });
 
     test('replay panel shows service status indicator', async ({ page }) => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Navigate to sandbox and expand replay panel
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      const replayPanel = await openReplayPanel(page);
 
       // Should show either:
       // - Game list if AI service is running
       // - Service unavailable message if not
-      const statusIndicator = page
+      const statusIndicator = replayPanel
         .locator('text=/Loading|Service unavailable|games found/i')
         .first();
       await expect(statusIndicator).toBeVisible({ timeout: 15_000 });
@@ -87,11 +86,7 @@ test.describe('Replay Panel E2E Tests', () => {
     });
 
     test('playback controls render with correct buttons', async ({ page }) => {
-      // Expand replay panel
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      await openReplayPanel(page);
 
       // When a game is loaded, playback controls should be visible
       // Check for control buttons (may be disabled until game is loaded)
@@ -131,11 +126,7 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Expand replay panel
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      await openReplayPanel(page);
 
       // Wait for game list to load or show unavailable message
       const gameListOrUnavailable = page
@@ -158,11 +149,7 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Expand replay panel
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      await openReplayPanel(page);
 
       // Look for filter controls
       const boardTypeFilter = page
@@ -188,11 +175,7 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Expand replay panel
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      await openReplayPanel(page);
 
       // Wait for game list
       await page.waitForTimeout(2000);
@@ -221,11 +204,7 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Expand replay panel and select a game
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      await openReplayPanel(page);
 
       await page.waitForTimeout(2000);
 
@@ -258,11 +237,7 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToSandbox(page);
 
-      // Expand replay panel and select a game
-      const replayToggle = page.locator('button:has-text("Replay")').first();
-      if (await replayToggle.isVisible()) {
-        await replayToggle.click();
-      }
+      await openReplayPanel(page);
 
       await page.waitForTimeout(2000);
 

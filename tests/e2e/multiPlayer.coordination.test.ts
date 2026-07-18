@@ -36,6 +36,7 @@ import {
   makeMove,
 } from './helpers/test-utils';
 import type { GameOverMessage, GameStateUpdateMessage } from '../../src/shared/types/websocket';
+import type { RingEliminationChoice } from '../../src/shared/types/game';
 
 /**
  * Helper to register a user and extract their JWT token.
@@ -761,6 +762,23 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(territoryMove).toBeDefined();
         await coordinator.sendMoveById('player1', gameId, territoryMove!.id);
 
+        // Resolving the region canonically requires choosing the controlled
+        // stack whose cap is eliminated. Complete that interaction before
+        // waiting for the terminal broadcast.
+        const eliminationChoice = (await coordinator.waitForEvent(
+          'player1',
+          'player_choice_required',
+          (payload) => (payload as RingEliminationChoice)?.type === 'ring_elimination',
+          30_000
+        )) as RingEliminationChoice;
+        expect(eliminationChoice.options.length).toBeGreaterThan(0);
+        await coordinator.send('player1', 'player_choice_response', {
+          choiceId: eliminationChoice.id,
+          playerNumber: eliminationChoice.playerNumber,
+          choiceType: eliminationChoice.type,
+          selectedOption: eliminationChoice.options[0],
+        });
+
         // Wait for game_over on both clients.
         const results = await coordinator.waitForAll(['player1', 'player2'], {
           type: 'gameOver',
@@ -841,8 +859,8 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
 
         expect(p1Msg).toBeDefined();
         expect(p2Msg).toBeDefined();
-        expect(p1Msg!.data.gameResult.reason).toBe('elimination');
-        expect(p2Msg!.data.gameResult.reason).toBe('elimination');
+        expect(p1Msg!.data.gameResult.reason).toBe('ring_elimination');
+        expect(p2Msg!.data.gameResult.reason).toBe('ring_elimination');
         expect(p1Msg!.data.gameResult.winner).toBe(p2Msg!.data.gameResult.winner);
       } finally {
         await coordinator.cleanup();
@@ -925,9 +943,9 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(elimP1).toBeDefined();
         expect(elimP2).toBeDefined();
         expect(elimSpec).toBeDefined();
-        expect(elimP1!.data.gameResult.reason).toBe('elimination');
-        expect(elimP2!.data.gameResult.reason).toBe('elimination');
-        expect(elimSpec!.data.gameResult.reason).toBe('elimination');
+        expect(elimP1!.data.gameResult.reason).toBe('ring_elimination');
+        expect(elimP2!.data.gameResult.reason).toBe('ring_elimination');
+        expect(elimSpec!.data.gameResult.reason).toBe('ring_elimination');
         expect(elimP1!.data.gameResult.winner).toBe(elimP2!.data.gameResult.winner);
         expect(elimP1!.data.gameResult.winner).toBe(elimSpec!.data.gameResult.winner);
 

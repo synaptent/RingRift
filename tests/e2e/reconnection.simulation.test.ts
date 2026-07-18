@@ -819,7 +819,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
           'player_reconnected',
           (payload) => {
             const msg = payload as any;
-            return msg?.data?.playerId === user1.username;
+            return msg?.data?.player?.username === user1.username && msg?.data?.playerNumber === 1;
           },
           30_000
         );
@@ -841,7 +841,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
       }
     });
 
-    test('disconnect mid decision, reconnect, sees consistent timeout-based game_over', async ({
+    test('disconnect mid decision, reconnect, sees consistent terminal state', async ({
       browser,
     }) => {
       const coordinator = createNetworkAwareCoordinator(serverUrl);
@@ -898,13 +898,17 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         // Reconnection-window expiry should be treated as abandonment, not a bare timeout.
         expect(reason).toBe('abandonment');
 
-        // Reconnect player1 and ensure they also see the same final result.
+        // A player joining a completed session receives the terminal game_state
+        // snapshot; game_over is not replayed as a second event.
         await coordinator.network.simulateReconnect('player1', 1_000);
-        const p1GameOver = (await coordinator.waitForGameOver('player1', 10_000)) as any;
+        const p1TerminalState = await coordinator.waitForGameState(
+          'player1',
+          (state) => state.gameStatus === 'completed',
+          10_000
+        );
 
-        expect(p1GameOver?.data?.gameResult).toBeDefined();
-        expect(p1GameOver.data.gameResult.reason).toBe('abandonment');
-        expect(p1GameOver.data.gameResult.winner).toBe(p2GameOver.data.gameResult.winner);
+        expect(p1TerminalState.data.gameState.currentPhase).toBe('game_over');
+        expect(p1TerminalState.data.gameState.winner).toBe(p2GameOver.data.gameResult.winner);
       } finally {
         await coordinator.cleanup();
         await context1.close();

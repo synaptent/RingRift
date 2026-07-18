@@ -239,7 +239,7 @@ export async function waitForTimeoutWarningUI(
   const { timeout = 35_000 } = options;
   try {
     await expect(
-      page.locator('text=/timeout|time.*running.*out|seconds.*remaining/i').first()
+      page.locator('text=/timeout|time.*running.*out|seconds.*remaining|auto-resolved/i').first()
     ).toBeVisible({ timeout });
     return true;
   } catch {

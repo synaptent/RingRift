@@ -138,9 +138,7 @@ test.describe('Resignation E2E Tests', () => {
     await confirmButton.click();
 
     // Victory modal should appear
-    const victoryModal = page.locator('.victory-modal, [role="dialog"]').filter({
-      hasText: /victory|game over|wins|resignation/i,
-    });
+    const victoryModal = page.getByTestId('victory-modal');
     await expect(victoryModal).toBeVisible({ timeout: 10_000 });
 
     // Should indicate resignation as the reason

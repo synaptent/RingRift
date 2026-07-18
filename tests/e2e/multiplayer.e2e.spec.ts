@@ -480,7 +480,7 @@ test.describe('Multiplayer Game E2E', () => {
           expect(currentIdP1).toBe(originalGameId);
           expect(currentIdP2).toBe(originalGameId);
 
-          await setup!.player1.page.getByRole('button', { name: /Request Rematch/i }).click();
+          await setup!.player1.page.getByRole('button', { name: /Play Again/i }).click();
         });
 
         await test.step('Player 2 sees rematch offer and accepts', async () => {
@@ -622,9 +622,9 @@ test.describe('Multiplayer Game E2E', () => {
     });
 
     test('Player sees warning when decision phase timeout approaches', async ({ browser }) => {
-      // Uses short timeout fixture to test timeout warning without long waits.
-      // The line_processing scenario puts player in a decision phase that will timeout.
-      // Short timeout: 5s, warning at 2s before = warning fires at 3s.
+      // Uses a bounded timeout fixture to test the warning without racing setup.
+      // The exact-length line fixture exposes canonical line moves directly,
+      // so phase state is the stable decision-surface assertion.
 
       let setup: MultiplayerGameSetup | null = null;
 
@@ -632,22 +632,19 @@ test.describe('Multiplayer Game E2E', () => {
         await test.step('Setup decision phase game with short timeout', async () => {
           setup = await setupMultiplayerFixtureGame(browser, {
             scenario: 'line_processing',
-            shortTimeoutMs: 5000, // 5 second timeout
-            shortWarningBeforeMs: 2000, // Warning 2s before timeout
+            shortTimeoutMs: 20_000,
+            shortWarningBeforeMs: 10_000,
           });
         });
 
         await test.step('Verify player is in decision phase', async () => {
-          // Player 1 should see the choice dialog for line processing
-          const hasChoiceDialog = await waitForChoiceDialog(setup!.player1, { timeout: 10_000 });
-          expect(hasChoiceDialog).toBeTruthy();
+          await setup!.player1.gamePage.assertPhase('Line');
         });
 
         await test.step('Wait for timeout warning to appear', async () => {
           // Don't make a choice - wait for the warning to appear
-          // Warning should appear after 3s (5000ms - 2000ms = 3000ms)
           const sawWarning = await waitForTimeoutWarningUI(setup!.player1.page, {
-            timeout: 10_000,
+            timeout: 15_000,
           });
           expect(sawWarning).toBeTruthy();
         });

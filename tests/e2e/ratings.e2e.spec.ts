@@ -1,14 +1,13 @@
 import { test, expect } from '@playwright/test';
 import {
   registerAndLogin,
-  createGame,
   generateTestUser,
   createFixtureGame,
   makeMove,
   waitForApiReady,
   waitForGameReady,
 } from './helpers/test-utils';
-import { GamePage, HomePage } from './pages';
+import { HomePage } from './pages';
 
 /**
  * E2E Test Suite: Ratings and Leaderboard
@@ -280,24 +279,44 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
       const initialRating = await readRating();
       expect(initialRating).toBeGreaterThan(0);
 
-      // Create a rated game (default behaviour isRated=true for backend games)
-      await homePage.goto();
-      const ratedGame = await createGame(page, { vsAI: true });
-      const ratedGameId = ratedGame.id;
-
-      const ratedGamePage = new GamePage(page);
-      await ratedGamePage.waitForReady();
-
-      // Make at least one move so the game is clearly active
-      await ratedGamePage.clickFirstValidTarget();
-
-      // Resign via HTTP leave endpoint; this routes through GameSession and
-      // RatingService.finishGame for rated games.
-      await page.request.post(`/api/games/${ratedGameId}/leave`, {
-        headers: {
-          Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+      // Rated results require two persisted human players; AI games are
+      // intentionally unrated. Register an opponent without changing the
+      // browser's authenticated player, then use real two-player fixtures.
+      await waitForApiReady(page);
+      const opponent = generateTestUser();
+      const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(
+        /\/$/,
+        ''
+      );
+      const registerOpponent = await page.request.post(`${apiBaseUrl}/api/auth/register`, {
+        data: {
+          username: opponent.username,
+          email: opponent.email,
+          password: opponent.password,
+          confirmPassword: opponent.password,
         },
       });
+      expect(registerOpponent.ok()).toBe(true);
+
+      const authToken = await page.evaluate(() => localStorage.getItem('token'));
+      expect(authToken).toBeTruthy();
+
+      const resignFromFixture = async (isRated: boolean): Promise<void> => {
+        const { gameId } = await createFixtureGame(page, {
+          scenario: 'near_victory_elimination',
+          isRated,
+          secondPlayerUsername: opponent.username,
+        });
+        await page.goto(`/game/${gameId}`);
+        await waitForGameReady(page);
+
+        const leaveResponse = await page.request.post(`${apiBaseUrl}/api/games/${gameId}/leave`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        expect(leaveResponse.ok()).toBe(true);
+      };
+
+      await resignFromFixture(true);
 
       // Give the backend a short window to persist rating updates
       await page.waitForTimeout(2_000);
@@ -306,20 +325,8 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
       expect(afterRatedResignRating).not.toBeNaN();
       expect(afterRatedResignRating).not.toBe(initialRating);
 
-      // Now create an unrated game and resign; rating should not change.
-      await homePage.goto();
-      const unratedGame = await createGame(page, { vsAI: true, isRated: false });
-      const unratedGameId = unratedGame.id;
-
-      const unratedGamePage = new GamePage(page);
-      await unratedGamePage.waitForReady();
-      await unratedGamePage.clickFirstValidTarget();
-
-      await page.request.post(`/api/games/${unratedGameId}/leave`, {
-        headers: {
-          Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
-        },
-      });
+      // An otherwise identical unrated resignation must not change rating.
+      await resignFromFixture(false);
 
       await page.waitForTimeout(2_000);
 
