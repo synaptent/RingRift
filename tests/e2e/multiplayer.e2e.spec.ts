@@ -397,8 +397,8 @@ test.describe('Multiplayer Game E2E', () => {
           setup = await setupMultiplayerFixtureGame(browser, 'near_victory_elimination');
         });
 
-        await test.step('Player 1 makes winning capture', async () => {
-          // Near-victory fixture: P1 stack at (3,3), P2 at (4,3)
+        await test.step('Player 1 makes winning marker landing', async () => {
+          // Near-victory fixture: P1 stack at (3,3), marker at (4,3)
           await setup!.player1.gamePage.makeMove(3, 3, 4, 3);
         });
 
@@ -412,8 +412,13 @@ test.describe('Multiplayer Game E2E', () => {
             'text=/victory|defeat|game.*over|eliminated/i'
           );
 
-          // At least one player should see a game-end message
-          await expect(p1GameEnd.first().or(p2GameEnd.first())).toBeVisible({ timeout: 20_000 });
+          await expect
+            .poll(
+              async () =>
+                (await p1GameEnd.first().isVisible()) && (await p2GameEnd.first().isVisible()),
+              { timeout: 20_000 }
+            )
+            .toBe(true);
         });
       } finally {
         if (setup) {
@@ -433,8 +438,12 @@ test.describe('Multiplayer Game E2E', () => {
       });
 
       await test.step('Both players see victory condition explanations', async () => {
-        const victoryHelpP1 = player1Page.getByTestId('victory-conditions-help');
-        const victoryHelpP2 = player2Page.getByTestId('victory-conditions-help');
+        const victoryHelpP1 = player1Page.locator(
+          '[data-testid="victory-conditions-help"]:visible'
+        );
+        const victoryHelpP2 = player2Page.locator(
+          '[data-testid="victory-conditions-help"]:visible'
+        );
 
         await expect(victoryHelpP1).toBeVisible({ timeout: 15_000 });
         await expect(victoryHelpP2).toBeVisible({ timeout: 15_000 });
@@ -696,7 +705,7 @@ test.describe('Multiplayer Game E2E', () => {
 
   test.describe('Near-Victory Multiplayer', () => {
     test('Both players see victory/defeat when game ends via fixture', async ({ browser }) => {
-      // Uses near-victory fixture to set up a game state one capture away from victory.
+      // Uses near-victory fixture to set up a game state one marker landing from victory.
       // Player 1 makes the winning move, both players should see the outcome.
 
       let setup: MultiplayerGameSetup | null = null;
@@ -707,7 +716,7 @@ test.describe('Multiplayer Game E2E', () => {
         });
 
         await test.step('Player 1 makes winning move', async () => {
-          // In near-victory fixture: P1 stack at (3,3), P2 ring at (4,3)
+          // In near-victory fixture: P1 stack at (3,3), marker at (4,3)
           // Move (3,3) -> (4,3) wins the game
           await setup!.player1.gamePage.makeMove(3, 3, 4, 3);
         });
@@ -767,10 +776,9 @@ test.describe('Multiplayer Game E2E', () => {
         });
 
         await test.step('Wait for game over via territory control', async () => {
-          // The fixture seeds a territory_processing decision that, once resolved
-          // by the backend, should result in a territory_control victory for P1.
-          // We simply wait for the victory modal rather than trying to drive
-          // explicit UI decisions for this minimal slice.
+          // Resolve the fixture's canonical pending region through the same
+          // board interaction a player uses in a live territory decision.
+          await setup!.player1.gamePage.getCell(4, 4).click();
           const p1Victory = await waitForVictoryModal(setup!.player1, { timeout: 30_000 });
           const p2Victory = await waitForVictoryModal(setup!.player2, { timeout: 30_000 });
 

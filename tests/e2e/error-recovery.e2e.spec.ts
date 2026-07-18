@@ -265,8 +265,7 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
     // decision snapshot: either a new phase or a different current player.
     // We look for a generic phase label that is not the initial
     // line_processing copy any more.
-    const phaseText = page.locator('text=/Phase/i');
-    await expect(phaseText).toBeVisible({ timeout: 10_000 });
+    await expect(gamePage.phaseIndicator).toBeVisible({ timeout: 10_000 });
   });
 });
 

@@ -180,7 +180,7 @@ export class GamePage {
     const moveEntry = recentMoveList.locator('li').filter({
       hasText: pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i'),
     });
-    await expect(moveEntry).toBeVisible({ timeout: 10_000 });
+    await expect(moveEntry.first()).toBeVisible({ timeout: 10_000 });
   }
 
   /**

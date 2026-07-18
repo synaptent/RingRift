@@ -59,6 +59,9 @@ export default defineConfig(({ mode }) => ({
     // PWA support for offline sandbox play
     VitePWA({
       registerType: 'autoUpdate',
+      // The generated manifest is normally build-only. Required browser tests
+      // exercise the dev server, so expose the same plugin-owned asset in CI.
+      devOptions: { enabled: process.env.CI === 'true' },
       includeAssets: ['favicon.ico', 'ringrift-icon.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'RingRift - Multiplayer Strategy Game',

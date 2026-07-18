@@ -58,10 +58,19 @@ test.describe('AI Game E2E Tests', () => {
     // Make a human move during ring placement
     await gamePage.clickFirstValidTarget();
 
-    // Wait for the game log to update - AI should respond
+    // A placement is one canonical phase action, not an entire turn. Complete
+    // Player 1's movement phase so the no-action phases can auto-advance and
+    // the AI legitimately receives Player 2's turn.
     await gamePage.assertPlayerMoveLogged(1);
+    await gamePage.assertPhase('Move');
+    await gamePage.boardView
+      .getByRole('button', { name: /Stack height .* player 1/i })
+      .first()
+      .click();
+    await expect(gamePage.getValidTargets().first()).toBeVisible({ timeout: 15_000 });
+    await gamePage.getValidTargets().first().click();
 
-    // After human move, AI should make a move - look for P2 (AI) move in log
+    // After the completed human turn, look for P2 (AI) in the canonical log.
     // Allow time for AI service to respond
     await expect(async () => {
       await gamePage.assertPlayerMoveLogged(2);

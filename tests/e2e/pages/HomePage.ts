@@ -28,7 +28,7 @@ export class HomePage {
     this.logoutButton = page.getByRole('button', { name: /logout/i });
     this.lobbyLink = page.getByRole('link', { name: /Enter Lobby|lobby/i });
     this.sandboxLink = page.getByRole('link', { name: /Open Local Sandbox|sandbox/i });
-    this.leaderboardLink = page.getByRole('link', { name: /View Leaderboard|leaderboard/i });
+    this.leaderboardLink = page.getByRole('link', { name: 'Leaderboard', exact: true });
     this.profileLink = page.getByRole('link', { name: /Profile|profile/i });
     this.welcomeText = page.locator("text=You're signed in");
   }

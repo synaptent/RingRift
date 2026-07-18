@@ -15,7 +15,12 @@ import {
   applyDecisionPhaseFixtureIfNeeded,
   createDecisionPhaseFixtureGame,
 } from '../../src/server/game/testFixtures/decisionPhaseFixtures';
-import { BOARD_CONFIGS, type Player, type TimeControl } from '../../src/shared/types/game';
+import {
+  BOARD_CONFIGS,
+  positionToString,
+  type Player,
+  type TimeControl,
+} from '../../src/shared/types/game';
 
 describe('decision-phase fixture persistence', () => {
   beforeEach(() => {
@@ -132,5 +137,54 @@ describe('decision-phase fixture persistence', () => {
 
     expect(state.currentPhase).toBe('chain_capture');
     expect(continuationMoves.length).toBeGreaterThan(1);
+  });
+
+  it('reaches elimination victory through the canonical marker-landing fixture move', async () => {
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+    const players: Player[] = [1, 2].map((playerNumber) => ({
+      id: `player-${playerNumber}`,
+      username: `Player ${playerNumber}`,
+      playerNumber,
+      type: 'human',
+      isReady: true,
+      timeRemaining: 600_000,
+      ringsInHand: BOARD_CONFIGS.square8.ringsPerPlayer,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    }));
+    const engine = new GameEngine('fixture-game-123', 'square8', players, timeControl, false);
+
+    expect(
+      applyDecisionPhaseFixtureIfNeeded(engine, {
+        fixture: {
+          kind: 'decision_phase_fixture',
+          scenario: 'near_victory_elimination',
+          version: 1,
+        },
+      })
+    ).toBe(true);
+
+    const before = engine.getGameState();
+    expect(before.players[0]?.eliminatedRings).toBe(before.victoryThreshold - 1);
+    expect(before.board.markers.has(positionToString({ x: 4, y: 3 }))).toBe(true);
+
+    const winningMove = engine
+      .getValidMoves(1)
+      .find(
+        (move) =>
+          move.type === 'move_stack' &&
+          move.from?.x === 3 &&
+          move.from.y === 3 &&
+          move.to.x === 4 &&
+          move.to.y === 3
+      );
+    expect(winningMove).toBeDefined();
+    if (!winningMove) throw new Error('Expected the marker-landing fixture move');
+
+    const result = await engine.makeMoveById(1, winningMove.id);
+
+    expect(result.success).toBe(true);
+    expect(result.gameResult).toMatchObject({ reason: 'ring_elimination', winner: 1 });
+    expect(result.gameState?.gameStatus).toBe('completed');
   });
 });

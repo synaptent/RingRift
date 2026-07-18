@@ -430,19 +430,16 @@ function seedChainCaptureChoiceDecisionPhase(engine: GameEngine): void {
 }
 
 /**
- * Seed a near-victory state where Player 1 is one capture away from winning
- * by ring elimination. This creates a scenario where Player 2 has 18 rings
- * eliminated out of 19, and Player 1 has a stack positioned to capture
- * Player 2's last ring.
+ * Seed a near-victory state where Player 1 is one legal marker landing away
+ * from winning by ring elimination.
  *
- * Victory condition: ringsPerPlayer eliminated rings triggers victory. For 2-player
- * on square8, each player has 18 rings (ringsPerPlayer = 18). Eliminating 18+ rings
- * from any combination of opponents triggers victory. Setting opponent to 17 eliminated
- * means one more capture wins (reaching 18).
+ * The canonical eliminatedRings counter is credited to the player causing an
+ * elimination. Player 1 therefore starts at victoryThreshold - 1; landing a
+ * one-ring stack on a marker removes that ring and supplies the final credit.
  *
  * The board state places:
- * - Player 1 stack at (3,3) with 3 rings
- * - Player 2 single-ring stack at (4,3) - adjacent and capturable
+ * - Player 1 one-ring stack at (3,3)
+ * - Player 2 marker at (4,3), a legal one-space landing
  * - Game in 'movement' phase, Player 1's turn
  */
 function seedNearVictoryEliminationState(engine: GameEngine): void {
@@ -460,45 +457,38 @@ function seedNearVictoryEliminationState(engine: GameEngine): void {
   const activePlayerNumber = 1;
   const opponentPlayerNumber = 2;
 
-  // Update player stats to near-victory state.
-  // Player 2 has 18 rings eliminated (on square8 the victory threshold is 19).
-  // Player 1 has 0 eliminated and some rings available.
+  // Keep the fixture internally consistent with the canonical supply and
+  // causing-player elimination accounting.
   if (state.players.length >= 2) {
-    // Player 1: healthy state
-    state.players[0].eliminatedRings = 0;
-    state.players[0].ringsInHand = 10;
-
-    // Player 2: near-eliminated (all 18 rings from their supply removed)
-    state.players[1].eliminatedRings = 18;
-    state.players[1].ringsInHand = 0;
+    state.players[0].eliminatedRings = state.victoryThreshold - 1;
+    state.players[0].ringsInHand = 0;
+    state.players[1].eliminatedRings = 0;
+    state.players[1].ringsInHand = BOARD_CONFIGS[state.boardType].ringsPerPlayer;
   }
+  state.totalRingsEliminated = state.victoryThreshold - 1;
+  board.eliminatedRings = { 1: state.victoryThreshold - 1, 2: 0 };
 
-  // Place Player 1's stack at (3,3) - height 3 for easy capture capability.
+  // A height-1 stack may legally move one space onto the adjacent marker.
   const p1StackPos: Position = { x: 3, y: 3 };
   const p1Stack: RingStack = {
     position: p1StackPos,
-    rings: [activePlayerNumber, activePlayerNumber, activePlayerNumber],
-    stackHeight: 3,
-    capHeight: 3,
+    rings: [activePlayerNumber],
+    stackHeight: 1,
+    capHeight: 1,
     controllingPlayer: activePlayerNumber,
   };
   board.stacks.set(positionToString(p1StackPos), p1Stack);
 
-  // Place Player 2's single-ring stack at (4,3) - adjacent to Player 1.
-  // A height-3 stack can capture a height-1 stack via overtaking.
-  const p2StackPos: Position = { x: 4, y: 3 };
-  const p2Stack: RingStack = {
-    position: p2StackPos,
-    rings: [opponentPlayerNumber],
-    stackHeight: 1,
-    capHeight: 1,
-    controllingPlayer: opponentPlayerNumber,
-  };
-  board.stacks.set(positionToString(p2StackPos), p2Stack);
+  const landingPos: Position = { x: 4, y: 3 };
+  board.markers.set(positionToString(landingPos), {
+    player: opponentPlayerNumber,
+    position: landingPos,
+    type: 'regular',
+  });
 
   // Set game to movement phase, Player 1's turn.
-  // Player 1 can move their stack from (3,3) to (4,3) to capture Player 2's
-  // last ring, triggering elimination victory.
+  // Player 1 can move (3,3) -> (4,3); the marker landing eliminates the top
+  // ring, credits Player 1, and reaches the canonical threshold.
   state.gameStatus = 'active';
   state.currentPlayer = activePlayerNumber;
   (state as unknown as Record<string, unknown>).currentPhase = 'movement';

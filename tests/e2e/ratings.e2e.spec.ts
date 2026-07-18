@@ -219,7 +219,7 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
       await page.goto(`/game/${gameId}`);
       await waitForGameReady(page);
 
-      // Make the winning capture move: (3,3) -> (4,3)
+      // Make the winning marker landing: (3,3) -> (4,3)
       await makeMove(page, '3,3', '4,3');
 
       // Wait for victory modal to confirm game completed

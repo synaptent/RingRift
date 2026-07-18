@@ -66,6 +66,20 @@ async function createUserAndGetToken(
   return token;
 }
 
+async function joinGameByApi(
+  page: import('@playwright/test').Page,
+  token: string,
+  gameId: string
+): Promise<void> {
+  const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const response = await page.request.post(`${apiBaseUrl}/api/games/${gameId}/join`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) {
+    throw new Error(`Failed to join game: ${response.status()} - ${await response.text()}`);
+  }
+}
+
 test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
   // Mark all tests as slow since they involve multiple WebSocket connections
   test.slow();
@@ -396,6 +410,11 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const createJson = await createResponse.json();
         const gameId: string = createJson.data.game.id;
 
+        // Occupy Player 2's persisted seat before either WebSocket constructs
+        // and caches the in-memory session. Joining a socket room is only a
+        // subscription and must not be treated as game membership.
+        await joinGameByApi(page2, token2, gameId);
+
         // Connect both players via WebSocket and join the game.
         await coordinator.connect('player1', {
           playerId: user1.username,
@@ -575,11 +594,17 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
 
-        const decisionState = (await coordinator.waitForGameState(
-          'player1',
-          (state) => state.currentPhase === 'chain_capture',
-          30_000
-        )) as GameStateUpdateMessage;
+        const decisionState = (await coordinator.waitFor('player1', {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'chain_capture' &&
+              message.data.validMoves.some((move) => move.type === 'continue_capture_segment')
+            );
+          },
+          timeout: 30_000,
+        })) as GameStateUpdateMessage;
         const selected = decisionState.data.validMoves.find(
           (move) => move.type === 'continue_capture_segment'
         );
@@ -682,6 +707,23 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         // Join the same game room.
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
+
+        const decisionState = (await coordinator.waitFor('player1', {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'territory_processing' &&
+              message.data.validMoves.some((move) => move.type === 'choose_territory_option')
+            );
+          },
+          timeout: 30_000,
+        })) as GameStateUpdateMessage;
+        const territoryMove = decisionState.data.validMoves.find(
+          (move) => move.type === 'choose_territory_option'
+        );
+        expect(territoryMove).toBeDefined();
+        await coordinator.sendMoveById('player1', gameId, territoryMove!.id);
 
         // Wait for game_over on both clients.
         const results = await coordinator.waitForAll(['player1', 'player2'], {
@@ -859,7 +901,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.leaveGame('spectator', gameId1);
 
         // -------------------------------------------------------------------
-        // Game 2: near_victory_territory – auto-resolved territory_control
+        // Game 2: near_victory_territory – canonical region resolution
         // -------------------------------------------------------------------
         const territoryFixture = await createFixtureGame(page1, {
           scenario: 'near_victory_territory',
@@ -871,6 +913,23 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId2);
         await coordinator.joinGame('player2', gameId2);
         await coordinator.joinGame('spectator', gameId2);
+
+        const territoryState = (await coordinator.waitFor('player1', {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'territory_processing' &&
+              message.data.validMoves.some((move) => move.type === 'choose_territory_option')
+            );
+          },
+          timeout: 30_000,
+        })) as GameStateUpdateMessage;
+        const territoryMove = territoryState.data.validMoves.find(
+          (move) => move.type === 'choose_territory_option'
+        );
+        expect(territoryMove).toBeDefined();
+        await coordinator.sendMoveById('player1', gameId2, territoryMove!.id);
 
         const territoryResults = await coordinator.waitForAll(['player1', 'player2', 'spectator'], {
           type: 'gameOver',

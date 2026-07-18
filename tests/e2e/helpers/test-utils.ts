@@ -817,7 +817,7 @@ export interface FixtureGameResult {
  * - 'line_processing': Game in line processing decision phase
  * - 'territory_processing': Game in territory processing decision phase
  * - 'chain_capture_choice': Game in chain capture choice phase
- * - 'near_victory_elimination': Game one capture away from elimination victory
+ * - 'near_victory_elimination': Game one marker landing away from elimination victory
  * - 'near_victory_territory': Game one region resolution away from territory victory
  *
  * NOTE: Only available in test/development environments.
@@ -885,9 +885,9 @@ export async function createFixtureGame(
  * winning by ring elimination.
  *
  * The fixture places:
- * - Player 1 stack at (3,3) with 3 rings
- * - Player 2 single-ring stack at (4,3)
- * - Player 2 has 18/19 rings eliminated
+ * - Player 1 one-ring stack at (3,3)
+ * - Player 2 marker at (4,3)
+ * - Player 1 has victoryThreshold - 1 elimination credits
  * - Game in 'movement' phase, Player 1's turn
  *
  * @param page - Playwright page with authenticated session
@@ -896,7 +896,7 @@ export async function createFixtureGame(
  * @example
  * ```typescript
  * const gameId = await createNearVictoryGame(page);
- * // Game is now ready - make the winning capture at (4,3)
+ * // Game is now ready - make the winning marker landing at (4,3)
  * await makeMove(page, '3,3', '4,3');
  * // Victory modal should appear
  * ```

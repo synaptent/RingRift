@@ -105,12 +105,11 @@ test.describe('Victory Conditions E2E Tests', () => {
   test.describe('Post-Game Options', () => {
     test('victory modal shows return to lobby button after win', async ({ page }) => {
       // Uses near-victory fixture to fast-forward to a game state where one
-      // capture triggers elimination victory. Player 1 stack at (3,3) can
-      // capture Player 2 single ring at (4,3).
+      // marker landing triggers elimination victory.
       await registerAndLogin(page);
       await createNearVictoryGame(page);
 
-      // Make the winning capture move: (3,3) -> (4,3)
+      // Make the winning marker landing: (3,3) -> (4,3)
       await makeMove(page, '3,3', '4,3');
 
       // Wait for victory modal to appear

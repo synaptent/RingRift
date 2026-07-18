@@ -78,6 +78,22 @@ async function createMultiPlayerGame(
   return json.data.game.id;
 }
 
+async function joinMultiPlayerGame(
+  page: import('@playwright/test').Page,
+  token: string,
+  gameId: string
+): Promise<void> {
+  const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const response = await page.request.post(`${apiBaseUrl}/api/games/${gameId}/join`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to occupy multiplayer seat: ${response.status()} - ${await response.text()}`
+    );
+  }
+}
+
 test.describe('3-4 Player Game Flows', () => {
   test.slow();
   test.setTimeout(180_000); // 3 minutes per test for multiplayer coordination
@@ -111,6 +127,8 @@ test.describe('3-4 Player Game Flows', () => {
 
         // Create a 3-player game
         const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         // Connect all three players via WebSocket
         await coordinator.connect('player1', {
@@ -187,6 +205,8 @@ test.describe('3-4 Player Game Flows', () => {
         const token3 = await createUserAndGetToken(page3, user3);
 
         const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         await coordinator.connect('player1', {
           playerId: user1.username,
@@ -291,6 +311,9 @@ test.describe('3-4 Player Game Flows', () => {
 
         // Create a 4-player game
         const gameId = await createMultiPlayerGame(page1, token1, 4);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
+        await joinMultiPlayerGame(page4, token4, gameId);
 
         // Connect all four players via WebSocket
         await coordinator.connect('player1', {
@@ -380,6 +403,9 @@ test.describe('3-4 Player Game Flows', () => {
         const token4 = await createUserAndGetToken(page4, user4);
 
         const gameId = await createMultiPlayerGame(page1, token1, 4);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
+        await joinMultiPlayerGame(page4, token4, gameId);
 
         await coordinator.connect('player1', {
           playerId: user1.username,
@@ -499,6 +525,8 @@ test.describe('3-4 Player Game Flows', () => {
         const spectatorToken = await createUserAndGetToken(pageSpec, spectatorUser);
 
         const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         // Connect all players and spectator
         await coordinator.connect('player1', {
@@ -613,6 +641,8 @@ test.describe('3-4 Player Game Flows', () => {
         const token3 = await createUserAndGetToken(page3, user3);
 
         const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         await coordinator.connect('player1', {
           playerId: user1.username,
