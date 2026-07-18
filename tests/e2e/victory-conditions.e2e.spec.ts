@@ -54,7 +54,7 @@ test.describe('Victory Conditions E2E Tests', () => {
       await expect(gamePageContainer.first()).toBeVisible();
 
       // Verify victory condition help text is shown in the HUD
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible({ timeout: 10_000 });
 
       // Verify victory conditions are documented in the UI
@@ -70,7 +70,7 @@ test.describe('Victory Conditions E2E Tests', () => {
       await gamePage.waitForReady();
 
       // Find the victory conditions help section
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible({ timeout: 10_000 });
 
       // Verify all victory conditions are documented

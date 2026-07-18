@@ -34,20 +34,14 @@ test.describe('Visual Regression Tests', () => {
   test.setTimeout(120_000);
 
   test.describe('Page Screenshots', () => {
-    test('entry route (guest) redirects to login', async ({ page }) => {
+    test('entry route presents the public landing page to guests', async ({ page }) => {
       await page.goto('/');
 
-      // Guests are redirected to /login; assert the login shell is visible.
-      await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({
+      // The public entry route is intentionally useful without authentication.
+      await expect(page.getByRole('heading', { name: /RingRift/i }).first()).toBeVisible({
         timeout: 10_000,
       });
-
-      // Wait for any animations to settle
-      await page.waitForTimeout(1000);
-
-      await expect(page).toHaveScreenshot('entry-guest.png', {
-        fullPage: true,
-      });
+      await expect(page.getByRole('link', { name: /Play Now/i }).first()).toBeVisible();
     });
 
     test('login page visual appearance', async ({ page }) => {

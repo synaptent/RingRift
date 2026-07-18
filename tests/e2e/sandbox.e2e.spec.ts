@@ -108,6 +108,9 @@ test.describe('Sandbox host E2E', () => {
     const board = page.getByTestId('board-view');
     await expect(board).toBeVisible({ timeout: 30_000 });
 
+    // Scenario and overlay diagnostics are deliberately exposed in Debug mode.
+    await page.getByRole('button', { name: /Debug/i }).click();
+
     // Open the Scenario Picker and load a curated scenario that exercises
     // line and territory overlays. We rely on the curated bundle including
     // at least one scenario tagged with Rules_* metadata.

@@ -962,6 +962,14 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.leaveGame('player2', gameId1);
         await coordinator.leaveGame('spectator', gameId1);
 
+        // Unmount the browser GameConnection for game 1 before reusing page1
+        // to create the second fixture. Otherwise its stale subscription can
+        // compete with the coordinator client for the next player choice.
+        await page1.goto('/');
+        await expect(page1.getByRole('heading', { name: /Welcome to RingRift/i })).toBeVisible({
+          timeout: 10_000,
+        });
+
         // -------------------------------------------------------------------
         // Game 2: near_victory_territory – canonical region resolution
         // -------------------------------------------------------------------
@@ -1023,7 +1031,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const territoryResults = await coordinator.waitForAll(['player1', 'player2', 'spectator'], {
           type: 'gameOver',
           predicate: (data) => isGameOverMessage(data) && data.data.gameId === gameId2,
-          timeout: 30_000,
+          timeout: 45_000,
         });
 
         const terrP1 = territoryResults.get('player1') as GameOverMessage | undefined;

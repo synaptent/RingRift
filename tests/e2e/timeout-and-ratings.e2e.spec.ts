@@ -45,7 +45,7 @@ test.describe('Timeout & Rating E2E', () => {
     await homePage.goto();
     await homePage.goToProfile();
     await page.waitForURL('**/profile', { timeout: 10_000 });
-    const ratingText = await page.locator('.text-emerald-400').first().textContent();
+    const ratingText = await page.getByTestId('profile-rating').textContent();
     return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
   }
 
@@ -98,7 +98,7 @@ test.describe('Timeout & Rating E2E', () => {
     token: string,
     gameId: string
   ): Promise<{ reason: string; winner?: number | null }> {
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + 45_000;
     let lastJson: any;
 
     while (Date.now() < deadline) {

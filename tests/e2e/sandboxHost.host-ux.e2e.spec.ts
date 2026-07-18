@@ -195,6 +195,9 @@ test.describe('sandbox host @host-ux', () => {
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('sandbox-touch-controls')).toBeVisible({ timeout: 15_000 });
 
+    // AI trace controls are an explicit developer diagnostic surface.
+    await page.getByRole('button', { name: /Debug/i }).click();
+
     // Use the test-only helper exposed by SandboxContext in non-production
     // builds to seed a stall warning and AI trace payload.
     await page.evaluate(() => {

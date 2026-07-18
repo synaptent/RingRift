@@ -767,6 +767,9 @@ test.describe('Multiplayer Game E2E', () => {
           // Resolve the fixture's canonical pending region through the same
           // board interaction a player uses in a live territory decision.
           await setup!.player1.gamePage.getCell(4, 4).click();
+          const eliminationStack = setup!.player1.gamePage.getCell(7, 7);
+          await expect(eliminationStack).toBeEnabled({ timeout: 10_000 });
+          await eliminationStack.click();
           const p1Victory = await waitForVictoryModal(setup!.player1, { timeout: 30_000 });
           const p2Victory = await waitForVictoryModal(setup!.player2, { timeout: 30_000 });
 
@@ -810,7 +813,7 @@ test.describe('Multiplayer Game E2E', () => {
             await homePage.goto();
             await homePage.goToProfile();
             await player.page.waitForURL('**/profile', { timeout: 10_000 });
-            const ratingText = await player.page.locator('.text-emerald-400').first().textContent();
+            const ratingText = await player.page.getByTestId('profile-rating').textContent();
             return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
           };
 

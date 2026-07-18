@@ -212,8 +212,11 @@ test.describe('User Profile E2E Tests', () => {
       const user1 = await registerAndLogin(page);
       await page.goto('/profile');
 
-      // Get the profile URL
-      const profileUrl = page.url();
+      const profileResponse = await page.request.get('/api/users/profile');
+      expect(profileResponse.ok()).toBeTruthy();
+      const profileBody = await profileResponse.json();
+      const userId = profileBody?.data?.user?.id as string | undefined;
+      expect(userId).toBeTruthy();
 
       // Create second browser context as different user
       const context2 = await browser.newContext();
@@ -222,20 +225,13 @@ test.describe('User Profile E2E Tests', () => {
       try {
         await registerAndLogin(page2);
 
-        // Try to visit first user's profile
-        // Profile URLs typically include user ID or username
-        const userProfileUrl = profileUrl.includes(user1.username)
-          ? profileUrl
-          : `/profile/${user1.username}`;
+        await page2.goto(`/player/${userId}`);
 
-        await page2.goto(userProfileUrl);
-
-        // Should see some public info (at minimum the profile exists)
-        const profileExists = page2.locator('text=/Profile|Rating|Games/i').first();
-        // Profile should either be visible or show "not found" - both are valid behaviors
-        await expect(profileExists.or(page2.locator('text=/not found|private/i'))).toBeVisible({
-          timeout: 10_000,
-        });
+        await expect(page2.getByRole('heading', { name: user1.username, exact: true })).toBeVisible(
+          {
+            timeout: 10_000,
+          }
+        );
       } finally {
         await context2.close();
       }

@@ -142,16 +142,16 @@ test.describe('Replay Panel E2E Tests', () => {
       await registerAndLogin(page);
       await goToReplaySandbox(page);
 
-      await openReplayPanel(page);
+      const replayPanel = await openReplayPanel(page);
 
       // Wait for game list to load or show unavailable message
-      const gameListOrUnavailable = page
-        .locator('text=/Select a game|No games|Service unavailable/i')
+      const gameListOrUnavailable = replayPanel
+        .locator('text=/Loading games|Select a game|No .*games|Service unavailable|games found/i')
         .first();
       await expect(gameListOrUnavailable).toBeVisible({ timeout: 15_000 });
 
       // If service is available and games exist, should show game entries
-      const gameEntries = page.locator('[data-testid="game-list-item"]');
+      const gameEntries = replayPanel.locator('[data-testid="game-list-item"]');
       const entryCount = await gameEntries.count();
 
       if (entryCount > 0) {
