@@ -142,7 +142,7 @@ test.describe('Resignation E2E Tests', () => {
     await expect(victoryModal).toBeVisible({ timeout: 10_000 });
 
     // Should indicate resignation as the reason
-    await expect(page.locator('text=/resignation/i')).toBeVisible();
+    await expect(victoryModal.getByText(/resignation/i).first()).toBeVisible();
   });
 
   test('game remains playable if resignation is cancelled', async ({ page }) => {

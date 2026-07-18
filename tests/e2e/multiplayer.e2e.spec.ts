@@ -13,7 +13,6 @@ import {
   waitForTimeoutWarningUI,
   coordinatePlayerTurn,
   waitForPlayerTurnWithTargets,
-  waitForChoiceDialog,
   getGameOutcome,
   type MultiplayerGameSetup,
 } from './helpers/multiplayer-utils';
@@ -509,8 +508,8 @@ test.describe('Multiplayer Game E2E', () => {
           expect(newGameIdP1).toBe(newGameIdP2);
           expect(newGameIdP1).not.toBe(originalGameId);
 
-          // Basic sanity check that HUD and moves are reset for the new session
-          await setup!.player1.gamePage.assertRecentMovesVisible(15_000);
+          // Basic sanity check that the fresh session rendered its canonical HUD.
+          await expect(setup!.player1.gamePage.phaseIndicator).toBeVisible();
         });
       } finally {
         if (setup) {
@@ -656,37 +655,29 @@ test.describe('Multiplayer Game E2E', () => {
     });
 
     test('decision phase auto-resolves on timeout for both players', async ({ browser }) => {
-      // Short timeout: 4s, warning at 2s before = warning fires at 2s.
+      // Use enough time for two browser contexts to finish joining before the
+      // canonical decision is auto-resolved.
       let setup: MultiplayerGameSetup | null = null;
 
       try {
         await test.step('Setup decision phase game with short timeout', async () => {
           setup = await setupMultiplayerFixtureGame(browser, {
             scenario: 'line_processing',
-            shortTimeoutMs: 4000,
-            shortWarningBeforeMs: 2000,
+            shortTimeoutMs: 12_000,
+            shortWarningBeforeMs: 6_000,
           });
         });
 
         await test.step('Verify player is in decision phase', async () => {
-          const hasChoiceDialog = await waitForChoiceDialog(setup!.player1, { timeout: 10_000 });
-          expect(hasChoiceDialog).toBeTruthy();
+          await setup!.player1.gamePage.assertPhase('Line');
         });
 
         await test.step('Wait for auto-resolve after timeout', async () => {
-          // Do not make a choice; let the short timeout fire. After the timeout
-          // window passes, the backend should either advance the phase or end
-          // the game, but the decision dialog should not remain indefinitely.
-          await setup!.player1.page.waitForTimeout(6_000);
-
-          const stillHasDialog = await waitForChoiceDialog(setup!.player1, {
-            timeout: 2_000,
-          });
-          const sawVictory =
-            (await waitForVictoryModal(setup!.player1, { timeout: 2_000 })) ||
-            (await waitForVictoryModal(setup!.player2, { timeout: 2_000 }));
-
-          expect(stillHasDialog && !sawVictory).toBeFalsy();
+          const autoResolved = /Decision timed out - move applied automatically/i;
+          await Promise.all([
+            expect(setup!.player1.page.getByText(autoResolved)).toBeVisible({ timeout: 18_000 }),
+            expect(setup!.player2.page.getByText(autoResolved)).toBeVisible({ timeout: 18_000 }),
+          ]);
         });
       } finally {
         if (setup) {

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { goToSandbox } from './helpers/test-utils';
+import { goToSandbox, registerAndLogin } from './helpers/test-utils';
 import { GamePage } from './pages';
 
 /**
@@ -64,6 +64,9 @@ test.describe('Sandbox host E2E', () => {
     // game and navigate to /game/:gameId. If the backend /api/games route is
     // unavailable, this test should fail rather than silently exercising the
     // local ClientSandboxEngine fallback.
+
+    // Backend game creation requires an authenticated player.
+    await registerAndLogin(page);
 
     // Navigate to the sandbox pre-game setup.
     await goToSandbox(page);

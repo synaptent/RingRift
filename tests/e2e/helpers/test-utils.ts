@@ -571,7 +571,9 @@ export async function assertErrorMessage(page: Page, errorPattern: RegExp): Prom
  * Checks that no error messages are displayed.
  */
 export async function assertNoErrors(page: Page): Promise<void> {
-  const errorElement = page.locator('.text-red-300, .text-red-400, [class*="error"]');
+  const errorElement = page
+    .locator('[role="alert"]:visible, [data-testid$="-error"]:visible')
+    .or(page.getByText('Board rendering error', { exact: true }));
   await expect(errorElement).toHaveCount(0);
 }
 

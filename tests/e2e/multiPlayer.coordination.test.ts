@@ -760,6 +760,14 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           (move) => move.type === 'choose_territory_option'
         );
         expect(territoryMove).toBeDefined();
+
+        // Do not race the terminal broadcast against Player 2's asynchronous
+        // room join.
+        await coordinator.waitForGameState(
+          'player2',
+          (state) => state.currentPhase === 'territory_processing',
+          30_000
+        );
         await coordinator.sendMoveById('player1', gameId, territoryMove!.id);
 
         // Resolving the region canonically requires choosing the controlled
@@ -983,11 +991,38 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           (move) => move.type === 'choose_territory_option'
         );
         expect(territoryMove).toBeDefined();
+
+        await Promise.all([
+          coordinator.waitForGameState(
+            'player2',
+            (state) => state.currentPhase === 'territory_processing',
+            30_000
+          ),
+          coordinator.waitForGameState(
+            'spectator',
+            (state) => state.currentPhase === 'territory_processing',
+            30_000
+          ),
+        ]);
         await coordinator.sendMoveById('player1', gameId2, territoryMove!.id);
+
+        const eliminationChoice = (await coordinator.waitForEvent(
+          'player1',
+          'player_choice_required',
+          (payload) => (payload as RingEliminationChoice)?.type === 'ring_elimination',
+          30_000
+        )) as RingEliminationChoice;
+        expect(eliminationChoice.options.length).toBeGreaterThan(0);
+        await coordinator.send('player1', 'player_choice_response', {
+          choiceId: eliminationChoice.id,
+          playerNumber: eliminationChoice.playerNumber,
+          choiceType: eliminationChoice.type,
+          selectedOption: eliminationChoice.options[0],
+        });
 
         const territoryResults = await coordinator.waitForAll(['player1', 'player2', 'spectator'], {
           type: 'gameOver',
-          predicate: (data) => isGameOverMessage(data),
+          predicate: (data) => isGameOverMessage(data) && data.data.gameId === gameId2,
           timeout: 30_000,
         });
 

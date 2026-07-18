@@ -1,6 +1,22 @@
 import { test, expect, type Page } from '@playwright/test';
 import { registerAndLogin, goToSandbox } from './helpers/test-utils';
 
+async function goToReplaySandbox(page: Page) {
+  await page.route('**/api/games**', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Force local sandbox for replay testing' }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await goToSandbox(page, '/sandbox?preset=learn-basics');
+  await page.unroute('**/api/games**');
+}
+
 async function openReplayPanel(page: Page, expand = true) {
   const advancedPanels = page.getByTestId('sandbox-advanced-sidebar-panels');
   await expect(advancedPanels).toBeVisible();
@@ -44,14 +60,14 @@ test.describe('Replay Panel E2E Tests', () => {
   test.describe('Replay Panel UI', () => {
     test('sandbox page renders replay panel section', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       await openReplayPanel(page, false);
     });
 
     test('replay panel can be expanded and collapsed', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       const replayPanel = await openReplayPanel(page);
       const expanded = replayPanel
@@ -65,7 +81,7 @@ test.describe('Replay Panel E2E Tests', () => {
 
     test('replay panel shows service status indicator', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       const replayPanel = await openReplayPanel(page);
 
@@ -82,7 +98,7 @@ test.describe('Replay Panel E2E Tests', () => {
   test.describe('Replay Playback Controls', () => {
     test.beforeEach(async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
     });
 
     test('playback controls render with correct buttons', async ({ page }) => {
@@ -124,7 +140,7 @@ test.describe('Replay Panel E2E Tests', () => {
   test.describe('Game List and Filters', () => {
     test('game list displays when AI service is available', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       await openReplayPanel(page);
 
@@ -147,7 +163,7 @@ test.describe('Replay Panel E2E Tests', () => {
 
     test('game filters update the displayed list', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       await openReplayPanel(page);
 
@@ -173,7 +189,7 @@ test.describe('Replay Panel E2E Tests', () => {
   test.describe('Game Selection and Playback', () => {
     test('selecting a game loads it into playback', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       await openReplayPanel(page);
 
@@ -202,7 +218,7 @@ test.describe('Replay Panel E2E Tests', () => {
 
     test('step forward and backward through moves', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       await openReplayPanel(page);
 
@@ -235,7 +251,7 @@ test.describe('Replay Panel E2E Tests', () => {
   test.describe('Replay to Sandbox Integration', () => {
     test('fork from position creates new sandbox game', async ({ page }) => {
       await registerAndLogin(page);
-      await goToSandbox(page);
+      await goToReplaySandbox(page);
 
       await openReplayPanel(page);
 

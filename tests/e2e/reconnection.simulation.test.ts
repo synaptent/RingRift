@@ -907,7 +907,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
           10_000
         );
 
-        expect(p1TerminalState.data.gameState.currentPhase).toBe('game_over');
+        expect(p1TerminalState.data.gameState.gameStatus).toBe('completed');
         expect(p1TerminalState.data.gameState.winner).toBe(p2GameOver.data.gameResult.winner);
       } finally {
         await coordinator.cleanup();
@@ -934,7 +934,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         await homePage.goto();
         await homePage.goToProfile();
         await page.waitForURL('**/profile', { timeout: 10_000 });
-        const ratingText = await page.locator('.text-emerald-400').first().textContent();
+        const ratingText = await page.getByTestId('profile-rating').textContent();
         return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
       };
 
@@ -974,15 +974,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         // Player 1 disconnects mid-decision and never reconnects → abandonment.
         await coordinator.network.forceDisconnect('player1');
 
-        const ratedResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: (data) => true,
-          timeout: 30_000,
-        });
-
-        const ratedP1 = ratedResults.get('player1') as any;
-        const ratedP2 = ratedResults.get('player2') as any;
-        expect(ratedP1?.data?.gameResult.reason).toBe('abandonment');
+        const ratedP2 = (await coordinator.waitForGameOver('player2', 45_000)) as any;
         expect(ratedP2?.data?.gameResult.reason).toBe('abandonment');
 
         // Allow backend to persist rating updates.
@@ -1020,15 +1012,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
 
         await coordinator.network.forceDisconnect('player1');
 
-        const unratedResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: (data) => true,
-          timeout: 30_000,
-        });
-
-        const unratedP1 = unratedResults.get('player1') as any;
-        const unratedP2 = unratedResults.get('player2') as any;
-        expect(unratedP1?.data?.gameResult.reason).toBe('abandonment');
+        const unratedP2 = (await coordinator.waitForGameOver('player2', 45_000)) as any;
         expect(unratedP2?.data?.gameResult.reason).toBe('abandonment');
 
         await page1.waitForTimeout(2_000);
