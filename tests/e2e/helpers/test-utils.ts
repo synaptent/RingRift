@@ -309,12 +309,18 @@ export async function makeMove(page: Page, from: string, to: string): Promise<vo
   const [fromX, fromY] = from.split(',').map(Number);
   const [toX, toY] = to.split(',').map(Number);
 
-  // Click source cell
+  const destCell = boardView.locator(`button[data-x="${toX}"][data-y="${toY}"]`);
+
+  // The backend host auto-selects a forced movement source. Avoid toggling
+  // that selection off when the requested destination is already canonical.
+  if (await destCell.evaluate((cell) => cell.classList.contains('valid-move-cell'))) {
+    await destCell.click();
+    return;
+  }
+
   const sourceCell = boardView.locator(`button[data-x="${fromX}"][data-y="${fromY}"]`);
   await sourceCell.click();
-
-  // Click destination cell
-  const destCell = boardView.locator(`button[data-x="${toX}"][data-y="${toY}"]`);
+  await expect(destCell).toHaveClass(/valid-move-cell/, { timeout: 10_000 });
   await destCell.click();
 }
 

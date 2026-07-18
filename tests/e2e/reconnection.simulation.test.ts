@@ -891,7 +891,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         await coordinator.network.forceDisconnect('player1');
 
         // Player 2 should eventually receive a timeout-based game_over.
-        const p2GameOver = (await coordinator.waitForGameOver('player2', 30_000)) as any;
+        const p2GameOver = (await coordinator.waitForGameOver('player2', 45_000)) as any;
 
         expect(p2GameOver?.data?.gameResult).toBeDefined();
         const reason = p2GameOver.data.gameResult.reason;

@@ -200,7 +200,9 @@ export default function ProfilePage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700">
                   <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">Rating</div>
-                  <div className="text-2xl font-bold text-emerald-400">{profile.rating}</div>
+                  <div className="text-2xl font-bold text-emerald-400" data-testid="profile-rating">
+                    {profile.rating}
+                  </div>
                 </div>
                 <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700">
                   <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">

@@ -109,7 +109,7 @@ describe('decision-phase fixture persistence', () => {
     expect(territoryMoves[0]?.disconnectedRegions?.[0]?.isDisconnected).toBe(true);
   });
 
-  it('exposes canonical continuation moves from the chain-capture timeout fixture', () => {
+  it('applies a canonical continuation move from the chain-capture timeout fixture', async () => {
     const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
     const players: Player[] = [1, 2].map((playerNumber) => ({
       id: `player-${playerNumber}`,
@@ -137,6 +137,58 @@ describe('decision-phase fixture persistence', () => {
 
     expect(state.currentPhase).toBe('chain_capture');
     expect(continuationMoves.length).toBeGreaterThan(1);
+
+    const selectedMove = continuationMoves[0];
+    if (!selectedMove) throw new Error('Expected a chain-capture continuation');
+    const result = await engine.makeMoveById(1, selectedMove.id);
+
+    expect(result.success).toBe(true);
+    expect(engine.getGameState().moveHistory).toContainEqual(
+      expect.objectContaining({
+        type: 'continue_capture_segment',
+        from: selectedMove.from,
+        to: selectedMove.to,
+        captureTarget: selectedMove.captureTarget,
+      })
+    );
+  });
+
+  it('reaches territory victory through the canonical near-victory fixture choice', async () => {
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+    const players: Player[] = [1, 2].map((playerNumber) => ({
+      id: `player-${playerNumber}`,
+      username: `Player ${playerNumber}`,
+      playerNumber,
+      type: 'human',
+      isReady: true,
+      timeRemaining: 600_000,
+      ringsInHand: BOARD_CONFIGS.square8.ringsPerPlayer,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    }));
+    const engine = new GameEngine('fixture-game-123', 'square8', players, timeControl, false);
+
+    expect(
+      applyDecisionPhaseFixtureIfNeeded(engine, {
+        fixture: {
+          kind: 'decision_phase_fixture',
+          scenario: 'near_victory_territory',
+          version: 1,
+        },
+      })
+    ).toBe(true);
+
+    const territoryMove = engine
+      .getValidMoves(1)
+      .find((move) => move.type === 'choose_territory_option');
+    expect(territoryMove).toBeDefined();
+    if (!territoryMove) throw new Error('Expected the near-victory territory choice');
+
+    const result = await engine.makeMoveById(1, territoryMove.id);
+
+    expect(result.success).toBe(true);
+    expect(result.gameResult).toMatchObject({ reason: 'territory_control', winner: 1 });
+    expect(result.gameState?.gameStatus).toBe('completed');
   });
 
   it('reaches elimination victory through the canonical marker-landing fixture move', async () => {

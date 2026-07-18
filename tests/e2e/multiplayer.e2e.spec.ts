@@ -449,8 +449,8 @@ test.describe('Multiplayer Game E2E', () => {
         await expect(victoryHelpP2).toBeVisible({ timeout: 15_000 });
 
         // Verify content contains victory conditions
-        await expect(victoryHelpP1.locator('text=/elimination/i')).toBeVisible();
-        await expect(victoryHelpP2.locator('text=/territory/i')).toBeVisible();
+        await expect(victoryHelpP1.getByText('Ring Elimination', { exact: true })).toBeVisible();
+        await expect(victoryHelpP2.getByText('Territory Control', { exact: true })).toBeVisible();
       });
     });
 

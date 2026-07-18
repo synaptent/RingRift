@@ -137,8 +137,20 @@ export class GamePage {
    * Make a move from one position to another.
    */
   async makeMove(fromX: number, fromY: number, toX: number, toY: number): Promise<void> {
+    const destination = this.getCell(toX, toY);
+
+    // Backend games auto-select the only legal movement source (for example,
+    // immediately after placement and in the near-victory fixtures). Clicking
+    // that source again clears the selection, so use the highlighted landing
+    // directly when it is already available.
+    if (await destination.evaluate((cell) => cell.classList.contains('valid-move-cell'))) {
+      await destination.click();
+      return;
+    }
+
     await this.clickCell(fromX, fromY);
-    await this.clickCell(toX, toY);
+    await expect(destination).toHaveClass(/valid-move-cell/, { timeout: 10_000 });
+    await destination.click();
   }
 
   /**

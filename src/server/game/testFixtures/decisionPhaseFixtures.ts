@@ -499,8 +499,8 @@ function seedNearVictoryEliminationState(engine: GameEngine): void {
  * winning by territory control. This creates a scenario where:
  *
  * - Player 1 already controls just under 50% of board territory.
- * - A single additional territory region (one cell) is pending resolution in
- *   territory_processing.
+ * - A single additional one-cell region is enclosed by Player 1 markers and
+ *   pending resolution in territory_processing.
  * - Once resolved in Player 1's favour, the backend will detect a
  *   territory_control victory.
  *
@@ -535,27 +535,60 @@ function seedNearVictoryTerritoryState(engine: GameEngine): void {
   const threshold = state.territoryVictoryThreshold;
   const alreadyControlledCount = Math.max(threshold - 1, 1);
 
-  // Seed collapsed territory spaces for Player 1 across the first rows.
+  const pendingPos: Position = { x: Math.floor(boardSize / 2), y: Math.floor(boardSize / 2) };
+  const borderPositions: Position[] = [
+    { x: pendingPos.x - 1, y: pendingPos.y },
+    { x: pendingPos.x + 1, y: pendingPos.y },
+    { x: pendingPos.x, y: pendingPos.y - 1 },
+    { x: pendingPos.x, y: pendingPos.y + 1 },
+  ];
+  const reservedKeys = new Set([pendingPos, ...borderPositions].map(positionToString));
+
+  // Seed collapsed territory spaces for Player 1, excluding the pending
+  // region and its marker border so the shared detector can rediscover it.
   let placed = 0;
   for (let y = 0; y < boardSize && placed < alreadyControlledCount; y += 1) {
     for (let x = 0; x < boardSize && placed < alreadyControlledCount; x += 1) {
       const key = positionToString({ x, y } as Position);
+      if (reservedKeys.has(key)) continue;
       board.collapsedSpaces.set(key, activePlayerNumber);
       placed += 1;
     }
   }
 
-  // Choose a distinct cell for the pending region (one that is not already
-  // in collapsedSpaces). For simplicity, take the center cell.
-  const pendingPos: Position = { x: Math.floor(boardSize / 2), y: Math.floor(boardSize / 2) };
-  const pendingKey = positionToString(pendingPos);
-  board.collapsedSpaces.delete(pendingKey);
+  for (const position of borderPositions) {
+    board.markers.set(positionToString(position), {
+      player: activePlayerNumber,
+      position,
+      type: 'regular',
+    });
+  }
+
+  // Territory processing requires an eligible controlled stack outside the
+  // region for mandatory self-elimination. A second-player stack keeps both
+  // colours active so the enclosed empty cell is canonically disconnected.
+  const p1StackPosition: Position = { x: boardSize - 1, y: boardSize - 1 };
+  board.stacks.set(positionToString(p1StackPosition), {
+    position: p1StackPosition,
+    rings: [activePlayerNumber],
+    stackHeight: 1,
+    capHeight: 1,
+    controllingPlayer: activePlayerNumber,
+  });
+  const p2StackPosition: Position = { x: boardSize - 2, y: boardSize - 1 };
+  board.stacks.set(positionToString(p2StackPosition), {
+    position: p2StackPosition,
+    rings: [2],
+    stackHeight: 1,
+    capHeight: 1,
+    controllingPlayer: 2,
+  });
 
   const territoryId = `near_victory_territory_p${activePlayerNumber}`;
   const pendingRegion: Territory = {
     spaces: [pendingPos],
     controllingPlayer: activePlayerNumber,
-    isDisconnected: false,
+    isDisconnected: true,
   };
   board.territories.set(territoryId, pendingRegion);
 

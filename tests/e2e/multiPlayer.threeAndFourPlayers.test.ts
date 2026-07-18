@@ -591,25 +591,30 @@ test.describe('3-4 Player Game Flows', () => {
           2,
           30_000
         )) as GameStateUpdateMessage;
-        const moveCountAfterP1 = specStateAfterP1.data.gameState.moveHistory.length;
         await completePlacementTurn(coordinator, 'player2', gameId, p2State);
 
-        // Verify spectator sees P2's move too
+        // Capture an authoritative post-turn count, then wait until the
+        // spectator has received that complete canonical turn rather than the
+        // first intermediate phase update.
+        const p1StateAfterP2 = (await coordinator.waitForTurn(
+          'player1',
+          3,
+          30_000
+        )) as GameStateUpdateMessage;
+        const expectedMoveCount = p1StateAfterP2.data.gameState.moveHistory.length;
         const specStateAfterP2 = (await coordinator.waitForGameState(
           'spectator',
-          (state) => state.moveHistory && state.moveHistory.length > moveCountAfterP1,
+          (state) => state.moveHistory?.length === expectedMoveCount,
           30_000
         )) as GameStateUpdateMessage;
 
         expect(specStateAfterP2.data.gameState.moveHistory.length).toBeGreaterThanOrEqual(2);
 
         // Verify spectator's state matches player1's state
-        const p1Final = coordinator.getLastGameState('player1');
         const specFinal = coordinator.getLastGameState('spectator');
 
         expect(specFinal).not.toBeNull();
-        expect(p1Final).not.toBeNull();
-        expect(specFinal!.moveHistory.length).toBe(p1Final!.moveHistory.length);
+        expect(specFinal!.moveHistory.length).toBe(expectedMoveCount);
       } finally {
         await coordinator.cleanup();
         await context1.close();

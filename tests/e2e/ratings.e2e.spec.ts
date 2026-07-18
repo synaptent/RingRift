@@ -5,6 +5,7 @@ import {
   generateTestUser,
   createFixtureGame,
   makeMove,
+  waitForApiReady,
   waitForGameReady,
 } from './helpers/test-utils';
 import { GamePage, HomePage } from './pages';
@@ -205,15 +206,34 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
       await page.waitForURL('**/profile', { timeout: 10_000 });
 
       // Get initial rating
-      const initialRatingElement = page.locator('.text-emerald-400').first();
+      const initialRatingElement = page.getByTestId('profile-rating');
       const initialRatingText = await initialRatingElement.textContent();
       const initialRating = parseInt(initialRatingText || '1200', 10);
       expect(initialRating).toBeGreaterThan(0);
+
+      // A rated result needs two persisted players. Register the fixture
+      // opponent through the API without disturbing Player 1's browser auth.
+      await waitForApiReady(page);
+      const opponent = generateTestUser();
+      const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(
+        /\/$/,
+        ''
+      );
+      const registerOpponent = await page.request.post(`${apiBaseUrl}/api/auth/register`, {
+        data: {
+          username: opponent.username,
+          email: opponent.email,
+          password: opponent.password,
+          confirmPassword: opponent.password,
+        },
+      });
+      expect(registerOpponent.ok()).toBe(true);
 
       // Create a rated near-victory fixture game
       const { gameId } = await createFixtureGame(page, {
         scenario: 'near_victory_elimination',
         isRated: true,
+        secondPlayerUsername: opponent.username,
       });
 
       await page.goto(`/game/${gameId}`);
@@ -234,7 +254,7 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
       await homePage.goToProfile();
       await page.waitForURL('**/profile', { timeout: 10_000 });
 
-      const newRatingElement = page.locator('.text-emerald-400').first();
+      const newRatingElement = page.getByTestId('profile-rating');
       await expect(newRatingElement).toBeVisible();
       const newRatingText = await newRatingElement.textContent();
       const newRating = parseInt(newRatingText || '0', 10);
@@ -253,7 +273,7 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
         await homePage.goto();
         await homePage.goToProfile();
         await page.waitForURL('**/profile', { timeout: 10_000 });
-        const ratingText = await page.locator('.text-emerald-400').first().textContent();
+        const ratingText = await page.getByTestId('profile-rating').textContent();
         return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
       };
 

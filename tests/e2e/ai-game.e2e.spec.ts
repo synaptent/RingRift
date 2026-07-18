@@ -1,11 +1,5 @@
 import { test, expect } from '@playwright/test';
-import {
-  generateTestUser,
-  registerAndLogin,
-  createGame,
-  waitForGameReady,
-  clickValidPlacementTarget,
-} from './helpers/test-utils';
+import { registerAndLogin, createGame } from './helpers/test-utils';
 import { GamePage } from './pages';
 
 /**
@@ -63,15 +57,9 @@ test.describe('AI Game E2E Tests', () => {
     // the AI legitimately receives Player 2's turn.
     await gamePage.assertPlayerMoveLogged(1);
     await gamePage.assertPhase('Move');
-    const source = gamePage.boardView
-      .getByRole('button', { name: /Stack height .* player 1/i })
-      .first();
-    const sourceX = Number(await source.getAttribute('data-x'));
-    const sourceY = Number(await source.getAttribute('data-y'));
-    expect(Number.isInteger(sourceX)).toBe(true);
-    expect(Number.isInteger(sourceY)).toBe(true);
-    await source.click();
-    await gamePage.getCell(sourceX < 7 ? sourceX + 1 : sourceX - 1, sourceY).click();
+    const movementTarget = gamePage.getValidTargets().first();
+    await expect(movementTarget).toBeVisible({ timeout: 10_000 });
+    await movementTarget.click();
 
     // After the completed human turn, look for P2 (AI) in the canonical log.
     // Allow time for AI service to respond

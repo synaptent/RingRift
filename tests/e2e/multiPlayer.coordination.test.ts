@@ -483,11 +483,18 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(swappedPlayers[0]?.username).toBe(user2.username);
         expect(swappedPlayers[1]?.username).toBe(user1.username);
 
-        // Player2's view should reflect the same seat swap.
-        const p2State = coordinator.getLastGameState('player2');
-        expect(p2State).not.toBeNull();
-        expect(p2State!.players[0].username).toBe(user2.username);
-        expect(p2State!.players[1].username).toBe(user1.username);
+        // Player2's view should receive the same seat swap, rather than
+        // relying on whichever cached update happened to arrive last.
+        const p2Swapped = (await coordinator.waitForGameState(
+          'player2',
+          (state) =>
+            state.players.length >= 2 &&
+            state.players[0].username === user2.username &&
+            state.players[1].username === user1.username,
+          30_000
+        )) as GameStateUpdateMessage;
+        expect(p2Swapped.data.gameState.players[0].username).toBe(user2.username);
+        expect(p2Swapped.data.gameState.players[1].username).toBe(user1.username);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -632,8 +639,15 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           predicate: (data) => {
             const msg = data as GameStateUpdateMessage;
             const history = msg?.data?.gameState?.moveHistory ?? [];
-            return (
-              history.length > 0 && history[history.length - 1]?.type === 'continue_capture_segment'
+            return history.some(
+              (move) =>
+                move.type === 'continue_capture_segment' &&
+                move.from?.x === selected!.from?.x &&
+                move.from?.y === selected!.from?.y &&
+                move.to.x === selected!.to.x &&
+                move.to.y === selected!.to.y &&
+                move.captureTarget?.x === selected!.captureTarget?.x &&
+                move.captureTarget?.y === selected!.captureTarget?.y
             );
           },
           timeout: 30_000,
@@ -650,13 +664,22 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(history1.length).toBeGreaterThan(0);
         expect(history1.length).toBe(history2.length);
 
-        const lastMove1 = history1[history1.length - 1];
-        const lastMove2 = history2[history2.length - 1];
+        const matchesSelection = (move: (typeof history1)[number]) =>
+          move.type === 'continue_capture_segment' &&
+          move.from?.x === selected!.from?.x &&
+          move.from?.y === selected!.from?.y &&
+          move.to.x === selected!.to.x &&
+          move.to.y === selected!.to.y &&
+          move.captureTarget?.x === selected!.captureTarget?.x &&
+          move.captureTarget?.y === selected!.captureTarget?.y;
+        const appliedMove1 = history1.find(matchesSelection);
+        const appliedMove2 = history2.find(matchesSelection);
 
-        expect(lastMove1.type).toBe('continue_capture_segment');
-        expect(lastMove2).toEqual(lastMove1);
-        expect(lastMove1.to).toEqual(selected!.to);
-        expect(lastMove1.captureTarget).toEqual(selected!.captureTarget);
+        expect(appliedMove1).toBeDefined();
+        expect(appliedMove2).toEqual(appliedMove1);
+        expect(appliedMove1!.type).toBe('continue_capture_segment');
+        expect(appliedMove1!.to).toEqual(selected!.to);
+        expect(appliedMove1!.captureTarget).toEqual(selected!.captureTarget);
       } finally {
         await coordinator.cleanup();
         await context1.close();
