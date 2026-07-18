@@ -212,7 +212,13 @@ test.describe('User Profile E2E Tests', () => {
       const user1 = await registerAndLogin(page);
       await page.goto('/profile');
 
-      const profileResponse = await page.request.get('/api/users/profile');
+      const token = await page.evaluate(
+        () => localStorage.getItem('auth_token') ?? localStorage.getItem('token')
+      );
+      expect(token).toBeTruthy();
+      const profileResponse = await page.request.get('/api/users/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       expect(profileResponse.ok()).toBeTruthy();
       const profileBody = await profileResponse.json();
       const userId = profileBody?.data?.user?.id as string | undefined;

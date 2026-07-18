@@ -26,7 +26,7 @@ import { HomePage, GamePage } from './pages';
  */
 
 test.describe('Timeout & Rating E2E', () => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
@@ -62,7 +62,7 @@ test.describe('Timeout & Rating E2E', () => {
         isPrivate: true,
         timeControl: {
           type: 'blitz',
-          initialTime: 5, // 5 seconds per player for fast timeout
+          initialTime: 60, // Minimum supported move clock; one minute per player
           increment: 0,
         },
       },
@@ -98,7 +98,7 @@ test.describe('Timeout & Rating E2E', () => {
     token: string,
     gameId: string
   ): Promise<{ reason: string; winner?: number | null }> {
-    const deadline = Date.now() + 45_000;
+    const deadline = Date.now() + 75_000;
     let lastJson: any;
 
     while (Date.now() < deadline) {

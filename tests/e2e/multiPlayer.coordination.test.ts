@@ -966,7 +966,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         // to create the second fixture. Otherwise its stale subscription can
         // compete with the coordinator client for the next player choice.
         await page1.goto('/');
-        await expect(page1.getByRole('heading', { name: /Welcome to RingRift/i })).toBeVisible({
+        await expect(page1.getByRole('button', { name: /logout/i })).toBeVisible({
           timeout: 10_000,
         });
 

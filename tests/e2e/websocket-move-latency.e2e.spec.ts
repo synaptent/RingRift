@@ -120,10 +120,11 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // Ensure we are at a point where the human can make a move.
   await gamePage.assertValidTargetsVisible();
 
-  // Snapshot the current number of move entries under "Recent moves".
-  const previousMoveCount = await page.evaluate(() => {
+  // Snapshot the visible move list. The event log is intentionally capped, so
+  // its text changes after later moves even when its item count stays constant.
+  const previousMoveSignature = await page.evaluate(() => {
     const log = document.querySelector('[data-testid="game-event-log"]');
-    if (!log) return 0;
+    if (!log) return '';
 
     // Find the "Recent moves" header within the event log.
     const headings = Array.from(log.querySelectorAll('div')).filter((el) =>
@@ -131,9 +132,11 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
     );
     const container = (headings[0]?.parentElement ?? log) as HTMLElement;
     const list = container.querySelector('ul');
-    if (!list) return 0;
+    if (!list) return '';
 
-    return list.querySelectorAll('li').length;
+    return Array.from(list.querySelectorAll('li'))
+      .map((item) => item.textContent?.trim() ?? '')
+      .join('|');
   });
 
   // Capture start time as close as possible to the click that triggers the move.
@@ -146,7 +149,7 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // then return the elapsed time since startTime.
   const timeoutMs = 10_000;
   const rttHandle = await page.waitForFunction(
-    (state: { prevCount: number; startedAt: number }) => {
+    (state: { previousSignature: string; startedAt: number }) => {
       const log = document.querySelector('[data-testid="game-event-log"]');
       if (!log) return false;
 
@@ -157,8 +160,10 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
       const list = container.querySelector('ul');
       if (!list) return false;
 
-      const count = list.querySelectorAll('li').length;
-      if (count <= state.prevCount) {
+      const signature = Array.from(list.querySelectorAll('li'))
+        .map((item) => item.textContent?.trim() ?? '')
+        .join('|');
+      if (!signature || signature === state.previousSignature) {
         return false;
       }
 
@@ -166,7 +171,7 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
       // authoritative game_state update for this move.
       return performance.now() - state.startedAt;
     },
-    { prevCount: previousMoveCount, startedAt: startTime },
+    { previousSignature: previousMoveSignature, startedAt: startTime },
     { timeout: timeoutMs }
   );
 
