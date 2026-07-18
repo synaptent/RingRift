@@ -63,14 +63,16 @@ async function createMultiPlayerGame(
     },
     data: {
       boardType: 'square8',
-      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      timeControl: { type: 'rapid', initialTime: 600, increment: 0 },
       isRated: options.isRated ?? false,
       isPrivate: false,
       maxPlayers,
     },
   });
   if (!response.ok()) {
-    throw new Error(`Failed to create ${maxPlayers}-player game: ${response.status()}`);
+    throw new Error(
+      `Failed to create ${maxPlayers}-player game: ${response.status()} - ${await response.text()}`
+    );
   }
   const json = await response.json();
   return json.data.game.id;

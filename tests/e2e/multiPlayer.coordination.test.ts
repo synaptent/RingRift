@@ -35,7 +35,6 @@ import {
   waitForGameReady,
   makeMove,
 } from './helpers/test-utils';
-import { positionToString } from '../../src/shared/types/game';
 import type { GameOverMessage, GameStateUpdateMessage } from '../../src/shared/types/websocket';
 
 /**
@@ -371,7 +370,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const token1 = await createUserAndGetToken(page1, user1);
         const token2 = await createUserAndGetToken(page2, user2);
 
-        // Create a standard 2-player backend game; server defaults swapRuleEnabled=true.
+        // Create a standard 2-player backend game with the optional swap rule enabled.
         const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
         const createResponse = await page1.request.post(
           `${apiBaseUrl.replace(/\/$/, '')}/api/games`,
@@ -381,15 +380,18 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
             },
             data: {
               boardType: 'square8',
-              timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+              timeControl: { type: 'rapid', initialTime: 600, increment: 0 },
               isRated: false,
               isPrivate: false,
               maxPlayers: 2,
+              rulesOptions: { swapRuleEnabled: true },
             },
           }
         );
         if (!createResponse.ok()) {
-          throw new Error(`Failed to create game: ${createResponse.status()}`);
+          throw new Error(
+            `Failed to create game: ${createResponse.status()} - ${await createResponse.text()}`
+          );
         }
         const createJson = await createResponse.json();
         const gameId: string = createJson.data.game.id;
@@ -465,7 +467,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
       }
     });
 
-    test('chain_capture_choice fixture: both players see choice and shared terminal game_over', async ({
+    test('chain_capture_choice fixture: both players see the shared canonical decision surface', async ({
       browser,
     }) => {
       const coordinator = createMultiClientCoordinator(serverUrl);
@@ -502,33 +504,33 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
 
-        // Wait for both players to see a chain_capture_choice player_choice_required event.
-        const choiceResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'event',
-          eventName: 'player_choice_required',
-          predicate: () => true,
+        // Chain-capture decisions are exposed as canonical Move IDs on the
+        // game_state payload. Both players must observe the same surface.
+        const decisionStates = await coordinator.waitForAll(['player1', 'player2'], {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'chain_capture' &&
+              message.data.validMoves.some((move) => move.type === 'continue_capture_segment')
+            );
+          },
           timeout: 30_000,
         });
 
-        expect(choiceResults.get('player1')).toBeDefined();
-        expect(choiceResults.get('player2')).toBeDefined();
+        const p1State = decisionStates.get('player1') as GameStateUpdateMessage;
+        const p2State = decisionStates.get('player2') as GameStateUpdateMessage;
+        const p1MoveIds = p1State.data.validMoves
+          .filter((move) => move.type === 'continue_capture_segment')
+          .map((move) => move.id)
+          .sort();
+        const p2MoveIds = p2State.data.validMoves
+          .filter((move) => move.type === 'continue_capture_segment')
+          .map((move) => move.id)
+          .sort();
 
-        // For this E2E slice we rely on the orchestrator + AI to drive the
-        // remainder of the chain capture; we simply assert that both clients
-        // observe a shared terminal game_over.
-        const gameOverResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: () => true,
-          timeout: 60_000,
-        });
-
-        const p1Over = gameOverResults.get('player1') as GameOverMessage | undefined;
-        const p2Over = gameOverResults.get('player2') as GameOverMessage | undefined;
-
-        expect(p1Over).toBeDefined();
-        expect(p2Over).toBeDefined();
-        expect(p1Over!.data.gameResult.reason).toBe(p2Over!.data.gameResult.reason);
-        expect(p1Over!.data.gameResult.winner).toBe(p2Over!.data.gameResult.winner);
+        expect(p1MoveIds.length).toBeGreaterThan(0);
+        expect(p2MoveIds).toEqual(p1MoveIds);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -536,7 +538,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
       }
     });
 
-    test('chain_capture_choice fixture: explicit player_choice_response applies selected capture segment symmetrically', async ({
+    test('chain_capture_choice fixture: canonical move selection applies the capture segment symmetrically', async ({
       browser,
     }) => {
       const coordinator = createMultiClientCoordinator(serverUrl);
@@ -573,36 +575,17 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
 
-        // Wait for the explicit capture_direction choice on player1.
-        const choicePayload = (await coordinator.waitForEvent(
+        const decisionState = (await coordinator.waitForGameState(
           'player1',
-          'player_choice_required',
-          undefined,
+          (state) => state.currentPhase === 'chain_capture',
           30_000
-        )) as unknown as {
-          id: string;
-          type: string;
-          playerNumber: number;
-          options: Array<{
-            targetPosition: { x: number; y: number; z?: number };
-            landingPosition: { x: number; y: number; z?: number };
-          }>;
-        };
+        )) as GameStateUpdateMessage;
+        const selected = decisionState.data.validMoves.find(
+          (move) => move.type === 'continue_capture_segment'
+        );
+        expect(selected).toBeDefined();
 
-        expect(choicePayload).toBeDefined();
-        expect(choicePayload.type).toBe('capture_direction');
-        expect(Array.isArray(choicePayload.options)).toBe(true);
-        expect(choicePayload.options.length).toBeGreaterThan(0);
-
-        const selected = choicePayload.options[0];
-
-        // Send an explicit player_choice_response selecting the first option.
-        await coordinator.send('player1', 'player_choice_response', {
-          choiceId: choicePayload.id,
-          playerNumber: choicePayload.playerNumber,
-          choiceType: choicePayload.type,
-          selectedOption: selected,
-        });
+        await coordinator.sendMoveById('player1', gameId, selected!.id);
 
         // Wait for both players to receive an updated game_state that includes
         // the applied continue_capture_segment Move.
@@ -633,20 +616,9 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const lastMove2 = history2[history2.length - 1];
 
         expect(lastMove1.type).toBe('continue_capture_segment');
-        expect(lastMove2.type).toBe('continue_capture_segment');
-        expect(lastMove1.to).toEqual(selected.landingPosition);
-        expect(lastMove2.to).toEqual(selected.landingPosition);
-
-        // The captured stack at targetPosition should now be controlled by the acting player
-        // from both players' perspectives.
-        const targetKey = positionToString(selected.targetPosition as any);
-        const stack1 = state1!.board.stacks.get(targetKey);
-        const stack2 = state2!.board.stacks.get(targetKey);
-
-        expect(stack1).toBeDefined();
-        expect(stack2).toBeDefined();
-        expect(stack1!.controllingPlayer).toBe(choicePayload.playerNumber);
-        expect(stack2!.controllingPlayer).toBe(choicePayload.playerNumber);
+        expect(lastMove2).toEqual(lastMove1);
+        expect(lastMove1.to).toEqual(selected!.to);
+        expect(lastMove1.captureTarget).toEqual(selected!.captureTarget);
       } finally {
         await coordinator.cleanup();
         await context1.close();

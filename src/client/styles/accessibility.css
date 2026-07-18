@@ -240,31 +240,3 @@
 .skip-link:focus {
   top: 0;
 }
-
-/* Ensure aria-live regions don't affect layout */
-[aria-live] {
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  height: 1px;
-  overflow: hidden;
-  position: absolute;
-  white-space: nowrap;
-  width: 1px;
-}
-
-/* Make live region visible when it has content for debugging */
-[aria-live].visible-live-region {
-  clip: auto;
-  clip-path: none;
-  height: auto;
-  width: auto;
-  position: fixed;
-  bottom: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 8px;
-  font-size: 12px;
-  max-width: 300px;
-  z-index: 9999;
-}
