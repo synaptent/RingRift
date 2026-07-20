@@ -971,6 +971,15 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await expect(page1.getByRole('button', { name: /logout/i })).toBeVisible({
           timeout: 10_000,
         });
+        // The browser game view temporarily became the newest socket for this
+        // user. Reconnect the coordinator after unmounting it so targeted
+        // player-choice events are delivered to the socket driving Game 2.
+        await coordinator.disconnect('player1');
+        await coordinator.connect('player1', {
+          playerId: user1.username,
+          userId: user1.username,
+          token: token1,
+        });
 
         // -------------------------------------------------------------------
         // Game 2: near_victory_territory – canonical region resolution

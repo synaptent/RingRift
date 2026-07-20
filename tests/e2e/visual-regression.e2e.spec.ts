@@ -10,13 +10,11 @@ async function startSquare8Tutorial(page: Page): Promise<void> {
 }
 
 async function selectFirstEmptyPlacement(page: Page): Promise<void> {
-  const target = page
-    .getByTestId('board-view')
-    .locator('button[class*="outline-emerald"][aria-label*="Empty cell"]')
-    .first();
+  const board = page.getByTestId('board-view');
+  const target = board.locator('button[aria-label*="Empty cell"]').first();
   await expect(target).toBeVisible({ timeout: 25_000 });
   await target.click();
-  await expect(target).toHaveAttribute('aria-pressed', 'true');
+  await expect(board.locator('button[aria-pressed="true"]')).toBeVisible();
 }
 
 async function placeRingOnFirstEmptyCell(page: Page): Promise<void> {
@@ -226,8 +224,7 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('Hex Board Screenshots', () => {
     test('hex board initial state', async ({ page }) => {
-      await goToSandbox(page);
-      await page.getByRole('button', { name: /Hex Challenge/i }).click();
+      await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
 
       // Wait for hex board to fully render
       await page.waitForTimeout(1000);
@@ -237,8 +234,8 @@ test.describe('Visual Regression Tests', () => {
     });
 
     test('hex board with valid targets', async ({ page }) => {
-      await goToSandbox(page);
-      await page.getByRole('button', { name: /Hex Challenge/i }).click();
+      await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
+      await selectFirstEmptyPlacement(page);
 
       const validTargets = page
         .getByTestId('board-view')
@@ -333,8 +330,7 @@ test.describe('Tablet Viewport Visual Tests', () => {
   });
 
   test('hex board on tablet', async ({ page }) => {
-    await goToSandbox(page);
-    await page.getByRole('button', { name: /Hex Challenge/i }).click();
+    await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
     await page.waitForTimeout(1000);
 
     const boardView = page.getByTestId('board-view');

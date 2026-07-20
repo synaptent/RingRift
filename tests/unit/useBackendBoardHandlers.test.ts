@@ -362,6 +362,38 @@ describe('useBackendBoardHandlers', () => {
     });
   });
 
+  describe('Territory processing phase handling', () => {
+    it('submits the canonical territory option containing the clicked cell', () => {
+      const submitMove = jest.fn();
+      const target: Position = { x: 4, y: 4 };
+      const territoryMove = createMove('choose_territory_option', 1, target, undefined, {
+        disconnectedRegions: [
+          {
+            spaces: [target],
+            controllingPlayer: 1,
+            isDisconnected: true,
+          },
+        ],
+      });
+      const gameState = createGameState({ currentPhase: 'territory_processing' });
+      const deps = createDeps({ gameState, validMoves: [territoryMove], submitMove });
+      const { result } = renderHook(() => useBackendBoardHandlers(deps));
+
+      act(() => {
+        result.current.handleCellClick(target, gameState.board);
+      });
+
+      expect(submitMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'choose_territory_option',
+          player: 1,
+          to: target,
+          disconnectedRegions: territoryMove.disconnectedRegions,
+        })
+      );
+    });
+  });
+
   describe('Double-click handling', () => {
     it('should submit 2-ring placement when double-clicking empty cell', () => {
       const submitMove = jest.fn();

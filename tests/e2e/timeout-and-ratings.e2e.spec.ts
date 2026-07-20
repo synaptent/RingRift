@@ -111,13 +111,17 @@ test.describe('Timeout & Rating E2E', () => {
 
       const game = body?.data?.game;
       const status = game?.status as string | undefined;
-      const finalState = game?.finalState as { gameResult?: { reason?: string; winner?: number } };
-      const result = finalState?.gameResult;
+      const finalState = game?.finalState as {
+        winner?: number;
+        gameResult?: { reason?: string; winner?: number };
+      };
+      const reason = finalState?.gameResult?.reason ?? game?.outcome;
+      const winner = finalState?.gameResult?.winner ?? finalState?.winner;
 
-      if (status === 'completed' && result && typeof result.reason === 'string') {
+      if (status === 'completed' && typeof reason === 'string') {
         return {
-          reason: result.reason,
-          winner: result.winner ?? null,
+          reason,
+          winner: winner ?? null,
         };
       }
 

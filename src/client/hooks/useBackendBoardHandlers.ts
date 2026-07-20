@@ -1058,6 +1058,49 @@ export function useBackendBoardHandlers(
         return;
       }
 
+      // Territory choices are already canonical moves supplied by the backend.
+      // Match the clicked cell against the move's region payload and submit that
+      // exact move rather than re-deriving any territory rules in the adapter.
+      if (gameState.currentPhase === 'territory_processing') {
+        const territoryMoves = Array.isArray(validMoves)
+          ? validMoves.filter((m) => m.type === 'choose_territory_option')
+          : [];
+        const territoryMove = territoryMoves.find((move) => {
+          const regionSpaces = move.disconnectedRegions?.[0]?.spaces ?? [];
+          return (
+            regionSpaces.some((space) => positionsEqual(space, pos)) ||
+            (move.to != null && positionsEqual(move.to, pos))
+          );
+        });
+
+        if (territoryMove) {
+          submitMove({
+            type: territoryMove.type,
+            player: territoryMove.player,
+            to: territoryMove.to,
+            disconnectedRegions: territoryMove.disconnectedRegions,
+          } as PartialMove);
+          setSelected(undefined);
+          setValidTargets([]);
+          return;
+        }
+
+        // While a region decision is pending, clicks outside its canonical
+        // region are invalid and must not fall through to elimination handling.
+        if (territoryMoves.length > 0) {
+          const reason = analyzeInvalid(gameState, pos, {
+            isPlayer,
+            isMyTurn,
+            isConnected: isConnectionActive,
+            selectedPosition: selected,
+            validMoves: validMoves ?? undefined,
+            mustMoveFrom,
+          });
+          triggerInvalidMove(pos, reason);
+          return;
+        }
+      }
+
       // Elimination phases: clicking valid elimination targets submits the elimination
       if (
         gameState.currentPhase === 'forced_elimination' ||

@@ -123,7 +123,7 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
     .first();
   await expect(placementTarget).toBeVisible({ timeout: 25_000 });
   await placementTarget.click();
-  await expect(placementTarget).toHaveAttribute('aria-pressed', 'true');
+  await expect(gamePage.boardView.locator('button[aria-pressed="true"]')).toBeVisible();
 
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.

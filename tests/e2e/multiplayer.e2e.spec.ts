@@ -1065,12 +1065,9 @@ test.describe('Multiplayer Game E2E', () => {
         await test.step('Spectator sees spectator HUD and read-only message', async () => {
           // Spectator should see the board and explicit spectator indicators
           await expect(spectatorPage.getByTestId('board-view')).toBeVisible({ timeout: 20_000 });
-          await expect(spectatorPage.locator('text=/Spectator Mode/i')).toBeVisible({
-            timeout: 10_000,
-          });
-          await expect(
-            spectatorPage.locator('text=/Moves disabled while spectating\\./i')
-          ).toBeVisible({ timeout: 10_000 });
+          const spectatorBanner = spectatorPage.getByTestId('spectator-mode-banner');
+          await expect(spectatorBanner).toBeVisible({ timeout: 10_000 });
+          await expect(spectatorBanner).toContainText(/Moves are disabled while spectating\./i);
         });
 
         await test.step('Spectator can leave back to lobby without hanging game session', async () => {
