@@ -771,7 +771,11 @@ test.describe('Multiplayer Game E2E', () => {
           await expect(eliminationStack).toHaveClass(/decision-pulse-elimination/, {
             timeout: 10_000,
           });
-          await eliminationStack.click();
+          // The elimination affordance intentionally pulses, so Playwright's
+          // actionability check will never consider it visually stable. The
+          // class assertion above proves the authoritative target is present;
+          // dispatch the same click event the board handles for a player.
+          await eliminationStack.dispatchEvent('click');
           const [p1Victory, p2Victory] = await Promise.all([
             waitForVictoryModal(setup!.player1, { timeout: 30_000 }),
             waitForVictoryModal(setup!.player2, { timeout: 30_000 }),

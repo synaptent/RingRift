@@ -110,20 +110,19 @@ test.describe('WebSocket move latency E2E', () => {
  *   signature change corresponding to that move's game_state update.
  *
  * The implementation uses a DOM-based detector that:
- * - Selects an empty placement target before timing begins
- * - Confirms the selected placement with the board's double-click interaction
+ * - Resolves a visible empty placement target before timing begins
+ * - Submits that target with the board's double-click interaction
  * - Waits (in the browser context) until the move signature changes
  *   and returns the elapsed performance.now() delta in milliseconds
  */
 async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
-  // Ring placement is a two-step interaction: select an empty cell, then
-  // confirm. Start timing only after the deterministic selection is ready.
+  // Resolve a deterministic legal placement before timing begins. The board's
+  // double-click handler can submit an empty target directly and intentionally
+  // does not require the cell to expose a selected aria-pressed state first.
   const placementTarget = gamePage.boardView
     .locator('button[class*="outline-emerald"][aria-label*="Empty cell"]')
     .first();
   await expect(placementTarget).toBeVisible({ timeout: 25_000 });
-  await placementTarget.click();
-  await expect(gamePage.boardView.locator('button[aria-pressed="true"]')).toBeVisible();
 
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.
@@ -147,9 +146,8 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // Capture start time as close as possible to confirmation that submits the move.
   const startTime = await page.evaluate(() => performance.now());
 
-  // The first click established pending placement state. Dispatch only the
-  // follow-up double-click event so the board's confirmation handler submits
-  // that exact selection without cycling it through additional click events.
+  // Dispatch the board's double-click event directly so the measured interval
+  // begins immediately before the submission handler runs.
   await placementTarget.dispatchEvent('dblclick');
 
   // Wait in the browser context until the move signature changes, then return
