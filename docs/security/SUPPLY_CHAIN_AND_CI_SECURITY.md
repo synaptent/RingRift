@@ -155,7 +155,7 @@ The [`parity-ci.yml`](../../.github/workflows/parity-ci.yml) workflow defines **
     ```
 
 - **E2E/browser‐level tests (required)**
-  - `e2e-tests` (**"Playwright E2E Tests" job**) – stands up Postgres and Redis via CI services, then runs the complete Chromium Playwright suite (`npm run test:e2e:chromium`) against the app. The job is blocking, uses bounded file-level concurrency, and uploads its Playwright report plus failure artefacts for inspection.
+  - `e2e-tests` (**"Playwright E2E Tests" job**) – stands up Postgres and Redis via CI services, then runs the complete Chromium Playwright surface against the app. Functional tests use bounded file-level concurrency; the unchanged WebSocket p95/p99 contract runs three times with one worker and no retries so suite contention cannot masquerade as application latency or be hidden by a retry. The job is blocking and uploads its Playwright report plus failure artefacts for inspection.
 
 When S‑05.F.1 is implemented, this job map should be used to define which jobs are **required gates** for `main`/`develop` merges (for example `lint-and-typecheck`, `test`, `ts-rules-engine`, `security-scan`, `docker-build`, `python-rules-parity`, `python-dependency-audit`, and `e2e-tests`) and which are optional or diagnostic.
 

@@ -811,8 +811,9 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      # The Chromium gate contains 244 tests. One worker consistently exhausts
-      # the 30-minute job timeout on main, while Playwright still keeps tests
+      # The functional Chromium gate contains 243 tests after the latency SLO
+      # contract is separated below. One worker consistently exhausts the
+      # 30-minute job timeout on main, while Playwright still keeps tests
       # sequential within each file when using this bounded file-level pool.
       PLAYWRIGHT_WORKERS: 4
       # Database and Redis URLs for E2E tests
@@ -875,11 +876,18 @@ jobs:
       - name: Run Playwright E2E tests
         # Runs only Chromium in CI by default
         # For multi-browser CI (e.g., on releases), use: npm run test:e2e:all
-        # Playwright config has retries: 2 in CI for flaky test resilience. Stop
-        # after 10 confirmed failures so the required gate reports actionable
-        # evidence instead of exhausting its 30-minute timeout. Green runs still
-        # execute the complete 244-test suite.
-        run: npm run test:e2e:chromium -- --max-failures=10
+        # Playwright config has retries: 2 in CI for functional-test resilience.
+        # Stop after 10 confirmed failures so the required gate reports
+        # actionable evidence instead of exhausting its 30-minute timeout.
+        #
+        # The latency contract is intentionally excluded from the four-worker
+        # functional pool, then run three times with one worker and no retries.
+        # This keeps the p95/p99 thresholds unchanged while preventing unrelated
+        # browser-suite contention from being mistaken for WebSocket path
+        # latency, and prevents a retry from hiding an SLO breach.
+        run: |
+          npm run test:e2e:chromium -- --grep-invert "websocket move latency stays within SLOs" --max-failures=10
+          npm run test:e2e:chromium -- tests/e2e/websocket-move-latency.e2e.spec.ts --workers=1 --retries=0 --repeat-each=3
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
