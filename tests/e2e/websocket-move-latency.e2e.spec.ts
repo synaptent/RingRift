@@ -111,26 +111,33 @@ test.describe('WebSocket move latency E2E', () => {
  *
  * The implementation uses a DOM-based detector that:
  * - Resolves a visible empty placement target before timing begins
- * - Opens the placement-count control and chooses one ring before timing
- * - Submits through the visible Place action
+ * - Pins that target by board coordinates before selection changes its styling
+ * - Confirms the pending one-ring placement on that exact cell
  * - Waits (in the browser context) until the move signature changes
  *   and returns the elapsed performance.now() delta in milliseconds
  */
 async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
-  // Resolve a deterministic legal placement before timing begins. Use the
-  // context-menu count control so each sample places one ring and the test can
-  // collect twelve samples without exhausting the player's opening supply.
+  // Resolve a deterministic legal placement before timing begins. Pin its
+  // coordinates because selecting the cell changes the class-based valid-target
+  // styling used by the discovery locator.
   const placementTarget = gamePage.boardView
     .locator('button[class*="outline-emerald"][aria-label*="Empty cell"]')
     .first();
   await expect(placementTarget).toBeVisible({ timeout: 25_000 });
-  await placementTarget.click({ button: 'right' });
+  const targetCoordinates = await placementTarget.evaluate((element) => ({
+    x: (element as HTMLElement).dataset.x,
+    y: (element as HTMLElement).dataset.y,
+  }));
+  expect(targetCoordinates.x).toBeDefined();
+  expect(targetCoordinates.y).toBeDefined();
 
-  const placementDialog = page.getByTestId('ring-placement-count-overlay');
-  await expect(placementDialog).toBeVisible();
-  await placementDialog.getByLabel('Number of rings').fill('1');
-  const placeButton = placementDialog.getByRole('button', { name: 'Place', exact: true });
-  await expect(placeButton).toBeEnabled();
+  const exactPlacementTarget = gamePage.boardView.locator(
+    `button[data-x="${targetCoordinates.x}"][data-y="${targetCoordinates.y}"]`
+  );
+  await exactPlacementTarget.click();
+  // Allow the pending-placement state and its latest double-click handler to
+  // commit before beginning the measured interval.
+  await page.waitForTimeout(50);
 
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.
@@ -154,9 +161,9 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // Capture start time as close as possible to confirmation that submits the move.
   const startTime = await page.evaluate(() => performance.now());
 
-  // Start immediately before the user-visible action invokes the submission
-  // handler. Dialog setup above is intentionally outside the measured RTT.
-  await placeButton.click();
+  // Dispatch only the confirmation event to the same selected cell; using the
+  // original class-based locator here could re-resolve to a different target.
+  await exactPlacementTarget.dispatchEvent('dblclick');
 
   // Wait in the browser context until the move signature changes, then return
   // the elapsed time since startTime.

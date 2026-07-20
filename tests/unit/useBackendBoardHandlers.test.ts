@@ -253,6 +253,35 @@ describe('useBackendBoardHandlers', () => {
       expect(result.current.pendingRingPlacement?.maxCount).toBe(3);
     });
 
+    it('should confirm a pending one-ring placement when the same cell is double-clicked', () => {
+      const submitMove = jest.fn();
+      const gameState = createGameState({ currentPhase: 'ring_placement' });
+      const validMoves = [
+        createMove('place_ring', 1, { x: 3, y: 4 }, undefined, { placementCount: 1 }),
+      ];
+      const deps = createDeps({ gameState, validMoves, submitMove });
+      const { result } = renderHook(() => useBackendBoardHandlers(deps));
+      const board = createBoardState();
+
+      act(() => {
+        result.current.handleCellClick({ x: 3, y: 4 }, board);
+      });
+      expect(result.current.pendingRingPlacement?.currentCount).toBe(1);
+
+      act(() => {
+        result.current.handleCellDoubleClick({ x: 3, y: 4 }, board);
+      });
+
+      expect(submitMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'place_ring',
+          to: { x: 3, y: 4 },
+          placementCount: 1,
+        })
+      );
+      expect(result.current.pendingRingPlacement).toBeNull();
+    });
+
     it('should trigger invalid move feedback when no valid moves at position', () => {
       const triggerInvalidMove = jest.fn();
       const gameState = createGameState({ currentPhase: 'ring_placement' });
