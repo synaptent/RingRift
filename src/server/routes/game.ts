@@ -165,8 +165,16 @@ router.post(
 
     const creatorUserId = getAuthUserId(req);
     let secondPlayerUserId: string | undefined;
-    if (body.secondPlayerUsername !== undefined) {
-      const secondPlayerUsername = body.secondPlayerUsername.trim();
+    const rawSecondPlayerUsername: unknown = body.secondPlayerUsername;
+    if (rawSecondPlayerUsername !== undefined) {
+      if (typeof rawSecondPlayerUsername !== 'string') {
+        throw createError(
+          'secondPlayerUsername must be a string',
+          400,
+          ErrorCodes.VALIDATION_INVALID_REQUEST
+        );
+      }
+      const secondPlayerUsername = rawSecondPlayerUsername.trim();
       if (!secondPlayerUsername) {
         throw createError(
           'secondPlayerUsername must not be empty',

@@ -71,8 +71,8 @@ All commands and versions in this document assume this shared repo‑root `.venv
 
 ### Deep Learning
 
-- **PyTorch**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torch==2.6.0`, NumPy 2.x compatible)
-- **TorchVision**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torchvision==0.21.0`, validated together with `torch==2.6.0` under the Wave 3‑D `dl-torch` guardrails)
+- **PyTorch**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torch==2.13.0`, NumPy 2.x compatible)
+- **TorchVision**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torchvision==0.28.0`, validated together with `torch==2.13.0` during the E10 audit refresh)
 - **TensorBoard**: 2.18.0 (monitoring & visualization)
 - **TensorBoardX**: 2.6.2.2 (extended features)
 
@@ -1122,7 +1122,7 @@ Subsequent Wave 3‑E hygiene updates (2025‑11‑29) include:
 - Adding an `ai-service-docker-smoke` CI job that builds `ai-service/Dockerfile` and
   runs an in‑container `python -c "import torch, torchvision; ..."` smoke test to
   assert that the runtime Torch/TorchVision versions match the pins in
-  `ai-service/requirements.txt` (currently `torch==2.6.0`, `torchvision==0.21.0`).
+  `ai-service/requirements.txt` (currently `torch==2.13.0`, `torchvision==0.28.0`).
 
 ## Next Strategic Wave – Orchestrator Rollout & Invariant Hardening (Wave 4)
 

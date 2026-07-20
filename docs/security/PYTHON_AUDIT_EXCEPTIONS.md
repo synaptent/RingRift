@@ -33,4 +33,7 @@ exception a short review window, not a permanent audit bypass.
 As of 2026-07-17, the sole exception is `PYSEC-2026-1325` in the transitive `ecdsa` package used by
 `p2pd`. The audit reported no fixed release; RingRift issue
 [#113](https://github.com/synaptent/RingRift/issues/113) tracks replacement or isolation before
-the exception expires.
+the exception expires. RingRift does not import `ecdsa` directly: the exposure is confined to the
+optional `p2pd` NAT-detection and transport paths, which have existing mesh, tunnel, and relay
+fallbacks. The dependency remains in the supported environment until #113 removes it, so this
+bounded reachability is mitigation context rather than a claim that the advisory is harmless.

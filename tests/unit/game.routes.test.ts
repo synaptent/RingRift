@@ -203,6 +203,22 @@ describe('Game HTTP routes', () => {
       expect(res.body.error.code).toBe('VALIDATION_INVALID_REQUEST');
       expect(mockCreateDecisionPhaseFixtureGame).not.toHaveBeenCalled();
     });
+
+    it.each([42, null, true, {}, []])(
+      'rejects a non-string second player username (%p)',
+      async (secondPlayerUsername) => {
+        const app = createTestApp();
+
+        const res = await request(app)
+          .post('/api/games/fixtures/decision-phase')
+          .send({ scenario: 'line_processing', secondPlayerUsername })
+          .expect(400);
+
+        expect(res.body.error.code).toBe('VALIDATION_INVALID_REQUEST');
+        expect(mockUserFindUnique).not.toHaveBeenCalled();
+        expect(mockCreateDecisionPhaseFixtureGame).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('GET /api/games/:gameId (game details)', () => {

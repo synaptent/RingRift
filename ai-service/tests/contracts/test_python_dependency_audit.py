@@ -280,7 +280,11 @@ def test_audited_runtime_pins_and_ci_entrypoint_are_aligned() -> None:
     assert "torch-sparse" not in main_dockerfile
     for pin in ("fastapi==0.139.2", "starlette==1.3.1", "torch==2.13.0"):
         assert pin in inference_dockerfile
-    for pin in ("fastapi==0.139.2", "starlette==1.3.1"):
-        assert pin in worker_dockerfile
+    worker_requirement_filter = next(
+        line for line in worker_dockerfile.splitlines() if "grep -E" in line
+    )
+    assert "fastapi" not in worker_requirement_filter
+    assert 'fastapi==0.122.0' in worker_dockerfile
+    assert "starlette==1.3.1" not in worker_dockerfile
     assert "python scripts/check_python_dependency_audit.py" in ci_workflow
     assert "pip-audit -r requirements.txt" not in ci_workflow
