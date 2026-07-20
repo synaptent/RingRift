@@ -111,18 +111,26 @@ test.describe('WebSocket move latency E2E', () => {
  *
  * The implementation uses a DOM-based detector that:
  * - Resolves a visible empty placement target before timing begins
- * - Submits that target with the board's double-click interaction
+ * - Opens the placement-count control and chooses one ring before timing
+ * - Submits through the visible Place action
  * - Waits (in the browser context) until the move signature changes
  *   and returns the elapsed performance.now() delta in milliseconds
  */
 async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
-  // Resolve a deterministic legal placement before timing begins. The board's
-  // double-click handler can submit an empty target directly and intentionally
-  // does not require the cell to expose a selected aria-pressed state first.
+  // Resolve a deterministic legal placement before timing begins. Use the
+  // context-menu count control so each sample places one ring and the test can
+  // collect twelve samples without exhausting the player's opening supply.
   const placementTarget = gamePage.boardView
     .locator('button[class*="outline-emerald"][aria-label*="Empty cell"]')
     .first();
   await expect(placementTarget).toBeVisible({ timeout: 25_000 });
+  await placementTarget.click({ button: 'right' });
+
+  const placementDialog = page.getByTestId('ring-placement-count-overlay');
+  await expect(placementDialog).toBeVisible();
+  await placementDialog.getByLabel('Number of rings').fill('1');
+  const placeButton = placementDialog.getByRole('button', { name: 'Place', exact: true });
+  await expect(placeButton).toBeEnabled();
 
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.
@@ -146,9 +154,9 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // Capture start time as close as possible to confirmation that submits the move.
   const startTime = await page.evaluate(() => performance.now());
 
-  // Dispatch the board's double-click event directly so the measured interval
-  // begins immediately before the submission handler runs.
-  await placementTarget.dispatchEvent('dblclick');
+  // Start immediately before the user-visible action invokes the submission
+  // handler. Dialog setup above is intentionally outside the measured RTT.
+  await placeButton.click();
 
   // Wait in the browser context until the move signature changes, then return
   // the elapsed time since startTime.
