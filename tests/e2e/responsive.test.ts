@@ -31,7 +31,9 @@ test.describe('Responsive Design', () => {
     await page.goto('/');
 
     await expect(page.locator('h1')).toContainText('RingRift');
-    await expect(page.getByText('Board Geometries')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Board Geometries', exact: true })
+    ).toBeVisible();
 
     await context.close();
   });

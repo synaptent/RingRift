@@ -298,6 +298,8 @@ export interface UseBackendBoardHandlersDeps {
   setValidTargets: (targets: Position[]) => void;
   /** Function to submit a move to the backend */
   submitMove: (move: PartialMove) => void;
+  /** Function to submit an authoritative move from validMoves by id */
+  submitMoveById: (moveId: string) => void;
   /** Whether the current user is a player (not spectator) */
   isPlayer: boolean;
   /** Whether the WebSocket connection is active */
@@ -380,6 +382,7 @@ export function useBackendBoardHandlers(
     setSelected,
     setValidTargets,
     submitMove,
+    submitMoveById,
     isPlayer,
     isConnectionActive,
     isMyTurn,
@@ -1058,6 +1061,44 @@ export function useBackendBoardHandlers(
         return;
       }
 
+      // Territory choices are already canonical moves supplied by the backend.
+      // Match the clicked cell against the move's region payload and submit that
+      // exact move rather than re-deriving any territory rules in the adapter.
+      if (gameState.currentPhase === 'territory_processing') {
+        const territoryMoves = Array.isArray(validMoves)
+          ? validMoves.filter((m) => m.type === 'choose_territory_option')
+          : [];
+        const territoryMove = territoryMoves.find((move) => {
+          const regionSpaces = move.disconnectedRegions?.[0]?.spaces ?? [];
+          return (
+            regionSpaces.some((space) => positionsEqual(space, pos)) ||
+            (move.to != null && positionsEqual(move.to, pos))
+          );
+        });
+
+        if (territoryMove) {
+          submitMoveById(territoryMove.id);
+          setSelected(undefined);
+          setValidTargets([]);
+          return;
+        }
+
+        // While a region decision is pending, clicks outside its canonical
+        // region are invalid and must not fall through to elimination handling.
+        if (territoryMoves.length > 0) {
+          const reason = analyzeInvalid(gameState, pos, {
+            isPlayer,
+            isMyTurn,
+            isConnected: isConnectionActive,
+            selectedPosition: selected,
+            validMoves: validMoves ?? undefined,
+            mustMoveFrom,
+          });
+          triggerInvalidMove(pos, reason);
+          return;
+        }
+      }
+
       // Elimination phases: clicking valid elimination targets submits the elimination
       if (
         gameState.currentPhase === 'forced_elimination' ||
@@ -1075,14 +1116,7 @@ export function useBackendBoardHandlers(
 
         if (elimMoves.length > 0) {
           const elimMove = elimMoves[0];
-          submitMove({
-            type: elimMove.type,
-            player: elimMove.player,
-            to: elimMove.to,
-            eliminationContext: elimMove.eliminationContext,
-            eliminatedRings: elimMove.eliminatedRings,
-            eliminationFromStack: elimMove.eliminationFromStack,
-          } as PartialMove);
+          submitMoveById(elimMove.id);
           setSelected(undefined);
           setValidTargets([]);
           return;
@@ -1259,6 +1293,7 @@ export function useBackendBoardHandlers(
       setSelected,
       setValidTargets,
       submitMove,
+      submitMoveById,
       isPlayer,
       isConnectionActive,
       isMyTurn,

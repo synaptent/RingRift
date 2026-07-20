@@ -13,7 +13,6 @@ import {
   waitForTimeoutWarningUI,
   coordinatePlayerTurn,
   waitForPlayerTurnWithTargets,
-  waitForChoiceDialog,
   getGameOutcome,
   type MultiplayerGameSetup,
 } from './helpers/multiplayer-utils';
@@ -79,7 +78,7 @@ test.describe('Multiplayer Game E2E', () => {
    */
   async function setupPlayer(page: Page, user: TestUser): Promise<void> {
     await registerUser(page, user.username, user.email, user.password);
-    await expect(page.getByText(user.username)).toBeVisible({ timeout: 10_000 });
+    await new HomePage(page).assertUsernameDisplayed(user.username);
   }
 
   /**
@@ -87,7 +86,7 @@ test.describe('Multiplayer Game E2E', () => {
    */
   async function createMultiplayerGame(page: Page): Promise<string> {
     await test.step('Navigate to lobby', async () => {
-      await page.getByRole('link', { name: /lobby/i }).click();
+      await page.getByRole('link', { name: 'Lobby', exact: true }).click();
       await page.waitForURL('**/lobby', { timeout: 15_000 });
       await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
         timeout: 10_000,
@@ -169,7 +168,7 @@ test.describe('Multiplayer Game E2E', () => {
     // Wait for the last move indicator or any visual change
     // This is a simplistic approach - wait for any recent move to appear
     await page.waitForTimeout(1000); // Small delay to allow WebSocket propagation
-    await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout });
+    await new GamePage(page).assertRecentMovesVisible(timeout);
   }
 
   // ============================================================================
@@ -280,7 +279,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p2GamePage.clickFirstValidTarget();
         } catch {
           // If no valid targets, game may have auto-progressed
-          console.log('No valid targets for P2, game may have different state');
+          console.debug('No valid targets for P2, game may have different state');
         }
       });
     });
@@ -337,8 +336,7 @@ test.describe('Multiplayer Game E2E', () => {
         await player2Page.waitForTimeout(3000);
 
         // Check if move is logged on P2's screen
-        const moveLog = player2Page.locator('text=/Recent moves/i');
-        await expect(moveLog).toBeVisible({ timeout: 15_000 });
+        await new GamePage(player2Page).assertRecentMovesVisible(15_000);
       });
     });
 
@@ -362,7 +360,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p1GamePage.assertValidTargetsVisible();
           await p1GamePage.clickFirstValidTarget();
         } catch {
-          console.log('P1 could not make move - may not be their turn');
+          console.debug('P1 could not make move - may not be their turn');
         }
       });
 
@@ -398,8 +396,8 @@ test.describe('Multiplayer Game E2E', () => {
           setup = await setupMultiplayerFixtureGame(browser, 'near_victory_elimination');
         });
 
-        await test.step('Player 1 makes winning capture', async () => {
-          // Near-victory fixture: P1 stack at (3,3), P2 at (4,3)
+        await test.step('Player 1 makes winning marker landing', async () => {
+          // Near-victory fixture: P1 stack at (3,3), marker at (4,3)
           await setup!.player1.gamePage.makeMove(3, 3, 4, 3);
         });
 
@@ -413,8 +411,13 @@ test.describe('Multiplayer Game E2E', () => {
             'text=/victory|defeat|game.*over|eliminated/i'
           );
 
-          // At least one player should see a game-end message
-          await expect(p1GameEnd.first().or(p2GameEnd.first())).toBeVisible({ timeout: 20_000 });
+          await expect
+            .poll(
+              async () =>
+                (await p1GameEnd.first().isVisible()) && (await p2GameEnd.first().isVisible()),
+              { timeout: 20_000 }
+            )
+            .toBe(true);
         });
       } finally {
         if (setup) {
@@ -434,15 +437,19 @@ test.describe('Multiplayer Game E2E', () => {
       });
 
       await test.step('Both players see victory condition explanations', async () => {
-        const victoryHelpP1 = player1Page.getByTestId('victory-conditions-help');
-        const victoryHelpP2 = player2Page.getByTestId('victory-conditions-help');
+        const victoryHelpP1 = player1Page
+          .locator('[data-testid="victory-conditions-help"]:visible')
+          .first();
+        const victoryHelpP2 = player2Page
+          .locator('[data-testid="victory-conditions-help"]:visible')
+          .first();
 
         await expect(victoryHelpP1).toBeVisible({ timeout: 15_000 });
         await expect(victoryHelpP2).toBeVisible({ timeout: 15_000 });
 
         // Verify content contains victory conditions
-        await expect(victoryHelpP1.locator('text=/elimination/i')).toBeVisible();
-        await expect(victoryHelpP2.locator('text=/territory/i')).toBeVisible();
+        await expect(victoryHelpP1.getByText('Ring Elimination', { exact: true })).toBeVisible();
+        await expect(victoryHelpP2.getByText('Territory Control', { exact: true })).toBeVisible();
       });
     });
 
@@ -472,7 +479,7 @@ test.describe('Multiplayer Game E2E', () => {
           expect(currentIdP1).toBe(originalGameId);
           expect(currentIdP2).toBe(originalGameId);
 
-          await setup!.player1.page.getByRole('button', { name: /Request Rematch/i }).click();
+          await setup!.player1.page.getByRole('button', { name: /Play Again/i }).click();
         });
 
         await test.step('Player 2 sees rematch offer and accepts', async () => {
@@ -501,10 +508,8 @@ test.describe('Multiplayer Game E2E', () => {
           expect(newGameIdP1).toBe(newGameIdP2);
           expect(newGameIdP1).not.toBe(originalGameId);
 
-          // Basic sanity check that HUD and moves are reset for the new session
-          await expect(setup!.player1.gamePage.recentMovesSection).toBeVisible({
-            timeout: 15_000,
-          });
+          // Basic sanity check that the fresh session rendered its canonical HUD.
+          await expect(setup!.player1.gamePage.phaseIndicator).toBeVisible();
         });
       } finally {
         if (setup) {
@@ -595,7 +600,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p1GamePage.assertValidTargetsVisible();
           await p1GamePage.clickFirstValidTarget();
         } catch {
-          console.log('Could not make move - continuing test');
+          console.debug('Could not make move - continuing test');
         }
         await player1Page.waitForTimeout(2000);
       });
@@ -616,9 +621,9 @@ test.describe('Multiplayer Game E2E', () => {
     });
 
     test('Player sees warning when decision phase timeout approaches', async ({ browser }) => {
-      // Uses short timeout fixture to test timeout warning without long waits.
-      // The line_processing scenario puts player in a decision phase that will timeout.
-      // Short timeout: 5s, warning at 2s before = warning fires at 3s.
+      // Uses a bounded timeout fixture to test the warning without racing setup.
+      // The exact-length line fixture exposes canonical line moves directly,
+      // so phase state is the stable decision-surface assertion.
 
       let setup: MultiplayerGameSetup | null = null;
 
@@ -626,22 +631,19 @@ test.describe('Multiplayer Game E2E', () => {
         await test.step('Setup decision phase game with short timeout', async () => {
           setup = await setupMultiplayerFixtureGame(browser, {
             scenario: 'line_processing',
-            shortTimeoutMs: 5000, // 5 second timeout
-            shortWarningBeforeMs: 2000, // Warning 2s before timeout
+            shortTimeoutMs: 20_000,
+            shortWarningBeforeMs: 10_000,
           });
         });
 
         await test.step('Verify player is in decision phase', async () => {
-          // Player 1 should see the choice dialog for line processing
-          const hasChoiceDialog = await waitForChoiceDialog(setup!.player1, { timeout: 10_000 });
-          expect(hasChoiceDialog).toBeTruthy();
+          await setup!.player1.gamePage.assertPhase('Line');
         });
 
         await test.step('Wait for timeout warning to appear', async () => {
           // Don't make a choice - wait for the warning to appear
-          // Warning should appear after 3s (5000ms - 2000ms = 3000ms)
           const sawWarning = await waitForTimeoutWarningUI(setup!.player1.page, {
-            timeout: 10_000,
+            timeout: 15_000,
           });
           expect(sawWarning).toBeTruthy();
         });
@@ -653,37 +655,29 @@ test.describe('Multiplayer Game E2E', () => {
     });
 
     test('decision phase auto-resolves on timeout for both players', async ({ browser }) => {
-      // Short timeout: 4s, warning at 2s before = warning fires at 2s.
+      // Use enough time for two browser contexts to finish joining before the
+      // canonical decision is auto-resolved.
       let setup: MultiplayerGameSetup | null = null;
 
       try {
         await test.step('Setup decision phase game with short timeout', async () => {
           setup = await setupMultiplayerFixtureGame(browser, {
             scenario: 'line_processing',
-            shortTimeoutMs: 4000,
-            shortWarningBeforeMs: 2000,
+            shortTimeoutMs: 12_000,
+            shortWarningBeforeMs: 6_000,
           });
         });
 
         await test.step('Verify player is in decision phase', async () => {
-          const hasChoiceDialog = await waitForChoiceDialog(setup!.player1, { timeout: 10_000 });
-          expect(hasChoiceDialog).toBeTruthy();
+          await setup!.player1.gamePage.assertPhase('Line');
         });
 
         await test.step('Wait for auto-resolve after timeout', async () => {
-          // Do not make a choice; let the short timeout fire. After the timeout
-          // window passes, the backend should either advance the phase or end
-          // the game, but the decision dialog should not remain indefinitely.
-          await setup!.player1.page.waitForTimeout(6_000);
-
-          const stillHasDialog = await waitForChoiceDialog(setup!.player1, {
-            timeout: 2_000,
-          });
-          const sawVictory =
-            (await waitForVictoryModal(setup!.player1, { timeout: 2_000 })) ||
-            (await waitForVictoryModal(setup!.player2, { timeout: 2_000 }));
-
-          expect(stillHasDialog && !sawVictory).toBeFalsy();
+          const autoResolved = /Decision timed out - move applied automatically/i;
+          await Promise.all([
+            expect(setup!.player1.page.getByText(autoResolved)).toBeVisible({ timeout: 18_000 }),
+            expect(setup!.player2.page.getByText(autoResolved)).toBeVisible({ timeout: 18_000 }),
+          ]);
         });
       } finally {
         if (setup) {
@@ -699,7 +693,7 @@ test.describe('Multiplayer Game E2E', () => {
 
   test.describe('Near-Victory Multiplayer', () => {
     test('Both players see victory/defeat when game ends via fixture', async ({ browser }) => {
-      // Uses near-victory fixture to set up a game state one capture away from victory.
+      // Uses near-victory fixture to set up a game state one marker landing from victory.
       // Player 1 makes the winning move, both players should see the outcome.
 
       let setup: MultiplayerGameSetup | null = null;
@@ -710,7 +704,7 @@ test.describe('Multiplayer Game E2E', () => {
         });
 
         await test.step('Player 1 makes winning move', async () => {
-          // In near-victory fixture: P1 stack at (3,3), P2 ring at (4,3)
+          // In near-victory fixture: P1 stack at (3,3), marker at (4,3)
           // Move (3,3) -> (4,3) wins the game
           await setup!.player1.gamePage.makeMove(3, 3, 4, 3);
         });
@@ -770,12 +764,22 @@ test.describe('Multiplayer Game E2E', () => {
         });
 
         await test.step('Wait for game over via territory control', async () => {
-          // The fixture seeds a territory_processing decision that, once resolved
-          // by the backend, should result in a territory_control victory for P1.
-          // We simply wait for the victory modal rather than trying to drive
-          // explicit UI decisions for this minimal slice.
-          const p1Victory = await waitForVictoryModal(setup!.player1, { timeout: 30_000 });
-          const p2Victory = await waitForVictoryModal(setup!.player2, { timeout: 30_000 });
+          // Resolve the fixture's canonical pending region through the same
+          // board interaction a player uses in a live territory decision.
+          await setup!.player1.gamePage.getCell(4, 4).click();
+          const eliminationStack = setup!.player1.gamePage.getCell(7, 7);
+          await expect(eliminationStack).toHaveClass(/decision-pulse-elimination/, {
+            timeout: 10_000,
+          });
+          // The elimination affordance intentionally pulses, so Playwright's
+          // actionability check will never consider it visually stable. The
+          // class assertion above proves the authoritative target is present;
+          // dispatch the same click event the board handles for a player.
+          await eliminationStack.dispatchEvent('click');
+          const [p1Victory, p2Victory] = await Promise.all([
+            waitForVictoryModal(setup!.player1, { timeout: 30_000 }),
+            waitForVictoryModal(setup!.player2, { timeout: 30_000 }),
+          ]);
 
           expect(p1Victory || p2Victory).toBeTruthy();
         });
@@ -817,7 +821,7 @@ test.describe('Multiplayer Game E2E', () => {
             await homePage.goto();
             await homePage.goToProfile();
             await player.page.waitForURL('**/profile', { timeout: 10_000 });
-            const ratingText = await player.page.locator('.text-emerald-400').first().textContent();
+            const ratingText = await player.page.getByTestId('profile-rating').textContent();
             return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
           };
 
@@ -875,7 +879,7 @@ test.describe('Multiplayer Game E2E', () => {
         await test.step('Player 2 sees game state after reconnect', async () => {
           await expect(setup!.player2.gamePage.boardView).toBeVisible();
           // Should see the move log indicating game state was preserved
-          await expect(setup!.player2.gamePage.recentMovesSection).toBeVisible({ timeout: 15_000 });
+          await setup!.player2.gamePage.assertRecentMovesVisible(15_000);
         });
       } finally {
         if (setup) {
@@ -920,8 +924,8 @@ test.describe('Multiplayer Game E2E', () => {
 
         await test.step('Game state is consistent', async () => {
           // Both players should see the game log
-          await expect(setup!.player1.gamePage.recentMovesSection).toBeVisible({ timeout: 10_000 });
-          await expect(setup!.player2.gamePage.recentMovesSection).toBeVisible({ timeout: 10_000 });
+          await setup!.player1.gamePage.assertRecentMovesVisible(10_000);
+          await setup!.player2.gamePage.assertRecentMovesVisible(10_000);
         });
       } finally {
         if (setup) {
@@ -959,9 +963,11 @@ test.describe('Multiplayer Game E2E', () => {
         await player2Page.waitForTimeout(2000);
 
         // Look for the message in P2's chat area
-        await expect(player2Page.locator('text=/Hello Player 2/i')).toBeVisible({
-          timeout: 10_000,
-        });
+        await expect(player2Page.getByText('Hello Player 2!', { exact: true }).first()).toBeVisible(
+          {
+            timeout: 10_000,
+          }
+        );
       });
     });
 
@@ -983,7 +989,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p1GamePage.clickFirstValidTarget();
           await player1Page.waitForTimeout(3000);
         } catch {
-          console.log('P1 could not make initial move');
+          console.debug('P1 could not make initial move');
         }
 
         // P2 makes a move
@@ -993,7 +999,7 @@ test.describe('Multiplayer Game E2E', () => {
           await p2GamePage.clickFirstValidTarget();
           await player2Page.waitForTimeout(3000);
         } catch {
-          console.log('P2 could not make move');
+          console.debug('P2 could not make move');
         }
       });
 
@@ -1062,13 +1068,13 @@ test.describe('Multiplayer Game E2E', () => {
 
         await test.step('Spectator sees spectator HUD and read-only message', async () => {
           // Spectator should see the board and explicit spectator indicators
-          await expect(spectatorPage.getByTestId('board-view')).toBeVisible({ timeout: 20_000 });
-          await expect(spectatorPage.locator('text=/Spectator Mode/i')).toBeVisible({
-            timeout: 10_000,
-          });
-          await expect(
-            spectatorPage.locator('text=/Moves disabled while spectating\\./i')
-          ).toBeVisible({ timeout: 10_000 });
+          const spectatorBoard = spectatorPage.getByTestId('board-view');
+          await expect(spectatorBoard).toBeVisible({ timeout: 20_000 });
+          const spectatorBanner = spectatorPage
+            .getByRole('status')
+            .filter({ hasText: /Spectator Mode.*You are watching this game/i });
+          await expect(spectatorBanner).toBeVisible({ timeout: 10_000 });
+          await expect(spectatorBoard.getByRole('button').first()).toBeDisabled();
         });
 
         await test.step('Spectator can leave back to lobby without hanging game session', async () => {

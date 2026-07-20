@@ -52,24 +52,69 @@ async function createUserAndGetToken(
  */
 async function createMultiPlayerGame(
   page: import('@playwright/test').Page,
+  token: string,
   maxPlayers: 3 | 4,
   options: { isRated?: boolean } = {}
 ): Promise<string> {
   const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
   const response = await page.request.post(`${apiBaseUrl.replace(/\/$/, '')}/api/games`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     data: {
       boardType: 'square8',
-      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      timeControl: { type: 'rapid', initialTime: 600, increment: 0 },
       isRated: options.isRated ?? false,
       isPrivate: false,
       maxPlayers,
     },
   });
   if (!response.ok()) {
-    throw new Error(`Failed to create ${maxPlayers}-player game: ${response.status()}`);
+    throw new Error(
+      `Failed to create ${maxPlayers}-player game: ${response.status()} - ${await response.text()}`
+    );
   }
   const json = await response.json();
   return json.data.game.id;
+}
+
+async function joinMultiPlayerGame(
+  page: import('@playwright/test').Page,
+  token: string,
+  gameId: string
+): Promise<void> {
+  const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const response = await page.request.post(`${apiBaseUrl}/api/games/${gameId}/join`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to occupy multiplayer seat: ${response.status()} - ${await response.text()}`
+    );
+  }
+}
+
+async function completePlacementTurn(
+  coordinator: ReturnType<typeof createMultiClientCoordinator>,
+  clientId: string,
+  gameId: string,
+  turnState: GameStateUpdateMessage
+): Promise<void> {
+  const playerNumber = turnState.data.gameState.currentPlayer;
+  const placement = turnState.data.validMoves.find((move) => move.type === 'place_ring');
+  expect(placement).toBeDefined();
+  if (!placement) throw new Error(`Player ${playerNumber} has no placement move`);
+  await coordinator.sendMoveById(clientId, gameId, placement.id);
+
+  const movementState = (await coordinator.waitForGameState(
+    clientId,
+    (state) => state.currentPhase === 'movement' && state.currentPlayer === playerNumber,
+    30_000
+  )) as GameStateUpdateMessage;
+  const movement = movementState.data.validMoves.find((move) => move.type === 'move_stack');
+  expect(movement).toBeDefined();
+  if (!movement) throw new Error(`Player ${playerNumber} has no movement move`);
+  await coordinator.sendMoveById(clientId, gameId, movement.id);
 }
 
 test.describe('3-4 Player Game Flows', () => {
@@ -104,7 +149,9 @@ test.describe('3-4 Player Game Flows', () => {
         const token3 = await createUserAndGetToken(page3, user3);
 
         // Create a 3-player game
-        const gameId = await createMultiPlayerGame(page1, 3);
+        const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         // Connect all three players via WebSocket
         await coordinator.connect('player1', {
@@ -180,7 +227,9 @@ test.describe('3-4 Player Game Flows', () => {
         const token2 = await createUserAndGetToken(page2, user2);
         const token3 = await createUserAndGetToken(page3, user3);
 
-        const gameId = await createMultiPlayerGame(page1, 3);
+        const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         await coordinator.connect('player1', {
           playerId: user1.username,
@@ -211,10 +260,7 @@ test.describe('3-4 Player Game Flows', () => {
 
         expect(p1Turn.data.gameState.currentPlayer).toBe(1);
 
-        // P1 makes a move
-        const p1Move = p1Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p1Move).toBeDefined();
-        await coordinator.sendMoveById('player1', gameId, p1Move!.id);
+        await completePlacementTurn(coordinator, 'player1', gameId, p1Turn);
 
         // Wait for P2's turn
         const p2Turn = (await coordinator.waitForTurn(
@@ -224,10 +270,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p2Turn.data.gameState.currentPlayer).toBe(2);
 
-        // P2 makes a move
-        const p2Move = p2Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p2Move).toBeDefined();
-        await coordinator.sendMoveById('player2', gameId, p2Move!.id);
+        await completePlacementTurn(coordinator, 'player2', gameId, p2Turn);
 
         // Wait for P3's turn (verifies 3-player rotation)
         const p3Turn = (await coordinator.waitForTurn(
@@ -237,10 +280,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p3Turn.data.gameState.currentPlayer).toBe(3);
 
-        // P3 makes a move
-        const p3Move = p3Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p3Move).toBeDefined();
-        await coordinator.sendMoveById('player3', gameId, p3Move!.id);
+        await completePlacementTurn(coordinator, 'player3', gameId, p3Turn);
 
         // Wait for rotation back to P1 (confirms full cycle)
         const p1Again = (await coordinator.waitForTurn(
@@ -284,7 +324,10 @@ test.describe('3-4 Player Game Flows', () => {
         const token4 = await createUserAndGetToken(page4, user4);
 
         // Create a 4-player game
-        const gameId = await createMultiPlayerGame(page1, 4);
+        const gameId = await createMultiPlayerGame(page1, token1, 4);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
+        await joinMultiPlayerGame(page4, token4, gameId);
 
         // Connect all four players via WebSocket
         await coordinator.connect('player1', {
@@ -373,7 +416,10 @@ test.describe('3-4 Player Game Flows', () => {
         const token3 = await createUserAndGetToken(page3, user3);
         const token4 = await createUserAndGetToken(page4, user4);
 
-        const gameId = await createMultiPlayerGame(page1, 4);
+        const gameId = await createMultiPlayerGame(page1, token1, 4);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
+        await joinMultiPlayerGame(page4, token4, gameId);
 
         await coordinator.connect('player1', {
           playerId: user1.username,
@@ -410,10 +456,7 @@ test.describe('3-4 Player Game Flows', () => {
 
         expect(p1Turn.data.gameState.currentPlayer).toBe(1);
 
-        // P1 makes a move
-        const p1Move = p1Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p1Move).toBeDefined();
-        await coordinator.sendMoveById('player1', gameId, p1Move!.id);
+        await completePlacementTurn(coordinator, 'player1', gameId, p1Turn);
 
         // Wait for P2's turn
         const p2Turn = (await coordinator.waitForTurn(
@@ -423,9 +466,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p2Turn.data.gameState.currentPlayer).toBe(2);
 
-        const p2Move = p2Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p2Move).toBeDefined();
-        await coordinator.sendMoveById('player2', gameId, p2Move!.id);
+        await completePlacementTurn(coordinator, 'player2', gameId, p2Turn);
 
         // Wait for P3's turn
         const p3Turn = (await coordinator.waitForTurn(
@@ -435,9 +476,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p3Turn.data.gameState.currentPlayer).toBe(3);
 
-        const p3Move = p3Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p3Move).toBeDefined();
-        await coordinator.sendMoveById('player3', gameId, p3Move!.id);
+        await completePlacementTurn(coordinator, 'player3', gameId, p3Turn);
 
         // Wait for P4's turn (verifies 4-player rotation)
         const p4Turn = (await coordinator.waitForTurn(
@@ -447,9 +486,7 @@ test.describe('3-4 Player Game Flows', () => {
         )) as GameStateUpdateMessage;
         expect(p4Turn.data.gameState.currentPlayer).toBe(4);
 
-        const p4Move = p4Turn.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p4Move).toBeDefined();
-        await coordinator.sendMoveById('player4', gameId, p4Move!.id);
+        await completePlacementTurn(coordinator, 'player4', gameId, p4Turn);
 
         // Wait for rotation back to P1 (confirms full 4-player cycle)
         const p1Again = (await coordinator.waitForTurn(
@@ -492,7 +529,9 @@ test.describe('3-4 Player Game Flows', () => {
         const token3 = await createUserAndGetToken(page3, user3);
         const spectatorToken = await createUserAndGetToken(pageSpec, spectatorUser);
 
-        const gameId = await createMultiPlayerGame(page1, 3);
+        const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         // Connect all players and spectator
         await coordinator.connect('player1', {
@@ -535,9 +574,7 @@ test.describe('3-4 Player Game Flows', () => {
           1,
           30_000
         )) as GameStateUpdateMessage;
-        const p1Move = p1State.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p1Move).toBeDefined();
-        await coordinator.sendMoveById('player1', gameId, p1Move!.id);
+        await completePlacementTurn(coordinator, 'player1', gameId, p1State);
 
         // Verify spectator sees the move
         const specStateAfterP1 = (await coordinator.waitForGameState(
@@ -554,26 +591,30 @@ test.describe('3-4 Player Game Flows', () => {
           2,
           30_000
         )) as GameStateUpdateMessage;
-        const p2Move = p2State.data.validMoves.find((m) => m.type === 'place_ring');
-        expect(p2Move).toBeDefined();
-        await coordinator.sendMoveById('player2', gameId, p2Move!.id);
+        await completePlacementTurn(coordinator, 'player2', gameId, p2State);
 
-        // Verify spectator sees P2's move too
+        // Capture an authoritative post-turn count, then wait until the
+        // spectator has received that complete canonical turn rather than the
+        // first intermediate phase update.
+        const p1StateAfterP2 = (await coordinator.waitForTurn(
+          'player1',
+          3,
+          30_000
+        )) as GameStateUpdateMessage;
+        const expectedMoveCount = p1StateAfterP2.data.gameState.moveHistory.length;
         const specStateAfterP2 = (await coordinator.waitForGameState(
           'spectator',
-          (state) => state.moveHistory && state.moveHistory.length > 1,
+          (state) => state.moveHistory?.length === expectedMoveCount,
           30_000
         )) as GameStateUpdateMessage;
 
         expect(specStateAfterP2.data.gameState.moveHistory.length).toBeGreaterThanOrEqual(2);
 
         // Verify spectator's state matches player1's state
-        const p1Final = coordinator.getLastGameState('player1');
         const specFinal = coordinator.getLastGameState('spectator');
 
         expect(specFinal).not.toBeNull();
-        expect(p1Final).not.toBeNull();
-        expect(specFinal!.moveHistory.length).toBe(p1Final!.moveHistory.length);
+        expect(specFinal!.moveHistory.length).toBe(expectedMoveCount);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -606,7 +647,9 @@ test.describe('3-4 Player Game Flows', () => {
         const token2 = await createUserAndGetToken(page2, user2);
         const token3 = await createUserAndGetToken(page3, user3);
 
-        const gameId = await createMultiPlayerGame(page1, 3);
+        const gameId = await createMultiPlayerGame(page1, token1, 3);
+        await joinMultiPlayerGame(page2, token2, gameId);
+        await joinMultiPlayerGame(page3, token3, gameId);
 
         await coordinator.connect('player1', {
           playerId: user1.username,

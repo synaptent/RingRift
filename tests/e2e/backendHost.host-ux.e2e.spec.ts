@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { registerAndLogin, createGame } from './helpers/test-utils';
+import { registerAndLogin, createGame, confirmRingPlacementIfPrompted } from './helpers/test-utils';
 import { GamePage } from './pages';
 
 /**
@@ -80,9 +80,9 @@ test.describe('backend host @host-ux', () => {
     // eslint-disable-next-line no-console
     console.log('Pressing Enter on keyboard-focused cell to submit placement');
     await page.keyboard.press('Enter');
+    await confirmRingPlacementIfPrompted(page);
 
     // Move triggered via keyboard should show up in the event log.
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
     await gamePage.assertPlayerMoveLogged(1);
   });
 
@@ -118,7 +118,7 @@ test.describe('backend host @host-ux', () => {
       // locations.
       const spectatorHudBadge = spectatorPage
         .getByTestId('game-hud')
-        .getByText('Spectator', { exact: true });
+        .getByText('Spectator Mode', { exact: true });
       await expect(spectatorHudBadge).toBeVisible({ timeout: 15_000 });
 
       // All board cells should be disabled / read-only for spectators.
@@ -136,12 +136,14 @@ test.describe('backend host @host-ux', () => {
       console.log(`Spectator board cells: total=${totalCells}, disabled=${disabledCount}`);
 
       // Selection panel should communicate that moves are disabled while spectating.
-      await expect(spectatorPage.getByText('Moves disabled while spectating.')).toBeVisible({
+      await expect(spectatorPage.getByText(/Spectating.*moves are disabled/i)).toBeVisible({
         timeout: 15_000,
       });
 
-      // Evaluation panel should be present for spectators, even if it is
-      // still waiting for analysis data.
+      // Spectator evaluation lives in the intentionally collapsed advanced
+      // diagnostics section; expand it before asserting the panel.
+      const advancedPanels = spectatorPage.getByTestId('backend-advanced-sidebar-panels');
+      await advancedPanels.locator('summary').click();
       const evalPanel = spectatorPage.getByTestId('evaluation-panel');
       await expect(evalPanel).toBeVisible({ timeout: 15_000 });
     } finally {
@@ -172,12 +174,14 @@ test.describe('backend host @host-ux', () => {
       await spectatorGamePage.waitForReady(30_000);
 
       // Baseline spectator UX: banner, read-only board, evaluation panel.
-      await expect(spectatorPage.getByText('Moves disabled while spectating.')).toBeVisible({
+      await expect(spectatorPage.getByText(/Spectating.*moves are disabled/i)).toBeVisible({
         timeout: 15_000,
       });
       await expect(spectatorPage.getByTestId('game-hud').getByText(/Spectator Mode/i)).toBeVisible({
         timeout: 15_000,
       });
+      const advancedPanels = spectatorPage.getByTestId('backend-advanced-sidebar-panels');
+      await advancedPanels.locator('summary').click();
       const evalPanel = spectatorPage.getByTestId('evaluation-panel');
       await expect(evalPanel).toBeVisible({ timeout: 15_000 });
 
@@ -193,7 +197,7 @@ test.describe('backend host @host-ux', () => {
       // After reconnection, HUD and evaluation panel should still be present
       // and the board should have re-synchronised.
       await spectatorGamePage.waitForReady(30_000);
-      await expect(spectatorPage.getByText('Moves disabled while spectating.')).toBeVisible({
+      await expect(spectatorPage.getByText(/Spectating.*moves are disabled/i)).toBeVisible({
         timeout: 15_000,
       });
       await expect(spectatorPage.getByTestId('game-hud').getByText(/Spectator Mode/i)).toBeVisible({

@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Create a minimal requirements file for workers
-RUN cat requirements.txt | grep -E '^(fastapi|uvicorn|pydantic|numpy|scipy|aiohttp|httpx|requests|cma|msgpack|lz4)' > requirements-worker.txt || true
+RUN cat requirements.txt | grep -E '^(uvicorn|pydantic|numpy|scipy|aiohttp|httpx|requests|cma|msgpack|lz4)' > requirements-worker.txt || true
 RUN echo "fastapi==0.122.0" >> requirements-worker.txt
 RUN echo "uvicorn[standard]==0.38.0" >> requirements-worker.txt
 RUN echo "pydantic==2.10.5" >> requirements-worker.txt

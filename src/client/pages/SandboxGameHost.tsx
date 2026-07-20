@@ -928,10 +928,10 @@ export const SandboxGameHost: React.FC = () => {
   // - lifecycleActions.resetToSetup() - return to setup screen
   // - lifecycleActions.rematch() - start new game with same config
 
-  // Wrapper to match QUICK_START_PRESETS type with hook's QuickStartPreset type
-  const handleQuickStartPreset = (preset: (typeof QUICK_START_PRESETS)[number]) => {
-    lifecycleActions.applyQuickStartPreset(preset);
-  };
+  // Keep the preset action separate from the inline actions object returned by
+  // the lifecycle hook. The function itself is memoized by the hook, while the
+  // containing object is recreated on each render.
+  const applyQuickStartPreset = lifecycleActions.applyQuickStartPreset;
 
   const presetHandledRef = useRef<string | null>(null);
 
@@ -940,6 +940,15 @@ export const SandboxGameHost: React.FC = () => {
       presetHandledRef.current = null;
       return;
     }
+
+    // Applying a preset updates the sandbox config, which can replace the
+    // memoized action before React Router has committed the query-string
+    // update. Mark the value handled before either update so the effect cannot
+    // start the same preset twice during that transition.
+    if (presetHandledRef.current === presetParam) {
+      return;
+    }
+    presetHandledRef.current = presetParam;
 
     setSearchParams(
       (prev) => {
@@ -950,27 +959,22 @@ export const SandboxGameHost: React.FC = () => {
       { replace: true }
     );
 
-    if (presetHandledRef.current === presetParam) {
-      return;
-    }
-    presetHandledRef.current = presetParam;
-
     const preset = QUICK_START_PRESETS.find((p) => p.id === presetParam);
     if (!preset) {
       toast.error(`Unknown sandbox preset: ${presetParam}`);
       return;
     }
 
-    handleQuickStartPreset(preset);
-  }, [presetParam, setSearchParams, handleQuickStartPreset]);
+    applyQuickStartPreset(preset);
+  }, [presetParam, setSearchParams, applyQuickStartPreset]);
 
   // Handler for starting tutorial from onboarding modal - selects "Learn the Basics"
   const handleStartTutorial = useCallback(() => {
     const learnBasicsPreset = QUICK_START_PRESETS.find((p) => p.id === 'learn-basics');
     if (learnBasicsPreset) {
-      handleQuickStartPreset(learnBasicsPreset);
+      applyQuickStartPreset(learnBasicsPreset);
     }
-  }, [handleQuickStartPreset]);
+  }, [applyQuickStartPreset]);
 
   const handleStartLocalGame = async () => {
     await lifecycleActions.startGame(config);
@@ -1190,7 +1194,12 @@ export const SandboxGameHost: React.FC = () => {
 
   // Update training submission availability when victory occurs (January 2026)
   useEffect(() => {
-    if (!sandboxVictoryResult || !sandboxGameState) {
+    // getGameState() returns an immutable clone for callers. Reading that clone
+    // inside this effect lets the dependency list follow actual engine/version
+    // transitions instead of a new object identity on every host render.
+    const currentGameState = sandboxEngine?.getGameState() ?? null;
+
+    if (!sandboxVictoryResult || !currentGameState) {
       setTrainingSubmissionState((prev) => ({
         ...prev,
         isAvailable: false,
@@ -1202,7 +1211,7 @@ export const SandboxGameHost: React.FC = () => {
     }
 
     // Check if this was a human vs AI game where human won
-    const players = sandboxGameState.players;
+    const players = currentGameState.players;
     const humanPlayers = players.filter((p) => p.type === 'human');
     const aiPlayers = players.filter((p) => p.type === 'ai');
     const isHumanVsAI = humanPlayers.length > 0 && aiPlayers.length > 0;
@@ -1221,7 +1230,7 @@ export const SandboxGameHost: React.FC = () => {
     const humanWon = sandboxVictoryResult.winner === humanPlayer?.playerNumber;
 
     // Training only accepts human wins and needs move history
-    const hasMoveHistory = sandboxGameState.moveHistory && sandboxGameState.moveHistory.length > 0;
+    const hasMoveHistory = currentGameState.moveHistory.length > 0;
     const replayServiceConfigured = getReplayService().isConfigured();
     const canSubmitForTraining = humanWon && hasMoveHistory && replayServiceConfigured;
 
@@ -1237,7 +1246,7 @@ export const SandboxGameHost: React.FC = () => {
       error: null,
       availabilityNote,
     }));
-  }, [sandboxVictoryResult, sandboxGameState]);
+  }, [sandboxVictoryResult, sandboxEngine, _sandboxStateVersion]);
 
   // Callback to submit game for training (January 2026)
   const handleSubmitForTraining = useCallback(async () => {
@@ -2318,7 +2327,7 @@ export const SandboxGameHost: React.FC = () => {
           timeControl={sandboxTimeControl}
           onResetPlayerTimes={resetSandboxPlayerTimes}
           onStartGame={handleStartLocalGame}
-          onQuickStartPreset={handleQuickStartPreset}
+          onQuickStartPreset={applyQuickStartPreset}
           onShowScenarioPicker={() => setShowScenarioPicker(true)}
           onShowSelfPlayBrowser={() => setShowSelfPlayBrowser(true)}
           isBeginnerMode={isBeginnerMode}

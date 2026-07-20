@@ -111,14 +111,6 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
 
-      - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
-        uses: romeovs/lcov-reporter-action@v0.3.1
-        with:
-          lcov-file: ./coverage/lcov.info
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          delete-old-comments: true
-
   ts-rules-engine:
     name: TS Rules Engine (rules-level)
     runs-on: ubuntu-latest
@@ -710,12 +702,16 @@ jobs:
       - name: Install pip-audit
         run: python -m pip install 'pip-audit>=2.7.0,<3.0.0'
 
+      - name: Test Python dependency audit policy
+        working-directory: ai-service
+        run: PYTHONPATH=. python -m pytest tests/contracts/test_python_dependency_audit.py -q
+
       - name: Run pip-audit against ai-service requirements
         working-directory: ai-service
         run: |
           # Canonical invocation for local runs:
-          #   cd ai-service && pip-audit -r requirements.txt --progress-spinner off
-          pip-audit -r requirements.txt --progress-spinner off
+          #   cd ai-service && python scripts/check_python_dependency_audit.py
+          python scripts/check_python_dependency_audit.py
 
       - name: Install CycloneDX SBOM generator
         run: python -m pip install cyclonedx-bom
@@ -814,11 +810,20 @@ jobs:
       # E2E traffic exercises the orchestrator adapter path with TS authoritative.
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
-      ORCHESTRATOR_ROLLOUT_PERCENTAGE:
-        100
-        # Database and Redis URLs for E2E tests
+      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
+      # The functional Chromium gate contains 243 tests after the latency SLO
+      # contract is separated below. One worker consistently exhausts the
+      # 30-minute job timeout on main, while Playwright still keeps tests
+      # sequential within each file when using this bounded file-level pool.
+      PLAYWRIGHT_WORKERS: 4
+      # Database and Redis URLs for E2E tests
       DATABASE_URL: postgresql://ringrift:ringrift@localhost:5432/ringrift_test
       REDIS_URL: redis://localhost:6379
+      # The functional browser suite creates many isolated users from one loopback
+      # address. Rate-limit behavior is covered by dedicated mocked 429 scenarios,
+      # so allow only this job's local traffic through the supported test bypass.
+      RATE_LIMIT_BYPASS_ENABLED: 'true'
+      RATE_LIMIT_BYPASS_IPS: 127.0.0.1
       JWT_SECRET: e2e-test-jwt-secret
       NODE_ENV: test
 
@@ -871,8 +876,18 @@ jobs:
       - name: Run Playwright E2E tests
         # Runs only Chromium in CI by default
         # For multi-browser CI (e.g., on releases), use: npm run test:e2e:all
-        # Playwright config has retries: 2 in CI for flaky test resilience
-        run: npm run test:e2e:chromium
+        # Playwright config has retries: 2 in CI for functional-test resilience.
+        # Stop after 10 confirmed failures so the required gate reports
+        # actionable evidence instead of exhausting its 30-minute timeout.
+        #
+        # The latency contract is intentionally excluded from the four-worker
+        # functional pool, then run three times with one worker and no retries.
+        # This keeps the p95/p99 thresholds unchanged while preventing unrelated
+        # browser-suite contention from being mistaken for WebSocket path
+        # latency, and prevents a retry from hiding an SLO breach.
+        run: |
+          npm run test:e2e:chromium -- --grep-invert "websocket move latency stays within SLOs" --max-failures=10
+          npm run test:e2e:chromium -- tests/e2e/websocket-move-latency.e2e.spec.ts --workers=1 --retries=0 --repeat-each=3
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -884,12 +899,13 @@ jobs:
 
       - name: Upload E2E test artifacts on failure
         uses: actions/upload-artifact@v4
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         with:
           name: e2e-test-results
           path: |
             test-results/
             playwright-report/
+            diagnostics-output/
           retention-days: 7
 
   load-tests-validation:

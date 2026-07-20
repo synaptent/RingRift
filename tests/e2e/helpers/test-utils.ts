@@ -112,7 +112,7 @@ export async function registerUser(
 ): Promise<void> {
   await waitForApiReady(page);
   await page.goto('/register');
-  await expect(page.getByRole('heading', { name: /create an account/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /create your account/i })).toBeVisible();
 
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Username').fill(username);
@@ -146,16 +146,19 @@ export async function loginUser(page: Page, email: string, password: string): Pr
 }
 
 /**
- * Logs out the current user.
- * Waits for redirect to login page after logout.
+ * Logs out the current user and waits for the public shell to replace the
+ * authenticated navigation. The app intentionally keeps the current public
+ * route instead of forcing a redirect to /login.
  */
 export async function logout(page: Page): Promise<void> {
   const logoutButton = page.getByRole('button', { name: /logout/i });
   await expect(logoutButton).toBeVisible({ timeout: 10_000 });
   await logoutButton.click();
 
-  // After logout, should redirect to /login
-  await page.waitForURL('**/login', { timeout: 10_000 });
+  await expect(logoutButton).toBeHidden({ timeout: 10_000 });
+  await expect(page.getByRole('link', { name: /sign in/i }).first()).toBeVisible({
+    timeout: 10_000,
+  });
 }
 
 /**
@@ -215,7 +218,7 @@ export async function createGame(page: Page, options: CreateGameOptions = {}): P
   const { boardType = 'square8', vsAI = true, isRated } = options;
 
   // Navigate to lobby
-  await page.getByRole('link', { name: /lobby/i }).click();
+  await page.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page.waitForURL('**/lobby', { timeout: 15_000 });
 
   // Verify lobby page loaded
@@ -306,12 +309,18 @@ export async function makeMove(page: Page, from: string, to: string): Promise<vo
   const [fromX, fromY] = from.split(',').map(Number);
   const [toX, toY] = to.split(',').map(Number);
 
-  // Click source cell
+  const destCell = boardView.locator(`button[data-x="${toX}"][data-y="${toY}"]`);
+
+  // The backend host auto-selects a forced movement source. Avoid toggling
+  // that selection off when the requested destination is already canonical.
+  if (await destCell.evaluate((cell) => cell.classList.contains('valid-move-cell'))) {
+    await destCell.click();
+    return;
+  }
+
   const sourceCell = boardView.locator(`button[data-x="${fromX}"][data-y="${fromY}"]`);
   await sourceCell.click();
-
-  // Click destination cell
-  const destCell = boardView.locator(`button[data-x="${toX}"][data-y="${toY}"]`);
+  await expect(destCell).toHaveClass(/valid-move-cell/, { timeout: 10_000 });
   await destCell.click();
 }
 
@@ -328,6 +337,23 @@ export async function placePiece(page: Page, position: string): Promise<void> {
   // Find and click the cell at the specified position
   const cell = boardView.locator(`button[data-x="${x}"][data-y="${y}"]`);
   await cell.click();
+  await confirmRingPlacementIfPrompted(page);
+}
+
+/** Completes either dialog-based or inline click-to-accumulate ring placement. */
+export async function confirmRingPlacementIfPrompted(page: Page): Promise<void> {
+  const placementDialog = page.getByTestId('ring-placement-count-overlay');
+  const placementPrompted = await placementDialog
+    .waitFor({ state: 'visible', timeout: 1_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (placementPrompted) {
+    await placementDialog.getByRole('button', { name: 'Place', exact: true }).click();
+    await expect(placementDialog).toHaveCount(0);
+  } else {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Enter');
+  }
 }
 
 /**
@@ -345,6 +371,7 @@ export async function clickValidPlacementTarget(page: Page): Promise<void> {
 
   const targetCell = page.locator(validTargetSelector).first();
   await targetCell.click();
+  await confirmRingPlacementIfPrompted(page);
 }
 
 // ============================================================================
@@ -409,11 +436,29 @@ export async function assertGamePhase(page: Page, phase: string): Promise<void> 
  * @param movePattern - Regex pattern to match in the move log (e.g., /P1.*placed/)
  */
 export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise<void> {
+  const gameLog = page.getByTestId('game-event-log');
+  await gameLog.scrollIntoViewIfNeeded();
+  await expect(gameLog).toBeVisible({ timeout: 15_000 });
   // Wait for "Recent moves" section to appear
-  await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout: 15_000 });
+  const recentMoves = gameLog.getByText('Recent moves', { exact: true });
+  await recentMoves.evaluate((heading) => {
+    const eventLog = heading.closest<HTMLElement>('[data-testid="game-event-log"]');
+    if (eventLog) {
+      const logRect = eventLog.getBoundingClientRect();
+      const headingRect = heading.getBoundingClientRect();
+      eventLog.scrollTop = Math.max(0, eventLog.scrollTop + headingRect.top - logRect.top - 12);
+    }
+  });
+  await recentMoves.scrollIntoViewIfNeeded();
+  await expect(recentMoves).toBeVisible({
+    timeout: 15_000,
+  });
 
-  // Check for the move pattern in the log
-  const moveEntry = page.locator('li').filter({ hasText: movePattern });
+  // Check only the Recent moves list, excluding the neighbouring system log.
+  const moveEntry = recentMoves
+    .locator('xpath=following-sibling::ul[1]')
+    .locator('li')
+    .filter({ hasText: movePattern });
   await expect(moveEntry).toBeVisible({ timeout: 10_000 });
 }
 
@@ -421,8 +466,20 @@ export async function assertMoveLogged(page: Page, movePattern: RegExp): Promise
  * Waits for the game log to show recent moves.
  */
 export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void> {
-  await expect(page.locator('text=/Game log/i')).toBeVisible({ timeout });
-  await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout });
+  const gameLog = page.getByTestId('game-event-log');
+  const recentMoves = gameLog.getByText('Recent moves', { exact: true });
+  await gameLog.scrollIntoViewIfNeeded();
+  await expect(gameLog).toBeVisible({ timeout });
+  await recentMoves.evaluate((heading) => {
+    const eventLog = heading.closest<HTMLElement>('[data-testid="game-event-log"]');
+    if (eventLog) {
+      const logRect = eventLog.getBoundingClientRect();
+      const headingRect = heading.getBoundingClientRect();
+      eventLog.scrollTop = Math.max(0, eventLog.scrollTop + headingRect.top - logRect.top - 12);
+    }
+  });
+  await recentMoves.scrollIntoViewIfNeeded();
+  await expect(recentMoves).toBeVisible({ timeout });
 }
 
 // ============================================================================
@@ -433,7 +490,7 @@ export async function waitForMoveLog(page: Page, timeout = 15_000): Promise<void
  * Navigates to the lobby page.
  */
 export async function goToLobby(page: Page): Promise<void> {
-  await page.getByRole('link', { name: /lobby/i }).click();
+  await page.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page.waitForURL('**/lobby', { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible();
 }
@@ -469,7 +526,11 @@ export async function goToSandbox(page: Page, url = '/sandbox'): Promise<void> {
   const setupHeading = page.getByRole('heading', { name: /Start a Game \(Sandbox\)/i });
   const boardView = page.getByTestId('board-view');
 
-  await expect(setupHeading.or(boardView)).toBeVisible({ timeout: 30_000 });
+  if (/[?&]preset=/.test(url)) {
+    await expect(boardView).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(setupHeading.or(boardView)).toBeVisible({ timeout: 30_000 });
+  }
 }
 
 /**
@@ -484,18 +545,12 @@ export async function goToGame(page: Page, gameId: string): Promise<void> {
  * Navigates to the root route ("/") and waits for whichever shell is appropriate
  * for the current authentication state:
  *
- * - Authenticated users: the Home page with "Welcome to RingRift".
- * - Guests: the Login page.
- *
- * This keeps navigation helpers resilient to auth routing changes while still
- * asserting that the app renders a valid entry shell.
+ * The root route is the public landing page for both authenticated users and
+ * guests, so assert its stable primary heading.
  */
 export async function goToHome(page: Page): Promise<void> {
   await page.goto('/');
-  const homeHeading = page.getByRole('heading', { name: /Welcome to RingRift/i });
-  const loginHeading = page.getByRole('heading', { name: /login/i });
-
-  await expect(homeHeading.or(loginHeading)).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'RingRift', exact: true })).toBeVisible({
     timeout: 10_000,
   });
 }
@@ -516,7 +571,9 @@ export async function assertErrorMessage(page: Page, errorPattern: RegExp): Prom
  * Checks that no error messages are displayed.
  */
 export async function assertNoErrors(page: Page): Promise<void> {
-  const errorElement = page.locator('.text-red-300, .text-red-400, [class*="error"]');
+  const errorElement = page
+    .locator('[role="alert"]:visible, [data-testid$="-error"]:visible')
+    .or(page.getByText('Board rendering error', { exact: true }));
   await expect(errorElement).toHaveCount(0);
 }
 
@@ -589,7 +646,7 @@ export async function setupMultiplayerGame(browser: Browser): Promise<Multiplaye
   await registerUser(page2, user2.username, user2.email, user2.password);
 
   // Player 1 creates a game
-  await page1.getByRole('link', { name: /lobby/i }).click();
+  await page1.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page1.waitForURL('**/lobby', { timeout: 15_000 });
   await expect(page1.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
     timeout: 10_000,
@@ -662,7 +719,7 @@ export async function coordinateTurn(
   // Wait for WebSocket to propagate the move to the waiting player
   // We look for the move to appear in their game log
   await waitingPlayer.waitForTimeout(2000); // Initial delay for WebSocket sync
-  await expect(waitingPlayer.locator('text=/Recent moves/i')).toBeVisible({ timeout: 15_000 });
+  await waitForMoveLog(waitingPlayer, 15_000);
 }
 
 /**
@@ -740,6 +797,8 @@ export type FixtureScenario =
 export interface CreateFixtureGameOptions {
   scenario: FixtureScenario;
   isRated?: boolean;
+  /** Registered opponent to persist as Player 2 for multiplayer fixtures. */
+  secondPlayerUsername?: string;
   /**
    * Optional short timeout for decision phase (milliseconds).
    * Used for testing timeout behavior without long waits.
@@ -766,7 +825,7 @@ export interface FixtureGameResult {
  * - 'line_processing': Game in line processing decision phase
  * - 'territory_processing': Game in territory processing decision phase
  * - 'chain_capture_choice': Game in chain capture choice phase
- * - 'near_victory_elimination': Game one capture away from elimination victory
+ * - 'near_victory_elimination': Game one marker landing away from elimination victory
  * - 'near_victory_territory': Game one region resolution away from territory victory
  *
  * NOTE: Only available in test/development environments.
@@ -788,11 +847,22 @@ export async function createFixtureGame(
 ): Promise<FixtureGameResult> {
   const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
   const url = `${apiBaseUrl.replace(/\/$/, '')}/api/games/fixtures/decision-phase`;
+  const token = await page.evaluate(() => window.localStorage.getItem('token'));
+
+  if (!token) {
+    throw new Error('Cannot create fixture game without an authenticated browser token');
+  }
 
   const response = await page.request.post(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     data: {
       scenario: options.scenario,
       isRated: options.isRated ?? false,
+      ...(options.secondPlayerUsername !== undefined && {
+        secondPlayerUsername: options.secondPlayerUsername,
+      }),
       ...(options.shortTimeoutMs !== undefined && { shortTimeoutMs: options.shortTimeoutMs }),
       ...(options.shortWarningBeforeMs !== undefined && {
         shortWarningBeforeMs: options.shortWarningBeforeMs,
@@ -823,9 +893,9 @@ export async function createFixtureGame(
  * winning by ring elimination.
  *
  * The fixture places:
- * - Player 1 stack at (3,3) with 3 rings
- * - Player 2 single-ring stack at (4,3)
- * - Player 2 has 18/19 rings eliminated
+ * - Player 1 one-ring stack at (3,3)
+ * - Player 2 marker at (4,3)
+ * - Player 1 has victoryThreshold - 1 elimination credits
  * - Game in 'movement' phase, Player 1's turn
  *
  * @param page - Playwright page with authenticated session
@@ -834,7 +904,7 @@ export async function createFixtureGame(
  * @example
  * ```typescript
  * const gameId = await createNearVictoryGame(page);
- * // Game is now ready - make the winning capture at (4,3)
+ * // Game is now ready - make the winning marker landing at (4,3)
  * await makeMove(page, '3,3', '4,3');
  * // Victory modal should appear
  * ```

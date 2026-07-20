@@ -785,6 +785,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const fixture = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: true,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4_000,
           shortWarningBeforeMs: 2_000,
         });
@@ -818,7 +819,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
           'player_reconnected',
           (payload) => {
             const msg = payload as any;
-            return msg?.data?.playerId === user1.username;
+            return msg?.data?.player?.username === user1.username && msg?.data?.playerNumber === 1;
           },
           30_000
         );
@@ -840,7 +841,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
       }
     });
 
-    test('disconnect mid decision, reconnect, sees consistent timeout-based game_over', async ({
+    test('disconnect mid decision, reconnect, sees consistent terminal state', async ({
       browser,
     }) => {
       const coordinator = createNetworkAwareCoordinator(serverUrl);
@@ -862,6 +863,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: true,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4000,
           shortWarningBeforeMs: 2000,
         });
@@ -889,20 +891,24 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         await coordinator.network.forceDisconnect('player1');
 
         // Player 2 should eventually receive a timeout-based game_over.
-        const p2GameOver = (await coordinator.waitForGameOver('player2', 30_000)) as any;
+        const p2GameOver = (await coordinator.waitForGameOver('player2', 45_000)) as any;
 
         expect(p2GameOver?.data?.gameResult).toBeDefined();
         const reason = p2GameOver.data.gameResult.reason;
         // Reconnection-window expiry should be treated as abandonment, not a bare timeout.
         expect(reason).toBe('abandonment');
 
-        // Reconnect player1 and ensure they also see the same final result.
+        // A player joining a completed session receives the terminal game_state
+        // snapshot; game_over is not replayed as a second event.
         await coordinator.network.simulateReconnect('player1', 1_000);
-        const p1GameOver = (await coordinator.waitForGameOver('player1', 10_000)) as any;
+        const p1TerminalState = await coordinator.waitForGameState(
+          'player1',
+          (state) => state.gameStatus === 'completed',
+          10_000
+        );
 
-        expect(p1GameOver?.data?.gameResult).toBeDefined();
-        expect(p1GameOver.data.gameResult.reason).toBe('abandonment');
-        expect(p1GameOver.data.gameResult.winner).toBe(p2GameOver.data.gameResult.winner);
+        expect(p1TerminalState.data.gameState.gameStatus).toBe('completed');
+        expect(p1TerminalState.data.gameState.winner).toBe(p2GameOver.data.gameResult.winner);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -928,7 +934,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         await homePage.goto();
         await homePage.goToProfile();
         await page.waitForURL('**/profile', { timeout: 10_000 });
-        const ratingText = await page.locator('.text-emerald-400').first().textContent();
+        const ratingText = await page.getByTestId('profile-rating').textContent();
         return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
       };
 
@@ -944,6 +950,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const rated = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: true,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4_000,
           shortWarningBeforeMs: 2_000,
         });
@@ -967,15 +974,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         // Player 1 disconnects mid-decision and never reconnects → abandonment.
         await coordinator.network.forceDisconnect('player1');
 
-        const ratedResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: (data) => true,
-          timeout: 30_000,
-        });
-
-        const ratedP1 = ratedResults.get('player1') as any;
-        const ratedP2 = ratedResults.get('player2') as any;
-        expect(ratedP1?.data?.gameResult.reason).toBe('abandonment');
+        const ratedP2 = (await coordinator.waitForGameOver('player2', 45_000)) as any;
         expect(ratedP2?.data?.gameResult.reason).toBe('abandonment');
 
         // Allow backend to persist rating updates.
@@ -990,6 +989,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
         const unrated = await createFixtureGame(page1, {
           scenario: 'line_processing',
           isRated: false,
+          secondPlayerUsername: user2.username,
           shortTimeoutMs: 4_000,
           shortWarningBeforeMs: 2_000,
         });
@@ -1012,15 +1012,7 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
 
         await coordinator.network.forceDisconnect('player1');
 
-        const unratedResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: (data) => true,
-          timeout: 30_000,
-        });
-
-        const unratedP1 = unratedResults.get('player1') as any;
-        const unratedP2 = unratedResults.get('player2') as any;
-        expect(unratedP1?.data?.gameResult.reason).toBe('abandonment');
+        const unratedP2 = (await coordinator.waitForGameOver('player2', 45_000)) as any;
         expect(unratedP2?.data?.gameResult.reason).toBe('abandonment');
 
         await page1.waitForTimeout(2_000);

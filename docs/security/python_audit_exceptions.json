@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+      "advisory_id": "PYSEC-2026-1325",
+      "package": "ecdsa",
+      "rationale": "Transitive dependency of p2pd 5.0, used only by optional P2P NAT detection and transport paths; RingRift does not import ecdsa directly. Upstream publishes no fixed release, and removal of p2pd in favor of existing fallbacks is tracked.",
+      "tracking_issue": "https://github.com/synaptent/RingRift/issues/113",
+      "approved_on": "2026-07-17",
+      "expires_on": "2026-08-31"
+    }
+  ]
+}

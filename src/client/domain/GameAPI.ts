@@ -78,6 +78,9 @@ export interface GameConnection {
   /** Submit a canonical Move to the backend. */
   submitMove(move: Move): void;
 
+  /** Submit one of the authoritative moves from the latest game_state by id. */
+  submitMoveById(moveId: string): void;
+
   /** Respond to a pending PlayerChoice. */
   respondToChoice(choice: PlayerChoice, selectedOption: unknown): void;
 

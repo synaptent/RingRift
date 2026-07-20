@@ -1,11 +1,5 @@
 import { test, expect } from '@playwright/test';
-import {
-  generateTestUser,
-  registerAndLogin,
-  createGame,
-  waitForGameReady,
-  clickValidPlacementTarget,
-} from './helpers/test-utils';
+import { registerAndLogin, createGame } from './helpers/test-utils';
 import { GamePage } from './pages';
 
 /**
@@ -58,15 +52,19 @@ test.describe('AI Game E2E Tests', () => {
     // Make a human move during ring placement
     await gamePage.clickFirstValidTarget();
 
-    // Wait for the game log to update - AI should respond
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
+    // A placement is one canonical phase action, not an entire turn. Complete
+    // Player 1's movement phase so the no-action phases can auto-advance and
+    // the AI legitimately receives Player 2's turn.
+    await gamePage.assertPlayerMoveLogged(1);
+    await gamePage.assertPhase('Move');
+    const movementTarget = gamePage.getValidTargets().first();
+    await expect(movementTarget).toBeVisible({ timeout: 10_000 });
+    await movementTarget.click();
 
-    // After human move, AI should make a move - look for P2 (AI) move in log
+    // After the completed human turn, look for P2 (AI) in the canonical log.
     // Allow time for AI service to respond
     await expect(async () => {
-      // Check for AI move (P2) in the recent moves
-      const moveLog = page.locator('text=/P2/i');
-      await expect(moveLog).toBeVisible({ timeout: 5_000 });
+      await gamePage.assertPlayerMoveLogged(2);
     }).toPass({ timeout: 60_000 });
   });
 
@@ -117,7 +115,7 @@ test.describe('AI Game E2E Tests', () => {
 
     // Make first human move
     await gamePage.clickFirstValidTarget();
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
+    await gamePage.assertPlayerMoveLogged(1);
 
     // Wait for AI to respond
     await page.waitForTimeout(10_000);
@@ -130,7 +128,7 @@ test.describe('AI Game E2E Tests', () => {
       await gamePage.clickFirstValidTarget();
 
       // Verify move was logged
-      await expect(gamePage.recentMovesSection).toBeVisible();
+      await gamePage.assertPlayerMoveLogged(1);
     }
 
     // Game should still be functional
@@ -144,10 +142,8 @@ test.describe('AI Game E2E Tests', () => {
     const gamePage = new GamePage(page);
     await gamePage.waitForReady();
 
-    // Should start in ring_placement phase
-    await expect(page.locator('text=/ring_placement|Ring Placement|placement/i')).toBeVisible({
-      timeout: 10_000,
-    });
+    // The canonical ring_placement phase is presented to players as "Place Rings".
+    await gamePage.assertPhase('Place Rings');
   });
 
   test('AI game maintains connection after multiple turns', async ({ page }) => {

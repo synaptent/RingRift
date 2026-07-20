@@ -69,7 +69,7 @@ test.describe('Auth E2E – registration and login', () => {
     // Should redirect to registration with prefilled email (current app behavior)
     // OR show an error - either is acceptable for this happy path test
     await expect(
-      page.getByRole('heading', { name: /create an account/i }).or(page.locator('.text-red-300'))
+      page.getByRole('heading', { name: /create your account/i }).or(page.locator('.text-red-300'))
     ).toBeVisible({ timeout: 10_000 });
   });
 

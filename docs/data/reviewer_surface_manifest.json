@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "as_of": "2026-04-29",
+  "as_of": "2026-07-17",
   "purpose": "Machine-readable map of the supported RingRift review surface. This keeps outside-reviewer entrypoints focused on the product, canonical rules, parity, and minimal training proof path.",
   "reviewer_entrypoint": "docs/REVIEWER_GUIDE.md",
   "must_read": [
@@ -61,7 +61,7 @@
     {
       "id": "github_workflows",
       "command": "python3 scripts/check_github_workflows.py",
-      "purpose": "Validate lightweight GitHub Actions guardrails that catch unsupported local actions and disallowed direct secret references in if expressions."
+      "purpose": "Validate lightweight GitHub Actions guardrails and require every workflow to have a current policy classification."
     },
     {
       "id": "reviewer_surface",

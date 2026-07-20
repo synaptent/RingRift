@@ -59,7 +59,7 @@ test.describe('Resignation E2E Tests', () => {
 
       // For now, we'll mark this as a discovery test
       // The actual resignation UI implementation may vary
-      console.log('Resignation UI discovery:', {
+      console.debug('Resignation UI discovery:', {
         hasResignOption,
         hasMenu,
         hasDataControl,
@@ -138,13 +138,11 @@ test.describe('Resignation E2E Tests', () => {
     await confirmButton.click();
 
     // Victory modal should appear
-    const victoryModal = page.locator('.victory-modal, [role="dialog"]').filter({
-      hasText: /victory|game over|wins|resignation/i,
-    });
+    const victoryModal = page.getByTestId('victory-modal');
     await expect(victoryModal).toBeVisible({ timeout: 10_000 });
 
     // Should indicate resignation as the reason
-    await expect(page.locator('text=/resignation/i')).toBeVisible();
+    await expect(victoryModal.getByText(/resignation/i).first()).toBeVisible();
   });
 
   test('game remains playable if resignation is cancelled', async ({ page }) => {
@@ -156,7 +154,7 @@ test.describe('Resignation E2E Tests', () => {
 
     // Make a move first
     await gamePage.clickFirstValidTarget();
-    await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 30_000 });
+    await gamePage.assertRecentMovesVisible(30_000);
 
     // Look for any resignation-related UI and verify game still works
     // Even if we can't find a resign button, game should remain functional

@@ -1,14 +1,80 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { goToSandbox } from './helpers/test-utils';
 import { LoginPage, RegisterPage } from './pages';
+
+async function mockSiteStats(page: Page): Promise<void> {
+  await page.route('**/api/stats', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ playersOnline: 8, activeGames: 3, gamesPlayed: 1_248 }),
+    });
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  // React Query devtools are development-only chrome, not part of the product
+  // surface. Hide their asynchronously mounted launcher before every document
+  // loads so snapshots cannot race its appearance.
+  await page.addInitScript(() => {
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        const style = document.createElement('style');
+        style.textContent = '.tsqd-parent-container { display: none !important; }';
+        document.head.append(style);
+      },
+      { once: true }
+    );
+  });
+});
+
+async function startSquare8Tutorial(page: Page): Promise<void> {
+  await page
+    .getByRole('button', { name: /Learn the Basics/i })
+    .filter({ hasText: /sq8/i })
+    .click();
+}
+
+async function selectFirstEmptyPlacement(page: Page): Promise<void> {
+  const board = page.getByTestId('board-view');
+  const target = board.locator('button[aria-label*="Empty cell"]').first();
+  await expect(target).toBeVisible({ timeout: 25_000 });
+  await target.click();
+  await expect(board.locator('button[aria-pressed="true"]')).toBeVisible();
+}
+
+async function placeRingOnFirstEmptyCell(page: Page): Promise<void> {
+  await selectFirstEmptyPlacement(page);
+  await page.keyboard.press('Enter');
+  await expect(
+    page
+      .getByTestId('board-view')
+      .getByRole('button', { name: /Stack height/i })
+      .first()
+  ).toBeVisible({ timeout: 10_000 });
+}
+
+async function expectBoardToFitScalingWrapper(page: Page): Promise<void> {
+  const board = page.getByTestId('board-view');
+  const wrapper = board.locator('..');
+  const [boardBox, wrapperBox] = await Promise.all([board.boundingBox(), wrapper.boundingBox()]);
+
+  if (!boardBox || !wrapperBox) {
+    throw new Error('Board or scaling wrapper did not produce a measurable bounding box');
+  }
+
+  expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(wrapperBox.x + wrapperBox.width + 1);
+  expect(boardBox.y + boardBox.height).toBeLessThanOrEqual(wrapperBox.y + wrapperBox.height + 1);
+}
 
 /**
  * Visual Regression Test Suite
  * ============================================================================
  *
- * This suite captures screenshots of key UI components and pages to detect
- * unintended visual changes. Screenshots are stored in __snapshots__ and
- * compared against baselines.
+ * This suite captures checked-in visual baselines for the public entry pages,
+ * core game surfaces, supported board shapes, and responsive layouts. Every
+ * appearance contract below uses an intentionally reviewed Chromium baseline.
  *
  * RUNNING TESTS:
  *   npm run test:e2e:visual          - Run visual regression tests
@@ -34,16 +100,15 @@ test.describe('Visual Regression Tests', () => {
   test.setTimeout(120_000);
 
   test.describe('Page Screenshots', () => {
-    test('entry route (guest) redirects to login', async ({ page }) => {
+    test('entry route presents the public landing page to guests', async ({ page }) => {
+      await mockSiteStats(page);
       await page.goto('/');
 
-      // Guests are redirected to /login; assert the login shell is visible.
-      await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({
+      // The public entry route is intentionally useful without authentication.
+      await expect(page.getByRole('heading', { name: /RingRift/i }).first()).toBeVisible({
         timeout: 10_000,
       });
-
-      // Wait for any animations to settle
-      await page.waitForTimeout(1000);
+      await expect(page.getByRole('link', { name: /Play Now/i }).first()).toBeVisible();
 
       await expect(page).toHaveScreenshot('entry-guest.png', {
         fullPage: true,
@@ -82,7 +147,7 @@ test.describe('Visual Regression Tests', () => {
   test.describe('Game Board Screenshots', () => {
     test('initial game board state', async ({ page }) => {
       await goToSandbox(page);
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
 
       // Wait for board to fully render
       await page.waitForTimeout(1000);
@@ -92,9 +157,11 @@ test.describe('Visual Regression Tests', () => {
       await expect(boardView).toHaveScreenshot('initial-game-board.png');
     });
 
-    test('game board with valid placement targets highlighted', async ({ page }) => {
+    test('game board highlights landing targets after selecting a placement', async ({ page }) => {
       await goToSandbox(page);
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
+
+      await selectFirstEmptyPlacement(page);
 
       const validTargets = page
         .getByTestId('board-view')
@@ -104,34 +171,27 @@ test.describe('Visual Regression Tests', () => {
       // Wait a bit for highlights to render
       await page.waitForTimeout(500);
 
-      // Capture board with highlighted cells
       const boardView = page.getByTestId('board-view');
       await expect(boardView).toHaveScreenshot('board-with-valid-targets.png');
     });
 
     test('game board after placing a ring', async ({ page }) => {
       await goToSandbox(page);
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
 
-      const validTargets = page
-        .getByTestId('board-view')
-        .locator('button[class*="outline-emerald"]');
-      await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
-      await validTargets.first().click();
+      await placeRingOnFirstEmptyCell(page);
 
-      // Wait for the move to be processed and board to update
-      await page.waitForTimeout(1500);
-
-      // Capture board state after placement
       const boardView = page.getByTestId('board-view');
+      await expect(boardView.getByRole('button', { name: /Stack height/i }).first()).toBeVisible();
       await expect(boardView).toHaveScreenshot('board-after-placement.png');
     });
   });
 
   test.describe('Component Screenshots', () => {
     test('game HUD appearance', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-01-01T12:00:00.000Z'));
       await goToSandbox(page);
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
 
       const hudArea = page.getByTestId('game-hud');
 
@@ -143,22 +203,21 @@ test.describe('Visual Regression Tests', () => {
 
     test('game event log appearance', async ({ page }) => {
       await goToSandbox(page);
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
 
       // Make a move to populate the event log
-      const validTargets = page
-        .getByTestId('board-view')
-        .locator('button[class*="outline-emerald"]');
-      await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
-      await validTargets.first().click();
-      await page.waitForTimeout(1500);
+      await placeRingOnFirstEmptyCell(page);
 
       // Open advanced panels to reveal the event log in sandbox mode.
       const advancedPanels = page.getByTestId('sandbox-advanced-sidebar-panels');
-      await advancedPanels.locator('summary').click();
+      const advancedPanelsOpen = await advancedPanels.evaluate(
+        (element) => (element as HTMLDetailsElement).open
+      );
+      if (!advancedPanelsOpen) {
+        await advancedPanels.locator('summary').click();
+      }
       await expect(advancedPanels).toHaveAttribute('open', '', { timeout: 10_000 });
 
-      // Capture the game log section
       const gameLogSection = page.locator('text=/Game log/i').locator('..').locator('..');
       await expect(gameLogSection).toHaveScreenshot('game-event-log.png');
     });
@@ -177,10 +236,7 @@ test.describe('Visual Regression Tests', () => {
         timeout: 10_000,
       });
 
-      // Wait for page to settle
-      await page.waitForTimeout(500);
-
-      // Capture the sandbox setup page
+      await expect(page.getByRole('button', { name: /Launch(?: Local)? Game/i })).toBeVisible();
       await expect(page).toHaveScreenshot('sandbox-pregame-setup.png', {
         fullPage: true,
       });
@@ -190,7 +246,7 @@ test.describe('Visual Regression Tests', () => {
       await goToSandbox(page);
 
       // Click a preset to launch a local sandbox game immediately.
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
 
       await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 20_000 });
       await page.waitForTimeout(1000);
@@ -202,40 +258,31 @@ test.describe('Visual Regression Tests', () => {
     test('sandbox touch controls panel', async ({ page }) => {
       await goToSandbox(page);
 
-      await page.getByRole('button', { name: /Learn the Basics/i }).click();
+      await startSquare8Tutorial(page);
 
       // Wait for board to be ready
       await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
 
-      // Check if sandbox touch controls exist (local sandbox mode)
       const touchControls = page.getByTestId('sandbox-touch-controls');
-      const hasTouchControls = await touchControls.isVisible().catch(() => false);
-
-      if (hasTouchControls) {
-        await expect(touchControls).toHaveScreenshot('sandbox-touch-controls.png');
-      } else {
-        // SKIP-REASON: environment-dependent - requires local sandbox mode with touch controls
-        test.skip();
-      }
+      await expect(touchControls).toBeVisible({ timeout: 10_000 });
+      await expect(touchControls).toHaveScreenshot('sandbox-touch-controls.png');
     });
   });
 
   test.describe('Hex Board Screenshots', () => {
     test('hex board initial state', async ({ page }) => {
-      await goToSandbox(page);
-      await page.getByRole('button', { name: /Hex Challenge/i }).click();
+      await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
 
       // Wait for hex board to fully render
       await page.waitForTimeout(1000);
 
-      // Capture the hex board
       const boardView = page.getByTestId('board-view');
       await expect(boardView).toHaveScreenshot('hex-board-initial.png');
     });
 
     test('hex board with valid targets', async ({ page }) => {
-      await goToSandbox(page);
-      await page.getByRole('button', { name: /Hex Challenge/i }).click();
+      await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
+      await selectFirstEmptyPlacement(page);
 
       const validTargets = page
         .getByTestId('board-view')
@@ -243,7 +290,6 @@ test.describe('Visual Regression Tests', () => {
       await expect(validTargets.first()).toBeVisible({ timeout: 25_000 });
       await page.waitForTimeout(500);
 
-      // Capture hex board with highlighted cells
       const boardView = page.getByTestId('board-view');
       await expect(boardView).toHaveScreenshot('hex-board-with-targets.png');
     });
@@ -251,13 +297,11 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('19x19 Board Screenshots', () => {
     test('19x19 board initial state', async ({ page }) => {
-      await goToSandbox(page);
-      await page.getByRole('button', { name: /Full Board vs AI/i }).click();
+      await goToSandbox(page, '/sandbox?preset=sq19-1h-1ai');
 
       // Wait for large board to fully render
       await page.waitForTimeout(1500);
 
-      // Capture the 19x19 board
       const boardView = page.getByTestId('board-view');
       await expect(boardView).toHaveScreenshot('board-19x19-initial.png');
     });
@@ -278,15 +322,13 @@ test.describe('Mobile Viewport Visual Tests', () => {
   test.setTimeout(120_000);
 
   test('entry route (guest) on mobile', async ({ page }) => {
+    await mockSiteStats(page);
     await page.goto('/');
 
-    // Wait for page to load
-    await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({
+    await expect(page.getByRole('heading', { name: /RingRift/i }).first()).toBeVisible({
       timeout: 10_000,
     });
-    await page.waitForTimeout(500);
-
-    // Capture mobile entry route (guests are redirected to login)
+    await expect(page.getByRole('link', { name: /Play Now/i }).first()).toBeVisible();
     await expect(page).toHaveScreenshot('mobile-entry-guest.png', {
       fullPage: true,
     });
@@ -298,7 +340,7 @@ test.describe('Mobile Viewport Visual Tests', () => {
     await loginPage.waitForReady();
     await page.waitForTimeout(500);
 
-    // Capture mobile login page
+    await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page).toHaveScreenshot('mobile-login-page.png', {
       fullPage: true,
     });
@@ -306,10 +348,11 @@ test.describe('Mobile Viewport Visual Tests', () => {
 
   test('game board on mobile', async ({ page }) => {
     await goToSandbox(page);
-    await page.getByRole('button', { name: /Learn the Basics/i }).click();
+    await startSquare8Tutorial(page);
     await page.waitForTimeout(1000);
 
-    // Capture the game board on mobile viewport
+    await expect(page.getByTestId('board-view')).toBeVisible();
+    await expect(page.getByTestId('sandbox-touch-controls')).toBeVisible();
     await expect(page).toHaveScreenshot('mobile-game-board.png', {
       fullPage: true,
     });
@@ -323,7 +366,7 @@ test.describe('Mobile Viewport Visual Tests', () => {
     });
     await page.waitForTimeout(500);
 
-    // Capture mobile sandbox setup
+    await expect(page.getByRole('button', { name: /Launch(?: Local)? Game/i })).toBeVisible();
     await expect(page).toHaveScreenshot('mobile-sandbox-setup.png', {
       fullPage: true,
     });
@@ -338,21 +381,24 @@ test.describe('Tablet Viewport Visual Tests', () => {
 
   test('game board on tablet', async ({ page }) => {
     await goToSandbox(page);
-    await page.getByRole('button', { name: /Learn the Basics/i }).click();
+    await startSquare8Tutorial(page);
     await page.waitForTimeout(1000);
+    await page.mouse.move(767, 1023);
+    await page.waitForTimeout(250);
 
-    // Capture the game board on tablet viewport
     const boardView = page.getByTestId('board-view');
+    await expectBoardToFitScalingWrapper(page);
     await expect(boardView).toHaveScreenshot('tablet-game-board.png');
   });
 
   test('hex board on tablet', async ({ page }) => {
-    await goToSandbox(page);
-    await page.getByRole('button', { name: /Hex Challenge/i }).click();
+    await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
     await page.waitForTimeout(1000);
+    await page.mouse.move(767, 1023);
+    await page.waitForTimeout(250);
 
-    // Capture hexagonal board on tablet viewport
     const boardView = page.getByTestId('board-view');
+    await expectBoardToFitScalingWrapper(page);
     await expect(boardView).toHaveScreenshot('tablet-hex-board.png');
   });
 });
@@ -387,7 +433,7 @@ test.describe('Tablet Viewport Visual Tests', () => {
  *
  *   npm run test:e2e:visual           # Run visual regression tests
  *   npm run test:e2e:visual:update    # Update baseline screenshots
- *   npx playwright test visual-regression --update-snapshots  # Same as above
+ *   npx playwright test visual-regression --project=chromium --update-snapshots
  *
  * BEST PRACTICES:
  *

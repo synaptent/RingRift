@@ -22,9 +22,9 @@ import {
   UserSearchQueryInput,
   LeaderboardQuerySchema,
   LeaderboardQueryInput,
-  UUIDSchema,
+  DatabaseIdSchema,
 } from '../../shared/validation/schemas';
-import { validateBody, validateQuery } from '../middleware/validateRequest';
+import { getValidatedQuery, validateBody, validateQuery } from '../middleware/validateRequest';
 import { RatingService } from '../services/RatingService';
 import type { WebSocketServer } from '../websocket/server';
 
@@ -496,7 +496,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getAuthUserId(req);
 
-    const { status, limit, offset } = req.query as unknown as GameListingQueryInput;
+    const { status, limit, offset } = getValidatedQuery<GameListingQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -637,7 +637,7 @@ router.get(
   userSearchRateLimiter,
   validateQuery(UserSearchQuerySchema),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { q, limit } = req.query as unknown as UserSearchQueryInput;
+    const { q, limit } = getValidatedQuery<UserSearchQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -820,7 +820,7 @@ router.get(
   '/leaderboard',
   validateQuery(LeaderboardQuerySchema),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { limit, offset, boardType, timePeriod } = req.query as unknown as LeaderboardQueryInput;
+    const { limit, offset, boardType, timePeriod } = getValidatedQuery<LeaderboardQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -1130,7 +1130,7 @@ router.get(
     const { userId } = req.params;
 
     // Validate userId format to prevent enumeration with invalid IDs
-    const userIdResult = UUIDSchema.safeParse(userId);
+    const userIdResult = DatabaseIdSchema.safeParse(userId);
     if (!userIdResult.success) {
       throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
     }
@@ -1204,7 +1204,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { userId } = req.params;
 
-    const userIdResult = UUIDSchema.safeParse(userId);
+    const userIdResult = DatabaseIdSchema.safeParse(userId);
     if (!userIdResult.success) {
       throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
     }
@@ -1332,7 +1332,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { userId } = req.params;
 
-    const userIdResult = UUIDSchema.safeParse(userId);
+    const userIdResult = DatabaseIdSchema.safeParse(userId);
     if (!userIdResult.success) {
       throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
     }

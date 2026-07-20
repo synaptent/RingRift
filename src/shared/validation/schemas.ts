@@ -31,9 +31,24 @@ export const MAX_CHAT_MESSAGE_LENGTH = 500;
 // ====================================================================
 
 /**
- * UUID v4 validation schema. Used for entity IDs (games, users, etc.)
+ * UUID validation schema for external identifiers that are explicitly UUIDs.
  */
 export const UUIDSchema = z.string().uuid('Invalid ID format').min(1, 'ID is required');
+
+/**
+ * Database entity identifier accepted by routes that consume Prisma IDs.
+ *
+ * Current User and Game records use Prisma CUIDs, while older fixtures and
+ * integrations can still carry UUIDs. Keep both forms valid without relaxing
+ * the guard to arbitrary strings.
+ */
+export const DatabaseIdSchema = z.union([
+  UUIDSchema,
+  z
+    .string()
+    .regex(/^c[0-9a-z]{24}$/i, 'Invalid ID format')
+    .min(1, 'ID is required'),
+]);
 
 /**
  * Safe string schema that strips dangerous characters for XSS prevention.
@@ -63,16 +78,8 @@ export type PaginationQueryInput = z.infer<typeof PaginationQuerySchema>;
  * returned by POST /api/games can be used with GET /api/games/:gameId
  * while still rejecting obviously invalid formats.
  */
-const GameIdValueSchema = z.union([
-  UUIDSchema,
-  z
-    .string()
-    .regex(/^c[0-9a-z]{24}$/i, 'Invalid ID format')
-    .min(1, 'ID is required'),
-]);
-
 export const GameIdParamSchema = z.object({
-  gameId: GameIdValueSchema,
+  gameId: DatabaseIdSchema,
 });
 
 export type GameIdParamInput = z.infer<typeof GameIdParamSchema>;

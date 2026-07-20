@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
-import {
-  registerAndLogin,
-  createGame,
-  createNearVictoryGame,
-  makeMove,
-} from './helpers/test-utils';
+import { registerAndLogin, createGame } from './helpers/test-utils';
+import { cleanupMultiplayerSetup, setupMultiplayerFixtureGame } from './helpers/multiplayer-utils';
 import { GamePage } from './pages';
 
 /**
@@ -54,7 +50,7 @@ test.describe('Victory Conditions E2E Tests', () => {
       await expect(gamePageContainer.first()).toBeVisible();
 
       // Verify victory condition help text is shown in the HUD
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible({ timeout: 10_000 });
 
       // Verify victory conditions are documented in the UI
@@ -70,18 +66,18 @@ test.describe('Victory Conditions E2E Tests', () => {
       await gamePage.waitForReady();
 
       // Find the victory conditions help section
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible({ timeout: 10_000 });
 
       // Verify all victory conditions are documented
       // Ring elimination
-      await expect(victoryHelp.locator('text=/elimination/i')).toBeVisible();
+      await expect(victoryHelp.getByText('Ring Elimination', { exact: true })).toBeVisible();
 
       // Territory control
-      await expect(victoryHelp.locator('text=/territory/i')).toBeVisible();
+      await expect(victoryHelp.getByText('Territory Control', { exact: true })).toBeVisible();
 
       // Last player standing
-      await expect(victoryHelp.locator('text=/last.*player.*standing/i')).toBeVisible();
+      await expect(victoryHelp.getByText('Last Player Standing', { exact: true })).toBeVisible();
     });
 
     test('game displays player statistics that would appear in victory modal', async ({ page }) => {
@@ -103,52 +99,45 @@ test.describe('Victory Conditions E2E Tests', () => {
   });
 
   test.describe('Post-Game Options', () => {
-    test('victory modal shows return to lobby button after win', async ({ page }) => {
-      // Uses near-victory fixture to fast-forward to a game state where one
-      // capture triggers elimination victory. Player 1 stack at (3,3) can
-      // capture Player 2 single ring at (4,3).
-      await registerAndLogin(page);
-      await createNearVictoryGame(page);
+    test('victory modal shows return to lobby button after win', async ({ browser }) => {
+      const setup = await setupMultiplayerFixtureGame(browser, 'near_victory_elimination');
+      try {
+        await setup.player1.gamePage.makeMove(3, 3, 4, 3);
 
-      // Make the winning capture move: (3,3) -> (4,3)
-      await makeMove(page, '3,3', '4,3');
+        const page = setup.player1.page;
+        const victoryModal = page.locator('[data-testid="victory-modal"], .victory-modal');
+        await expect(victoryModal).toBeVisible({ timeout: 30_000 });
 
-      // Wait for victory modal to appear
-      const victoryModal = page.locator('[data-testid="victory-modal"], .victory-modal');
-      await expect(victoryModal).toBeVisible({ timeout: 30_000 });
+        const returnButton = victoryModal.locator('button').filter({
+          hasText: /return.*lobby|back.*lobby|lobby/i,
+        });
+        await expect(returnButton).toBeVisible();
+        await returnButton.click();
 
-      // Verify Return to Lobby button exists
-      const returnButton = victoryModal.locator('button').filter({
-        hasText: /return.*lobby|back.*lobby|lobby/i,
-      });
-      await expect(returnButton).toBeVisible();
-
-      // Click return to lobby
-      await returnButton.click();
-
-      // Should navigate to lobby
-      await page.waitForURL('**/lobby', { timeout: 10_000 });
-      await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible();
+        await page.waitForURL('**/lobby', { timeout: 10_000 });
+        await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible();
+      } finally {
+        await cleanupMultiplayerSetup(setup);
+      }
     });
 
-    test('victory modal shows rematch option after win', async ({ page }) => {
-      // Uses near-victory fixture to fast-forward to a game state where one
-      // capture triggers elimination victory.
-      await registerAndLogin(page);
-      await createNearVictoryGame(page);
+    test('victory modal shows rematch option after win', async ({ browser }) => {
+      const setup = await setupMultiplayerFixtureGame(browser, 'near_victory_elimination');
+      try {
+        await setup.player1.gamePage.makeMove(3, 3, 4, 3);
 
-      // Make the winning capture move
-      await makeMove(page, '3,3', '4,3');
+        const victoryModal = setup.player1.page.locator(
+          '[data-testid="victory-modal"], .victory-modal'
+        );
+        await expect(victoryModal).toBeVisible({ timeout: 30_000 });
 
-      // Wait for victory modal
-      const victoryModal = page.locator('[data-testid="victory-modal"], .victory-modal');
-      await expect(victoryModal).toBeVisible({ timeout: 30_000 });
-
-      // Verify rematch button exists
-      const rematchButton = victoryModal.locator('button').filter({
-        hasText: /rematch|play again/i,
-      });
-      await expect(rematchButton).toBeVisible();
+        const rematchButton = victoryModal.locator('button').filter({
+          hasText: /rematch|play again/i,
+        });
+        await expect(rematchButton).toBeVisible();
+      } finally {
+        await cleanupMultiplayerSetup(setup);
+      }
     });
 
     test('game page has navigation back to lobby during active game', async ({ page }) => {
@@ -174,11 +163,11 @@ test.describe('Victory Conditions E2E Tests', () => {
       await gamePage.waitForReady();
 
       // Verify ring elimination is documented as a victory condition
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible();
 
       // The text should mention eliminating rings (ringsPerPlayer = starting supply)
-      await expect(victoryHelp.locator('text=/eliminate.*ring|ring.*eliminat/i')).toBeVisible();
+      await expect(victoryHelp.getByText('Ring Elimination', { exact: true })).toBeVisible();
     });
 
     test('game understands territory control victory condition', async ({ page }) => {
@@ -189,7 +178,7 @@ test.describe('Victory Conditions E2E Tests', () => {
       await gamePage.waitForReady();
 
       // Verify territory control is documented as a victory condition
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible();
 
       // The text should mention controlling territory (>50% of board)
@@ -204,7 +193,7 @@ test.describe('Victory Conditions E2E Tests', () => {
       await gamePage.waitForReady();
 
       // Verify last player standing is documented
-      const victoryHelp = page.getByTestId('victory-conditions-help');
+      const victoryHelp = page.locator('[data-testid="victory-conditions-help"]:visible').first();
       await expect(victoryHelp).toBeVisible();
 
       // The text should mention last player standing

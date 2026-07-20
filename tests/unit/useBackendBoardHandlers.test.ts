@@ -117,6 +117,7 @@ const createDeps = (
   setSelected: jest.fn(),
   setValidTargets: jest.fn(),
   submitMove: jest.fn(),
+  submitMoveById: jest.fn(),
   isPlayer: true,
   isConnectionActive: true,
   isMyTurn: true,
@@ -252,6 +253,35 @@ describe('useBackendBoardHandlers', () => {
       expect(result.current.pendingRingPlacement?.maxCount).toBe(3);
     });
 
+    it('should confirm a pending one-ring placement when the same cell is double-clicked', () => {
+      const submitMove = jest.fn();
+      const gameState = createGameState({ currentPhase: 'ring_placement' });
+      const validMoves = [
+        createMove('place_ring', 1, { x: 3, y: 4 }, undefined, { placementCount: 1 }),
+      ];
+      const deps = createDeps({ gameState, validMoves, submitMove });
+      const { result } = renderHook(() => useBackendBoardHandlers(deps));
+      const board = createBoardState();
+
+      act(() => {
+        result.current.handleCellClick({ x: 3, y: 4 }, board);
+      });
+      expect(result.current.pendingRingPlacement?.currentCount).toBe(1);
+
+      act(() => {
+        result.current.handleCellDoubleClick({ x: 3, y: 4 }, board);
+      });
+
+      expect(submitMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'place_ring',
+          to: { x: 3, y: 4 },
+          placementCount: 1,
+        })
+      );
+      expect(result.current.pendingRingPlacement).toBeNull();
+    });
+
     it('should trigger invalid move feedback when no valid moves at position', () => {
       const triggerInvalidMove = jest.fn();
       const gameState = createGameState({ currentPhase: 'ring_placement' });
@@ -359,6 +389,48 @@ describe('useBackendBoardHandlers', () => {
 
       expect(setSelected).toHaveBeenCalledWith(undefined);
       expect(setValidTargets).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('Territory processing phase handling', () => {
+    it('submits the canonical territory option containing the clicked cell', () => {
+      const submitMoveById = jest.fn();
+      const target: Position = { x: 4, y: 4 };
+      const territoryMove = createMove('choose_territory_option', 1, target, undefined, {
+        disconnectedRegions: [
+          {
+            spaces: [target],
+            controllingPlayer: 1,
+            isDisconnected: true,
+          },
+        ],
+      });
+      const gameState = createGameState({ currentPhase: 'territory_processing' });
+      const deps = createDeps({ gameState, validMoves: [territoryMove], submitMoveById });
+      const { result } = renderHook(() => useBackendBoardHandlers(deps));
+
+      act(() => {
+        result.current.handleCellClick(target, gameState.board);
+      });
+
+      expect(submitMoveById).toHaveBeenCalledWith(territoryMove.id);
+    });
+
+    it('submits the canonical elimination option containing the clicked stack', () => {
+      const submitMoveById = jest.fn();
+      const target: Position = { x: 7, y: 7 };
+      const eliminationMove = createMove('eliminate_rings_from_stack', 1, target, undefined, {
+        eliminationContext: 'territory',
+      });
+      const gameState = createGameState({ currentPhase: 'territory_processing' });
+      const deps = createDeps({ gameState, validMoves: [eliminationMove], submitMoveById });
+      const { result } = renderHook(() => useBackendBoardHandlers(deps));
+
+      act(() => {
+        result.current.handleCellClick(target, gameState.board);
+      });
+
+      expect(submitMoveById).toHaveBeenCalledWith(eliminationMove.id);
     });
   });
 

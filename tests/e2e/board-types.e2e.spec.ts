@@ -131,18 +131,8 @@ test.describe('Board Type E2E Tests', () => {
       const boardView = gamePage.boardView;
       await expect(boardView).toBeVisible();
 
-      // Hexagonal cells should have distinct arrangement
-      // Look for hex-specific CSS classes or data attributes
-      const hexCells = page.locator('[data-hex="true"], .hex-cell, [data-board-type="hexagonal"]');
-      const boardContainer = page.locator('[data-board-type]');
-
-      // Either hex cells exist or board type attribute indicates hexagonal
-      const hasHexIndicator =
-        (await hexCells.count()) > 0 ||
-        (await boardContainer.getAttribute('data-board-type')) === 'hexagonal';
-
-      // The board view itself should be visible regardless
-      await expect(gamePage.boardView).toBeVisible();
+      // BoardView exposes the geometry in its accessible region label.
+      await expect(page.getByRole('region', { name: /Hexagonal game board/i })).toBeVisible();
     });
 
     test('hexagonal board allows ring placement', async ({ page }) => {
@@ -235,32 +225,30 @@ test.describe('Board Type E2E Tests', () => {
       }
     });
 
-    test('sandbox hexagonal board has valid move targets', async ({ page }) => {
-      await registerAndLogin(page);
-      await goToSandbox(page);
+    test('sandbox hexagonal board exposes interactive placement cells', async ({ page }) => {
+      const renderLoopErrors: string[] = [];
+      page.on('console', (message) => {
+        if (
+          message.type() === 'error' &&
+          message.text().includes('Maximum update depth exceeded')
+        ) {
+          renderLoopErrors.push(message.text());
+        }
+      });
 
-      // Switch to hexagonal if possible
-      const boardTypeSelector = page.locator('select').filter({ hasText: /hex/i }).first();
+      // Keep this on the local sandbox path. Authenticated presets intentionally
+      // prefer a backend game, which would make this test cover the wrong host.
+      await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
 
-      if (await boardTypeSelector.isVisible({ timeout: 5_000 })) {
-        await boardTypeSelector.selectOption({ index: 2 }); // Usually hex is third
-        await page.waitForTimeout(1000);
-      }
-
-      // Look for new game button
-      const newGameButton = page
-        .locator('button')
-        .filter({ hasText: /new game|start|reset/i })
-        .first();
-
-      if (await newGameButton.isVisible({ timeout: 3_000 })) {
-        await newGameButton.click();
-        await page.waitForTimeout(500);
-      }
-
-      // Valid targets should be highlighted
-      const validTargets = page.locator('.outline-emerald-300\\/90, [data-valid="true"]');
-      await expect(validTargets.first()).toBeVisible({ timeout: 10_000 });
+      // Ring placement is a direct-cell action in the sandbox: empty cells are
+      // enabled rather than pre-highlighted as movement destinations.
+      const placementCells = page.getByTestId('board-view').locator('button');
+      await expect(placementCells).toHaveCount(61);
+      await expect(placementCells.first()).toBeVisible();
+      await expect(placementCells.first()).toBeEnabled();
+      await expect(page).toHaveURL(/\/sandbox$/);
+      await page.waitForTimeout(1_000);
+      expect(renderLoopErrors).toEqual([]);
     });
   });
 });

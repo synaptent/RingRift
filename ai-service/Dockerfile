@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     AI_SERVICE_PORT=8001
 
-# Install system dependencies (g++ needed for torch-scatter/sparse compilation)
+# Install compilers required by source-only networking dependencies.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -20,11 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-# torch must be installed first because torch-scatter/torch-sparse import it during setup
-# These compile from source since PyG doesn't have torch 2.9 wheels yet
-RUN pip install --no-cache-dir torch==2.9.1 && \
-    pip install --no-cache-dir torch-scatter torch-sparse && \
+# Install the supported base runtime. Optional PyG native extensions remain in
+# requirements-gnn.txt and are intentionally excluded from the default image.
+RUN pip install --no-cache-dir torch==2.13.0 && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

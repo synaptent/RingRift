@@ -35,8 +35,8 @@ import {
   waitForGameReady,
   makeMove,
 } from './helpers/test-utils';
-import { positionToString } from '../../src/shared/types/game';
 import type { GameOverMessage, GameStateUpdateMessage } from '../../src/shared/types/websocket';
+import type { RingEliminationChoice } from '../../src/shared/types/game';
 
 /**
  * Helper to register a user and extract their JWT token.
@@ -65,6 +65,20 @@ async function createUserAndGetToken(
   }
 
   return token;
+}
+
+async function joinGameByApi(
+  page: import('@playwright/test').Page,
+  token: string,
+  gameId: string
+): Promise<void> {
+  const apiBaseUrl = (process.env.E2E_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const response = await page.request.post(`${apiBaseUrl}/api/games/${gameId}/join`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) {
+    throw new Error(`Failed to join game: ${response.status()} - ${await response.text()}`);
+  }
 }
 
 test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
@@ -371,22 +385,36 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const token1 = await createUserAndGetToken(page1, user1);
         const token2 = await createUserAndGetToken(page2, user2);
 
-        // Create a standard 2-player backend game; server defaults swapRuleEnabled=true.
+        // Create a standard 2-player backend game with the optional swap rule enabled.
         const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
-        const createResponse = await page1.request.post(`${apiBaseUrl.replace(/\/$/, '')}/games`, {
-          data: {
-            boardType: 'square8',
-            timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
-            isRated: false,
-            isPrivate: false,
-            maxPlayers: 2,
-          },
-        });
+        const createResponse = await page1.request.post(
+          `${apiBaseUrl.replace(/\/$/, '')}/api/games`,
+          {
+            headers: {
+              Authorization: `Bearer ${token1}`,
+            },
+            data: {
+              boardType: 'square8',
+              timeControl: { type: 'rapid', initialTime: 600, increment: 0 },
+              isRated: false,
+              isPrivate: false,
+              maxPlayers: 2,
+              rulesOptions: { swapRuleEnabled: true },
+            },
+          }
+        );
         if (!createResponse.ok()) {
-          throw new Error(`Failed to create game: ${createResponse.status()}`);
+          throw new Error(
+            `Failed to create game: ${createResponse.status()} - ${await createResponse.text()}`
+          );
         }
         const createJson = await createResponse.json();
         const gameId: string = createJson.data.game.id;
+
+        // Occupy Player 2's persisted seat before either WebSocket constructs
+        // and caches the in-memory session. Joining a socket room is only a
+        // subscription and must not be treated as game membership.
+        await joinGameByApi(page2, token2, gameId);
 
         // Connect both players via WebSocket and join the game.
         await coordinator.connect('player1', {
@@ -422,7 +450,16 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
 
         await coordinator.sendMoveById('player1', gameId, (firstPlacement as any).id);
 
-        // After P1's first move, swap_sides should be offered to P2.
+        const p1Movement = (await coordinator.waitForGameState(
+          'player1',
+          (state) => state.currentPhase === 'movement' && state.currentPlayer === 1,
+          30_000
+        )) as GameStateUpdateMessage;
+        const firstMovement = p1Movement.data.validMoves.find((move) => move.type === 'move_stack');
+        expect(firstMovement).toBeDefined();
+        await coordinator.sendMoveById('player1', gameId, firstMovement!.id);
+
+        // The pie rule is offered after Player 1 completes the canonical turn.
         const p2Turn = (await coordinator.waitForTurn(
           'player2',
           2,
@@ -447,11 +484,18 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(swappedPlayers[0]?.username).toBe(user2.username);
         expect(swappedPlayers[1]?.username).toBe(user1.username);
 
-        // Player2's view should reflect the same seat swap.
-        const p2State = coordinator.getLastGameState('player2');
-        expect(p2State).not.toBeNull();
-        expect(p2State!.players[0].username).toBe(user2.username);
-        expect(p2State!.players[1].username).toBe(user1.username);
+        // Player2's view should receive the same seat swap, rather than
+        // relying on whichever cached update happened to arrive last.
+        const p2Swapped = (await coordinator.waitForGameState(
+          'player2',
+          (state) =>
+            state.players.length >= 2 &&
+            state.players[0].username === user2.username &&
+            state.players[1].username === user1.username,
+          30_000
+        )) as GameStateUpdateMessage;
+        expect(p2Swapped.data.gameState.players[0].username).toBe(user2.username);
+        expect(p2Swapped.data.gameState.players[1].username).toBe(user1.username);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -459,7 +503,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
       }
     });
 
-    test('chain_capture_choice fixture: both players see choice and shared terminal game_over', async ({
+    test('chain_capture_choice fixture: both players see the shared canonical decision surface', async ({
       browser,
     }) => {
       const coordinator = createMultiClientCoordinator(serverUrl);
@@ -479,6 +523,9 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'chain_capture_choice',
           isRated: false,
+          secondPlayerUsername: user2.username,
+          shortTimeoutMs: 60_000,
+          shortWarningBeforeMs: 30_000,
         });
 
         await coordinator.connect('player1', {
@@ -495,33 +542,33 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
 
-        // Wait for both players to see a chain_capture_choice player_choice_required event.
-        const choiceResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'event',
-          eventName: 'player_choice_required',
-          predicate: () => true,
+        // Chain-capture decisions are exposed as canonical Move IDs on the
+        // game_state payload. Both players must observe the same surface.
+        const decisionStates = await coordinator.waitForAll(['player1', 'player2'], {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'chain_capture' &&
+              message.data.validMoves.some((move) => move.type === 'continue_capture_segment')
+            );
+          },
           timeout: 30_000,
         });
 
-        expect(choiceResults.get('player1')).toBeDefined();
-        expect(choiceResults.get('player2')).toBeDefined();
+        const p1State = decisionStates.get('player1') as GameStateUpdateMessage;
+        const p2State = decisionStates.get('player2') as GameStateUpdateMessage;
+        const p1MoveIds = p1State.data.validMoves
+          .filter((move) => move.type === 'continue_capture_segment')
+          .map((move) => move.id)
+          .sort();
+        const p2MoveIds = p2State.data.validMoves
+          .filter((move) => move.type === 'continue_capture_segment')
+          .map((move) => move.id)
+          .sort();
 
-        // For this E2E slice we rely on the orchestrator + AI to drive the
-        // remainder of the chain capture; we simply assert that both clients
-        // observe a shared terminal game_over.
-        const gameOverResults = await coordinator.waitForAll(['player1', 'player2'], {
-          type: 'gameOver',
-          predicate: () => true,
-          timeout: 60_000,
-        });
-
-        const p1Over = gameOverResults.get('player1') as GameOverMessage | undefined;
-        const p2Over = gameOverResults.get('player2') as GameOverMessage | undefined;
-
-        expect(p1Over).toBeDefined();
-        expect(p2Over).toBeDefined();
-        expect(p1Over!.data.gameResult.reason).toBe(p2Over!.data.gameResult.reason);
-        expect(p1Over!.data.gameResult.winner).toBe(p2Over!.data.gameResult.winner);
+        expect(p1MoveIds.length).toBeGreaterThan(0);
+        expect(p2MoveIds).toEqual(p1MoveIds);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -529,7 +576,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
       }
     });
 
-    test('chain_capture_choice fixture: explicit player_choice_response applies selected capture segment symmetrically', async ({
+    test('chain_capture_choice fixture: canonical move selection applies the capture segment symmetrically', async ({
       browser,
     }) => {
       const coordinator = createMultiClientCoordinator(serverUrl);
@@ -549,6 +596,9 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'chain_capture_choice',
           isRated: false,
+          secondPlayerUsername: user2.username,
+          shortTimeoutMs: 60_000,
+          shortWarningBeforeMs: 30_000,
         });
 
         await coordinator.connect('player1', {
@@ -565,36 +615,23 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
 
-        // Wait for the explicit capture_direction choice on player1.
-        const choicePayload = (await coordinator.waitForEvent(
-          'player1',
-          'player_choice_required',
-          undefined,
-          30_000
-        )) as unknown as {
-          id: string;
-          type: string;
-          playerNumber: number;
-          options: Array<{
-            targetPosition: { x: number; y: number; z?: number };
-            landingPosition: { x: number; y: number; z?: number };
-          }>;
-        };
+        const decisionState = (await coordinator.waitFor('player1', {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'chain_capture' &&
+              message.data.validMoves.some((move) => move.type === 'continue_capture_segment')
+            );
+          },
+          timeout: 30_000,
+        })) as GameStateUpdateMessage;
+        const selected = decisionState.data.validMoves.find(
+          (move) => move.type === 'continue_capture_segment'
+        );
+        expect(selected).toBeDefined();
 
-        expect(choicePayload).toBeDefined();
-        expect(choicePayload.type).toBe('capture_direction');
-        expect(Array.isArray(choicePayload.options)).toBe(true);
-        expect(choicePayload.options.length).toBeGreaterThan(0);
-
-        const selected = choicePayload.options[0];
-
-        // Send an explicit player_choice_response selecting the first option.
-        await coordinator.send('player1', 'player_choice_response', {
-          choiceId: choicePayload.id,
-          playerNumber: choicePayload.playerNumber,
-          choiceType: choicePayload.type,
-          selectedOption: selected,
-        });
+        await coordinator.sendMoveById('player1', gameId, selected!.id);
 
         // Wait for both players to receive an updated game_state that includes
         // the applied continue_capture_segment Move.
@@ -603,8 +640,15 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
           predicate: (data) => {
             const msg = data as GameStateUpdateMessage;
             const history = msg?.data?.gameState?.moveHistory ?? [];
-            return (
-              history.length > 0 && history[history.length - 1]?.type === 'continue_capture_segment'
+            return history.some(
+              (move) =>
+                move.type === 'continue_capture_segment' &&
+                move.from?.x === selected!.from?.x &&
+                move.from?.y === selected!.from?.y &&
+                move.to.x === selected!.to.x &&
+                move.to.y === selected!.to.y &&
+                move.captureTarget?.x === selected!.captureTarget?.x &&
+                move.captureTarget?.y === selected!.captureTarget?.y
             );
           },
           timeout: 30_000,
@@ -621,24 +665,22 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(history1.length).toBeGreaterThan(0);
         expect(history1.length).toBe(history2.length);
 
-        const lastMove1 = history1[history1.length - 1];
-        const lastMove2 = history2[history2.length - 1];
+        const matchesSelection = (move: (typeof history1)[number]) =>
+          move.type === 'continue_capture_segment' &&
+          move.from?.x === selected!.from?.x &&
+          move.from?.y === selected!.from?.y &&
+          move.to.x === selected!.to.x &&
+          move.to.y === selected!.to.y &&
+          move.captureTarget?.x === selected!.captureTarget?.x &&
+          move.captureTarget?.y === selected!.captureTarget?.y;
+        const appliedMove1 = history1.find(matchesSelection);
+        const appliedMove2 = history2.find(matchesSelection);
 
-        expect(lastMove1.type).toBe('continue_capture_segment');
-        expect(lastMove2.type).toBe('continue_capture_segment');
-        expect(lastMove1.to).toEqual(selected.landingPosition);
-        expect(lastMove2.to).toEqual(selected.landingPosition);
-
-        // The captured stack at targetPosition should now be controlled by the acting player
-        // from both players' perspectives.
-        const targetKey = positionToString(selected.targetPosition as any);
-        const stack1 = state1!.board.stacks.get(targetKey);
-        const stack2 = state2!.board.stacks.get(targetKey);
-
-        expect(stack1).toBeDefined();
-        expect(stack2).toBeDefined();
-        expect(stack1!.controllingPlayer).toBe(choicePayload.playerNumber);
-        expect(stack2!.controllingPlayer).toBe(choicePayload.playerNumber);
+        expect(appliedMove1).toBeDefined();
+        expect(appliedMove2).toEqual(appliedMove1);
+        expect(appliedMove1!.type).toBe('continue_capture_segment');
+        expect(appliedMove1!.to).toEqual(selected!.to);
+        expect(appliedMove1!.captureTarget).toEqual(selected!.captureTarget);
       } finally {
         await coordinator.cleanup();
         await context1.close();
@@ -684,6 +726,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'near_victory_territory',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
 
         // Connect both players via WebSocket.
@@ -702,12 +745,56 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player1', gameId);
         await coordinator.joinGame('player2', gameId);
 
-        // Wait for game_over on both clients.
-        const results = await coordinator.waitForAll(['player1', 'player2'], {
+        const decisionState = (await coordinator.waitFor('player1', {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'territory_processing' &&
+              message.data.validMoves.some((move) => move.type === 'choose_territory_option')
+            );
+          },
+          timeout: 30_000,
+        })) as GameStateUpdateMessage;
+        const territoryMove = decisionState.data.validMoves.find(
+          (move) => move.type === 'choose_territory_option'
+        );
+        expect(territoryMove).toBeDefined();
+
+        // Do not race the terminal broadcast against Player 2's asynchronous
+        // room join.
+        await coordinator.waitForGameState(
+          'player2',
+          (state) => state.currentPhase === 'territory_processing',
+          30_000
+        );
+        // Resolving the region canonically requires choosing the controlled
+        // stack whose cap is eliminated. Arm the event wait before sending the
+        // move so a fast server response cannot outrun the test listener.
+        const eliminationChoicePromise = coordinator.waitForEvent(
+          'player1',
+          'player_choice_required',
+          (payload) => (payload as RingEliminationChoice)?.type === 'ring_elimination',
+          30_000
+        );
+        await coordinator.sendMoveById('player1', gameId, territoryMove!.id);
+
+        const eliminationChoice = (await eliminationChoicePromise) as RingEliminationChoice;
+        expect(eliminationChoice.options.length).toBeGreaterThan(0);
+        const resultsPromise = coordinator.waitForAll(['player1', 'player2'], {
           type: 'gameOver',
           predicate: (data) => isGameOverMessage(data),
           timeout: 30_000,
         });
+        await coordinator.send('player1', 'player_choice_response', {
+          choiceId: eliminationChoice.id,
+          playerNumber: eliminationChoice.playerNumber,
+          choiceType: eliminationChoice.type,
+          selectedOption: eliminationChoice.options[0],
+        });
+
+        // Wait for game_over on both clients.
+        const results = await resultsPromise;
 
         const p1Msg = results.get('player1') as GameOverMessage | undefined;
         const p2Msg = results.get('player2') as GameOverMessage | undefined;
@@ -746,6 +833,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const { gameId } = await createFixtureGame(page1, {
           scenario: 'near_victory_elimination',
           isRated: true,
+          secondPlayerUsername: user2.username,
         });
 
         // Connect both players via WebSocket.
@@ -781,8 +869,8 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
 
         expect(p1Msg).toBeDefined();
         expect(p2Msg).toBeDefined();
-        expect(p1Msg!.data.gameResult.reason).toBe('elimination');
-        expect(p2Msg!.data.gameResult.reason).toBe('elimination');
+        expect(p1Msg!.data.gameResult.reason).toBe('ring_elimination');
+        expect(p2Msg!.data.gameResult.reason).toBe('ring_elimination');
         expect(p1Msg!.data.gameResult.winner).toBe(p2Msg!.data.gameResult.winner);
       } finally {
         await coordinator.cleanup();
@@ -836,6 +924,7 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         const eliminationFixture = await createFixtureGame(page1, {
           scenario: 'near_victory_elimination',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
         const gameId1 = eliminationFixture.gameId;
 
@@ -864,9 +953,9 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         expect(elimP1).toBeDefined();
         expect(elimP2).toBeDefined();
         expect(elimSpec).toBeDefined();
-        expect(elimP1!.data.gameResult.reason).toBe('elimination');
-        expect(elimP2!.data.gameResult.reason).toBe('elimination');
-        expect(elimSpec!.data.gameResult.reason).toBe('elimination');
+        expect(elimP1!.data.gameResult.reason).toBe('ring_elimination');
+        expect(elimP2!.data.gameResult.reason).toBe('ring_elimination');
+        expect(elimSpec!.data.gameResult.reason).toBe('ring_elimination');
         expect(elimP1!.data.gameResult.winner).toBe(elimP2!.data.gameResult.winner);
         expect(elimP1!.data.gameResult.winner).toBe(elimSpec!.data.gameResult.winner);
 
@@ -875,12 +964,30 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.leaveGame('player2', gameId1);
         await coordinator.leaveGame('spectator', gameId1);
 
+        // Unmount the browser GameConnection for game 1 before reusing page1
+        // to create the second fixture. Otherwise its stale subscription can
+        // compete with the coordinator client for the next player choice.
+        await page1.goto('/');
+        await expect(page1.getByRole('button', { name: /logout/i })).toBeVisible({
+          timeout: 10_000,
+        });
+        // The browser game view temporarily became the newest socket for this
+        // user. Reconnect the coordinator after unmounting it so targeted
+        // player-choice events are delivered to the socket driving Game 2.
+        await coordinator.disconnect('player1');
+        await coordinator.connect('player1', {
+          playerId: user1.username,
+          userId: user1.username,
+          token: token1,
+        });
+
         // -------------------------------------------------------------------
-        // Game 2: near_victory_territory – auto-resolved territory_control
+        // Game 2: near_victory_territory – canonical region resolution
         // -------------------------------------------------------------------
         const territoryFixture = await createFixtureGame(page1, {
           scenario: 'near_victory_territory',
           isRated: false,
+          secondPlayerUsername: user2.username,
         });
         const gameId2 = territoryFixture.gameId;
 
@@ -888,11 +995,60 @@ test.describe('Multi-Player Coordination with MultiClientCoordinator', () => {
         await coordinator.joinGame('player2', gameId2);
         await coordinator.joinGame('spectator', gameId2);
 
-        const territoryResults = await coordinator.waitForAll(['player1', 'player2', 'spectator'], {
-          type: 'gameOver',
-          predicate: (data) => isGameOverMessage(data),
+        const territoryState = (await coordinator.waitFor('player1', {
+          type: 'gameState',
+          predicate: (data) => {
+            const message = data as GameStateUpdateMessage;
+            return (
+              message?.data?.gameState?.currentPhase === 'territory_processing' &&
+              message.data.validMoves.some((move) => move.type === 'choose_territory_option')
+            );
+          },
           timeout: 30_000,
+        })) as GameStateUpdateMessage;
+        const territoryMove = territoryState.data.validMoves.find(
+          (move) => move.type === 'choose_territory_option'
+        );
+        expect(territoryMove).toBeDefined();
+
+        await Promise.all([
+          coordinator.waitForGameState(
+            'player2',
+            (state) => state.currentPhase === 'territory_processing',
+            30_000
+          ),
+          coordinator.waitForGameState(
+            'spectator',
+            (state) => state.currentPhase === 'territory_processing',
+            30_000
+          ),
+        ]);
+        const eliminationChoicePromise = coordinator.waitForEvent(
+          'player1',
+          'player_choice_required',
+          (payload) => (payload as RingEliminationChoice)?.type === 'ring_elimination',
+          30_000
+        );
+        await coordinator.sendMoveById('player1', gameId2, territoryMove!.id);
+
+        const eliminationChoice = (await eliminationChoicePromise) as RingEliminationChoice;
+        expect(eliminationChoice.options.length).toBeGreaterThan(0);
+        const territoryResultsPromise = coordinator.waitForAll(
+          ['player1', 'player2', 'spectator'],
+          {
+            type: 'gameOver',
+            predicate: (data) => isGameOverMessage(data) && data.data.gameId === gameId2,
+            timeout: 45_000,
+          }
+        );
+        await coordinator.send('player1', 'player_choice_response', {
+          choiceId: eliminationChoice.id,
+          playerNumber: eliminationChoice.playerNumber,
+          choiceType: eliminationChoice.type,
+          selectedOption: eliminationChoice.options[0],
         });
+
+        const territoryResults = await territoryResultsPromise;
 
         const terrP1 = territoryResults.get('player1') as GameOverMessage | undefined;
         const terrP2 = territoryResults.get('player2') as GameOverMessage | undefined;

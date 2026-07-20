@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/types/game';
 import { BOARD_CONFIGS, positionToString } from '../../../shared/types/game';
 import { getEffectiveLineLengthThreshold } from '../../../shared/engine/rulesConfig';
+import type { ChainCaptureState } from '../../../shared/engine/aggregates/CaptureAggregate';
 import { generateGameSeed } from '../../../shared/utils/rng';
 import { getDatabaseClient } from '../../database/connection';
 import { logger } from '../../utils/logger';
@@ -21,6 +22,7 @@ import type { GameEngine } from '../GameEngine';
  */
 interface GameEngineInternal {
   gameState: GameState;
+  chainCaptureState?: ChainCaptureState;
 }
 
 export type DecisionPhaseScenario =
@@ -48,6 +50,8 @@ export interface DecisionPhaseFixtureMetadata {
 
 export interface CreateDecisionPhaseFixtureOptions {
   creatorUserId: string;
+  /** Optional second human player for multiplayer fixtures. */
+  secondPlayerUserId?: string;
   scenario?: DecisionPhaseScenario;
   isRated?: boolean;
   /**
@@ -115,6 +119,7 @@ export async function createDecisionPhaseFixtureGame(
       allowSpectators: true,
       status: 'active' as PrismaGameStatus,
       player1Id: options.creatorUserId,
+      ...(options.secondPlayerUserId && { player2Id: options.secondPlayerUserId }),
       gameState: JSON.stringify(initialGameState),
       rngSeed,
       createdAt: now,
@@ -127,6 +132,7 @@ export async function createDecisionPhaseFixtureGame(
     gameId: game.id,
     scenario,
     isRated,
+    playerCount: options.secondPlayerUserId ? 2 : 1,
   });
 
   return game.id;
@@ -185,10 +191,15 @@ export function applyDecisionPhaseFixtureIfNeeded(
 }
 
 /**
- * Seed a minimal overlength line configuration and enter line_processing
+ * Seed a minimal exact-length line configuration and enter line_processing
  * for Player 1. This mirrors the geometry used in orchestrator-focused
  * tests but is intentionally small and self-contained so it can safely
  * run at runtime in test/dev environments.
+ *
+ * An overlength line requires a second choose_line_option decision after
+ * process_line. The timeout fixture exercises line-order auto-selection, so
+ * an exact-length line gives that decision a terminal, canonical resolution
+ * instead of immediately presenting the same line-order surface again.
  */
 function seedLineProcessingDecisionPhase(engine: GameEngine): void {
   const engineInternal = engine as unknown as GameEngineInternal;
@@ -212,10 +223,10 @@ function seedLineProcessingDecisionPhase(engine: GameEngine): void {
   // elevation on square8 (3 → 4). This matches the enumeration logic in
   // enumerateChooseLineRewardMoves.
   const requiredLength = getEffectiveLineLengthThreshold(state.boardType, numPlayers);
-  const lineLength = requiredLength + 1;
+  const lineLength = requiredLength;
   const rowIndex = 0;
 
-  // Seed a simple horizontal overlength marker line for Player 1.
+  // Seed a simple horizontal exact-length marker line for Player 1.
   for (let x = 0; x < boardSize; x += 1) {
     const key = positionToString({ x, y: rowIndex } as Position);
     board.markers.delete(key);
@@ -255,9 +266,9 @@ function seedLineProcessingDecisionPhase(engine: GameEngine): void {
  * for Player 1. This creates a small ring formation that forms an enclosed
  * territory requiring a region order choice decision.
  *
- * The geometry places a 3x3 ring pattern in the corner of the board, where
- * the outer perimeter is controlled by Player 1 and the center is empty,
- * triggering the territory detection logic.
+ * The geometry places a 3x3 marker enclosure in the corner of the board,
+ * with Player 1 stacks on its perimeter to establish the active colour and
+ * provide legal self-elimination targets outside the enclosed region.
  */
 function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
   const engineInternal = engine as unknown as GameEngineInternal;
@@ -274,7 +285,7 @@ function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
   const activePlayerNumber = 1;
 
   // Create a minimal 3x3 territory enclosure in the corner.
-  // Place rings in a perimeter pattern around position (1,1).
+  // Place markers and rings in a perimeter pattern around position (1,1).
   //
   //   0 1 2 3
   // 0 R R R .
@@ -297,6 +308,13 @@ function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
 
   for (const pos of perimeterPositions) {
     const key = positionToString(pos);
+    const marker: MarkerInfo = {
+      player: activePlayerNumber,
+      position: pos,
+      type: 'regular',
+    };
+    board.markers.set(key, marker);
+
     // Each perimeter position gets a height-3 stack controlled by Player 1.
     const stack: RingStack = {
       position: pos,
@@ -314,7 +332,7 @@ function seedTerritoryProcessingDecisionPhase(engine: GameEngine): void {
   const territory: Territory = {
     spaces: [enclosedPosition],
     controllingPlayer: activePlayerNumber,
-    isDisconnected: false,
+    isDisconnected: true,
   };
   board.territories.set(territoryId, territory);
 
@@ -395,32 +413,33 @@ function seedChainCaptureChoiceDecisionPhase(engine: GameEngine): void {
     board.stacks.set(positionToString(pos), opponentStack);
   }
 
-  // Ensure the game is active and in the chain capture decision phase.
+  // Enter the canonical chain_capture phase and seed the backend's internal
+  // continuation state. GameEngine intentionally keeps this state off the
+  // wire-level GameState, so a synthetic pending field cannot drive legality.
   state.gameStatus = 'active';
   state.currentPlayer = activePlayerNumber;
-  const stateRecord = state as unknown as Record<string, unknown>;
-  stateRecord.currentPhase = 'chain_capture_choice';
-  stateRecord.pendingChainCapture = {
-    captureFrom: landingPos,
-    availableTargets: capturablePositions,
-    capturedSoFar: [],
+  state.currentPhase = 'chain_capture';
+  engineInternal.chainCaptureState = {
+    playerNumber: activePlayerNumber,
+    startPosition: landingPos,
+    currentPosition: landingPos,
+    segments: [],
+    availableMoves: [],
+    visitedPositions: new Set([positionToString(landingPos)]),
   };
 }
 
 /**
- * Seed a near-victory state where Player 1 is one capture away from winning
- * by ring elimination. This creates a scenario where Player 2 has 18 rings
- * eliminated out of 19, and Player 1 has a stack positioned to capture
- * Player 2's last ring.
+ * Seed a near-victory state where Player 1 is one legal marker landing away
+ * from winning by ring elimination.
  *
- * Victory condition: ringsPerPlayer eliminated rings triggers victory. For 2-player
- * on square8, each player has 18 rings (ringsPerPlayer = 18). Eliminating 18+ rings
- * from any combination of opponents triggers victory. Setting opponent to 17 eliminated
- * means one more capture wins (reaching 18).
+ * The canonical eliminatedRings counter is credited to the player causing an
+ * elimination. Player 1 therefore starts at victoryThreshold - 1; landing a
+ * one-ring stack on a marker removes that ring and supplies the final credit.
  *
  * The board state places:
- * - Player 1 stack at (3,3) with 3 rings
- * - Player 2 single-ring stack at (4,3) - adjacent and capturable
+ * - Player 1 one-ring stack at (3,3)
+ * - Player 2 marker at (4,3), a legal one-space landing
  * - Game in 'movement' phase, Player 1's turn
  */
 function seedNearVictoryEliminationState(engine: GameEngine): void {
@@ -438,45 +457,38 @@ function seedNearVictoryEliminationState(engine: GameEngine): void {
   const activePlayerNumber = 1;
   const opponentPlayerNumber = 2;
 
-  // Update player stats to near-victory state.
-  // Player 2 has 18 rings eliminated (on square8 the victory threshold is 19).
-  // Player 1 has 0 eliminated and some rings available.
+  // Keep the fixture internally consistent with the canonical supply and
+  // causing-player elimination accounting.
   if (state.players.length >= 2) {
-    // Player 1: healthy state
-    state.players[0].eliminatedRings = 0;
-    state.players[0].ringsInHand = 10;
-
-    // Player 2: near-eliminated (all 18 rings from their supply removed)
-    state.players[1].eliminatedRings = 18;
-    state.players[1].ringsInHand = 0;
+    state.players[0].eliminatedRings = state.victoryThreshold - 1;
+    state.players[0].ringsInHand = 0;
+    state.players[1].eliminatedRings = 0;
+    state.players[1].ringsInHand = BOARD_CONFIGS[state.boardType].ringsPerPlayer;
   }
+  state.totalRingsEliminated = state.victoryThreshold - 1;
+  board.eliminatedRings = { 1: state.victoryThreshold - 1, 2: 0 };
 
-  // Place Player 1's stack at (3,3) - height 3 for easy capture capability.
+  // A height-1 stack may legally move one space onto the adjacent marker.
   const p1StackPos: Position = { x: 3, y: 3 };
   const p1Stack: RingStack = {
     position: p1StackPos,
-    rings: [activePlayerNumber, activePlayerNumber, activePlayerNumber],
-    stackHeight: 3,
-    capHeight: 3,
+    rings: [activePlayerNumber],
+    stackHeight: 1,
+    capHeight: 1,
     controllingPlayer: activePlayerNumber,
   };
   board.stacks.set(positionToString(p1StackPos), p1Stack);
 
-  // Place Player 2's single-ring stack at (4,3) - adjacent to Player 1.
-  // A height-3 stack can capture a height-1 stack via overtaking.
-  const p2StackPos: Position = { x: 4, y: 3 };
-  const p2Stack: RingStack = {
-    position: p2StackPos,
-    rings: [opponentPlayerNumber],
-    stackHeight: 1,
-    capHeight: 1,
-    controllingPlayer: opponentPlayerNumber,
-  };
-  board.stacks.set(positionToString(p2StackPos), p2Stack);
+  const landingPos: Position = { x: 4, y: 3 };
+  board.markers.set(positionToString(landingPos), {
+    player: opponentPlayerNumber,
+    position: landingPos,
+    type: 'regular',
+  });
 
   // Set game to movement phase, Player 1's turn.
-  // Player 1 can move their stack from (3,3) to (4,3) to capture Player 2's
-  // last ring, triggering elimination victory.
+  // Player 1 can move (3,3) -> (4,3); the marker landing eliminates the top
+  // ring, credits Player 1, and reaches the canonical threshold.
   state.gameStatus = 'active';
   state.currentPlayer = activePlayerNumber;
   (state as unknown as Record<string, unknown>).currentPhase = 'movement';
@@ -487,8 +499,8 @@ function seedNearVictoryEliminationState(engine: GameEngine): void {
  * winning by territory control. This creates a scenario where:
  *
  * - Player 1 already controls just under 50% of board territory.
- * - A single additional territory region (one cell) is pending resolution in
- *   territory_processing.
+ * - A single additional one-cell region is enclosed by Player 1 markers and
+ *   pending resolution in territory_processing.
  * - Once resolved in Player 1's favour, the backend will detect a
  *   territory_control victory.
  *
@@ -523,27 +535,60 @@ function seedNearVictoryTerritoryState(engine: GameEngine): void {
   const threshold = state.territoryVictoryThreshold;
   const alreadyControlledCount = Math.max(threshold - 1, 1);
 
-  // Seed collapsed territory spaces for Player 1 across the first rows.
+  const pendingPos: Position = { x: Math.floor(boardSize / 2), y: Math.floor(boardSize / 2) };
+  const borderPositions: Position[] = [
+    { x: pendingPos.x - 1, y: pendingPos.y },
+    { x: pendingPos.x + 1, y: pendingPos.y },
+    { x: pendingPos.x, y: pendingPos.y - 1 },
+    { x: pendingPos.x, y: pendingPos.y + 1 },
+  ];
+  const reservedKeys = new Set([pendingPos, ...borderPositions].map(positionToString));
+
+  // Seed collapsed territory spaces for Player 1, excluding the pending
+  // region and its marker border so the shared detector can rediscover it.
   let placed = 0;
   for (let y = 0; y < boardSize && placed < alreadyControlledCount; y += 1) {
     for (let x = 0; x < boardSize && placed < alreadyControlledCount; x += 1) {
       const key = positionToString({ x, y } as Position);
+      if (reservedKeys.has(key)) continue;
       board.collapsedSpaces.set(key, activePlayerNumber);
       placed += 1;
     }
   }
 
-  // Choose a distinct cell for the pending region (one that is not already
-  // in collapsedSpaces). For simplicity, take the center cell.
-  const pendingPos: Position = { x: Math.floor(boardSize / 2), y: Math.floor(boardSize / 2) };
-  const pendingKey = positionToString(pendingPos);
-  board.collapsedSpaces.delete(pendingKey);
+  for (const position of borderPositions) {
+    board.markers.set(positionToString(position), {
+      player: activePlayerNumber,
+      position,
+      type: 'regular',
+    });
+  }
+
+  // Territory processing requires an eligible controlled stack outside the
+  // region for mandatory self-elimination. A second-player stack keeps both
+  // colours active so the enclosed empty cell is canonically disconnected.
+  const p1StackPosition: Position = { x: boardSize - 1, y: boardSize - 1 };
+  board.stacks.set(positionToString(p1StackPosition), {
+    position: p1StackPosition,
+    rings: [activePlayerNumber],
+    stackHeight: 1,
+    capHeight: 1,
+    controllingPlayer: activePlayerNumber,
+  });
+  const p2StackPosition: Position = { x: boardSize - 2, y: boardSize - 1 };
+  board.stacks.set(positionToString(p2StackPosition), {
+    position: p2StackPosition,
+    rings: [2],
+    stackHeight: 1,
+    capHeight: 1,
+    controllingPlayer: 2,
+  });
 
   const territoryId = `near_victory_territory_p${activePlayerNumber}`;
   const pendingRegion: Territory = {
     spaces: [pendingPos],
     controllingPlayer: activePlayerNumber,
-    isDisconnected: false,
+    isDisconnected: true,
   };
   board.territories.set(territoryId, pendingRegion);
 

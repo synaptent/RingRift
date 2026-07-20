@@ -14,7 +14,7 @@ import {
   MoveSchema,
   type MoveInput,
 } from '../../shared/validation/schemas';
-import { validateQuery, validateParams } from '../middleware/validateRequest';
+import { getValidatedQuery, validateQuery, validateParams } from '../middleware/validateRequest';
 import { GameStatus, GameState } from '../../shared/types/game';
 import { GameEngine } from '../game/GameEngine';
 import { getDisplayUsername } from './user';
@@ -84,6 +84,8 @@ const routeContext: GameRouteContext = {
  *                 enum: [line_processing, territory_processing, chain_capture_choice, near_victory_elimination, near_victory_territory]
  *               isRated:
  *                 type: boolean
+ *               secondPlayerUsername:
+ *                 type: string
  *               shortTimeoutMs:
  *                 type: integer
  *               shortWarningBeforeMs:
@@ -122,6 +124,8 @@ router.post(
         | 'near_victory_elimination'
         | 'near_victory_territory';
       isRated?: boolean;
+      /** Optional second registered player for multiplayer E2E fixtures. */
+      secondPlayerUsername?: string;
       /** Optional short timeout for E2E testing (milliseconds) */
       shortTimeoutMs?: number;
       /** Optional short warning time (milliseconds before timeout) */
@@ -159,8 +163,47 @@ router.post(
       );
     }
 
+    const creatorUserId = getAuthUserId(req);
+    let secondPlayerUserId: string | undefined;
+    const rawSecondPlayerUsername: unknown = body.secondPlayerUsername;
+    if (rawSecondPlayerUsername !== undefined) {
+      if (typeof rawSecondPlayerUsername !== 'string') {
+        throw createError(
+          'secondPlayerUsername must be a string',
+          400,
+          ErrorCodes.VALIDATION_INVALID_REQUEST
+        );
+      }
+      const secondPlayerUsername = rawSecondPlayerUsername.trim();
+      if (!secondPlayerUsername) {
+        throw createError(
+          'secondPlayerUsername must not be empty',
+          400,
+          ErrorCodes.VALIDATION_INVALID_REQUEST
+        );
+      }
+
+      const prisma = getDatabaseClient();
+      if (!prisma) {
+        throw createError('Database not available', 503, 'DATABASE_UNAVAILABLE');
+      }
+      const secondPlayer = await prisma.user.findUnique({
+        where: { username: secondPlayerUsername },
+        select: { id: true },
+      });
+      if (!secondPlayer || secondPlayer.id === creatorUserId) {
+        throw createError(
+          'secondPlayerUsername must identify a different registered user',
+          400,
+          ErrorCodes.VALIDATION_INVALID_REQUEST
+        );
+      }
+      secondPlayerUserId = secondPlayer.id;
+    }
+
     const gameId = await createDecisionPhaseFixtureGame({
-      creatorUserId: getAuthUserId(req),
+      creatorUserId,
+      ...(secondPlayerUserId && { secondPlayerUserId }),
       scenario,
       isRated,
       ...(shortTimeoutMs !== undefined && { shortTimeoutMs }),
@@ -595,7 +638,7 @@ router.get(
   '/',
   validateQuery(GameListingQuerySchema),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { status, limit, offset } = req.query as unknown as GameListingQueryInput;
+    const { status, limit, offset } = getValidatedQuery<GameListingQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -2250,7 +2293,7 @@ router.get(
   '/lobby/available',
   validateQuery(GameListingQuerySchema),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { boardType, maxPlayers, limit } = req.query as unknown as GameListingQueryInput;
+    const { boardType, maxPlayers, limit } = getValidatedQuery<GameListingQueryInput>(req);
 
     const prisma = getDatabaseClient();
     if (!prisma) {

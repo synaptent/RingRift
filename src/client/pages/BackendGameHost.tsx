@@ -179,7 +179,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     decisionPhaseTimeoutWarning,
     evaluationHistory,
   } = useGameState();
-  const { submitMove } = useGameActions();
+  const { submitMove, submitMoveById } = useGameActions();
   const { messages: backendChatMessages, sendMessage: sendChatMessage } = useChatMessages();
 
   // Move animations - auto-detects moves from game state changes
@@ -852,6 +852,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     setSelected,
     setValidTargets,
     submitMove,
+    submitMoveById,
     isPlayer,
     isConnectionActive,
     isMyTurn,
@@ -1093,8 +1094,39 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     }
   }
 
+  // Canonical elimination moves can arrive in the authoritative game_state
+  // immediately before (or without) the corresponding transient
+  // player_choice_required event. Keep the board actionable in that window by
+  // deriving the visual targets only from the server-supplied moves.
+  if (
+    !decisionHighlights &&
+    gameState.gameStatus === 'active' &&
+    (gameState.currentPhase === 'forced_elimination' ||
+      gameState.currentPhase === 'line_processing' ||
+      gameState.currentPhase === 'territory_processing') &&
+    Array.isArray(validMoves) &&
+    validMoves.length > 0
+  ) {
+    const seen = new Set<string>();
+    const highlights = validMoves
+      .filter((move) => move.type === 'eliminate_rings_from_stack' && move.to)
+      .flatMap((move) => {
+        const positionKey = positionToString(move.to as Position);
+        if (seen.has(positionKey)) return [];
+        seen.add(positionKey);
+        return [{ positionKey, intensity: 'primary' as const }];
+      });
+
+    if (highlights.length > 0) {
+      decisionHighlights = {
+        choiceKind: 'ring_elimination',
+        highlights,
+      };
+    }
+  }
+
   // Decision phase status indicators - matching sandbox host behavior
-  const isRingEliminationChoice = pendingChoice?.type === 'ring_elimination';
+  const isRingEliminationChoice = decisionHighlights?.choiceKind === 'ring_elimination';
   const isRegionOrderChoice = pendingChoice?.type === 'region_order';
   const isCaptureDirectionPending = decisionHighlights?.choiceKind === 'capture_direction';
   const isChainCaptureContinuationStep = !!(

@@ -10,6 +10,20 @@
 
 Updated all dependencies to be compatible with **NumPy 2.2.1** and **Python 3.13**.
 
+### E10 audit credibility refresh (2026-07-17)
+
+The E10 CI-trust refresh moves the audited runtime pins to FastAPI `0.139.2`, Starlette `1.3.1`,
+aiohttp `3.14.1`, Torch `2.13.0`, TorchVision `0.28.0`, and msgpack `1.2.1`. The synchronized Torch
+pair is mirrored in the main requirements and hard-coded Docker pins. The pre-existing Intel
+macOS requirements are unchanged by E10 because PyPI publishes no x86_64 macOS wheels for the
+fixed shared runtime pair; that local-only surface cannot claim audit parity.
+
+Python CI now runs `scripts/check_python_dependency_audit.py` instead of invoking pip-audit
+directly. The wrapper rejects unknown or fixable findings and validates the expiring exception
+ledger documented in [`../docs/security/PYTHON_AUDIT_EXCEPTIONS.md`](../docs/security/PYTHON_AUDIT_EXCEPTIONS.md).
+The only temporary exception at this refresh is the unfixable transitive `ecdsa` advisory
+`PYSEC-2026-1325`; it expires on 2026-08-31.
+
 ### Wave 3 status snapshot (2025-11-29)
 
 - **Wave 3‑A – Test/tooling stack:** Completed and validated. `pytest`, `pytest-asyncio`,
@@ -57,8 +71,8 @@ All commands and versions in this document assume this shared repo‑root `.venv
 
 ### Deep Learning
 
-- **PyTorch**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torch==2.6.0`, NumPy 2.x compatible)
-- **TorchVision**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torchvision==0.21.0`, validated together with `torch==2.6.0` under the Wave 3‑D `dl-torch` guardrails)
+- **PyTorch**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torch==2.13.0`, NumPy 2.x compatible)
+- **TorchVision**: as pinned in [`requirements.txt`](./requirements.txt) (currently `torchvision==0.28.0`, validated together with `torch==2.13.0` during the E10 audit refresh)
 - **TensorBoard**: 2.18.0 (monitoring & visualization)
 - **TensorBoardX**: 2.6.2.2 (extended features)
 
@@ -1108,7 +1122,7 @@ Subsequent Wave 3‑E hygiene updates (2025‑11‑29) include:
 - Adding an `ai-service-docker-smoke` CI job that builds `ai-service/Dockerfile` and
   runs an in‑container `python -c "import torch, torchvision; ..."` smoke test to
   assert that the runtime Torch/TorchVision versions match the pins in
-  `ai-service/requirements.txt` (currently `torch==2.6.0`, `torchvision==0.21.0`).
+  `ai-service/requirements.txt` (currently `torch==2.13.0`, `torchvision==0.28.0`).
 
 ## Next Strategic Wave – Orchestrator Rollout & Invariant Hardening (Wave 4)
 

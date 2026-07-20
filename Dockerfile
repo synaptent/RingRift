@@ -18,6 +18,7 @@ RUN npm ci && npm cache clean --force
 
 # Copy source code
 COPY src/ ./src/
+COPY scripts/check-bundle-secrets.ts ./scripts/check-bundle-secrets.ts
 COPY tests/fixtures/contract-vectors/v2 ./tests/fixtures/contract-vectors/v2
 
 # Generate Prisma client before build (required for TypeScript compilation)

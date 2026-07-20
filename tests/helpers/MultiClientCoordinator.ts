@@ -219,6 +219,39 @@ export class MultiClientCoordinator {
     this.clients.delete(clientId);
   }
 
+  /** Reconnects a force-disconnected client while preserving its handlers. */
+  async reconnect(clientId: string): Promise<void> {
+    const state = this.clients.get(clientId);
+    if (!state) {
+      throw new Error(`Client '${clientId}' is not registered`);
+    }
+    if (state.socket.connected) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        state.socket.off('connect', handleConnect);
+        state.socket.off('connect_error', handleError);
+        reject(new Error(`Reconnection timeout for client '${clientId}'`));
+      }, this.defaultTimeout);
+      const handleConnect = () => {
+        clearTimeout(timeoutId);
+        state.socket.off('connect_error', handleError);
+        resolve();
+      };
+      const handleError = (err: Error) => {
+        clearTimeout(timeoutId);
+        state.socket.off('connect', handleConnect);
+        reject(new Error(`Reconnection error for client '${clientId}': ${err.message}`));
+      };
+
+      state.socket.once('connect', handleConnect);
+      state.socket.once('connect_error', handleError);
+      state.socket.connect();
+    });
+  }
+
   /**
    * Disconnects all connected clients.
    */

@@ -12,7 +12,7 @@ Canonical selfplay generates game databases that pass:
 
 **Critical Requirements:**
 
-- **Node.js 18+** is required for TS↔Python parity checks (uses `npx ts-node`)
+- **Node.js 20.19+, 22.12+, or 24+** is required for TS↔Python parity checks (uses `npx ts-node`)
 - **Python 3.11+** with the ai-service dependencies
 - **npm dependencies** installed at repo root level
 
@@ -80,7 +80,7 @@ ssh -p YOUR_PORT root@sshX.vast.ai
 # Check Node version
 node --version
 
-# If missing or < v18, install Node.js 20.x
+# If missing or below v20.19, install Node.js 20.x
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
 

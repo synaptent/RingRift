@@ -23,7 +23,9 @@ test.describe('Board controls & shortcuts overlay', () => {
   test.setTimeout(120_000);
 
   test.describe('Backend game (desktop)', () => {
-    test('shows help overlay via HUD button and documents click + "?" shortcut', async ({ page }) => {
+    test('shows help overlay via HUD button and documents click + "?" shortcut', async ({
+      page,
+    }) => {
       await createBackendGameFromLobby(page);
 
       const gamePage = new GamePage(page);
@@ -47,14 +49,10 @@ test.describe('Board controls & shortcuts overlay', () => {
 
       // Keyboard shortcuts section should mention the "?" toggle shortcut.
       await expect(
-        page
-          .getByTestId('board-controls-keyboard-section')
-          .getByText(/keyboard shortcuts/i)
+        page.getByTestId('board-controls-keyboard-section').getByText(/keyboard shortcuts/i)
       ).toBeVisible();
       await expect(
-        page
-          .getByTestId('board-controls-keyboard-section')
-          .getByText(/\?/i)
+        page.getByTestId('board-controls-keyboard-section').getByText(/\?/i)
       ).toBeVisible();
 
       // Pressing Escape should close the overlay.
@@ -69,23 +67,17 @@ test.describe('Board controls & shortcuts overlay', () => {
       await gamePage.waitForReady(30_000);
 
       // Ensure overlay is initially closed.
-      await expect(
-        page.getByTestId('board-controls-overlay')
-      ).toHaveCount(0);
+      await expect(page.getByTestId('board-controls-overlay')).toHaveCount(0);
 
       // Press Shift + "/" (rendered in UI as "?") to open overlay.
-      await page.keyboard.press('Shift+/');
+      await page.keyboard.press('?');
 
-      await expect(
-        page.getByTestId('board-controls-overlay')
-      ).toBeVisible();
+      await expect(page.getByTestId('board-controls-overlay')).toBeVisible();
 
       // Press Shift + "/" again to toggle closed.
-      await page.keyboard.press('Shift+/');
+      await page.keyboard.press('?');
 
-      await expect(
-        page.getByTestId('board-controls-overlay')
-      ).toHaveCount(0);
+      await expect(page.getByTestId('board-controls-overlay')).toHaveCount(0);
     });
   });
 
@@ -97,7 +89,7 @@ test.describe('Board controls & shortcuts overlay', () => {
       await goToSandbox(page);
 
       // Launch Game: this may fall back to local sandbox engine.
-      await page.getByRole('button', { name: /Launch Game/i }).click();
+      await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
       // Wait for sandbox board + touch controls to appear.
       await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
@@ -118,19 +110,18 @@ test.describe('Board controls & shortcuts overlay', () => {
         page.getByRole('heading', { name: 'Sandbox touch controls', exact: true })
       ).toBeVisible();
 
-      await expect(page.getByText(/Clear selection/i)).toBeVisible();
-      await expect(page.getByText(/Finish move/i)).toBeVisible();
-      await expect(page.getByText(/Show valid targets/i)).toBeVisible();
-      await expect(page.getByText(/Show movement grid/i)).toBeVisible();
+      const sandboxControlsSection = page.getByTestId('board-controls-sandbox-section');
+      await expect(sandboxControlsSection.getByText(/Clear selection/i)).toBeVisible();
+      await expect(sandboxControlsSection.getByText(/Finish move/i)).toBeVisible();
+      await expect(sandboxControlsSection.getByText(/Show valid targets/i)).toBeVisible();
+      await expect(sandboxControlsSection.getByText(/Show movement grid/i)).toBeVisible();
 
       // Dismiss via close button (touch-friendly).
       const closeButton = page.getByTestId('board-controls-close-button');
       await expect(closeButton).toBeVisible();
       await closeButton.click();
 
-      await expect(
-        page.getByTestId('board-controls-overlay')
-      ).toHaveCount(0);
+      await expect(page.getByTestId('board-controls-overlay')).toHaveCount(0);
     });
   });
 });

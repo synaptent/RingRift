@@ -239,7 +239,7 @@ export async function waitForTimeoutWarningUI(
   const { timeout = 35_000 } = options;
   try {
     await expect(
-      page.locator('text=/timeout|time.*running.*out|seconds.*remaining/i').first()
+      page.locator('text=/timeout|time.*running.*out|seconds.*remaining|auto-resolved/i').first()
     ).toBeVisible({ timeout });
     return true;
   } catch {
@@ -276,7 +276,7 @@ export async function setupMultiplayerGameAdvanced(
   await registerUser(page2, user2.username, user2.email, user2.password);
 
   // Player 1 creates the game
-  await page1.getByRole('link', { name: /lobby/i }).click();
+  await page1.getByRole('link', { name: 'Lobby', exact: true }).click();
   await page1.waitForURL('**/lobby', { timeout: 15_000 });
   await expect(page1.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
     timeout: 10_000,
@@ -353,6 +353,7 @@ export async function setupMultiplayerFixtureGame(
   const { gameId } = await createFixtureGame(page1, {
     scenario: options.scenario,
     isRated: options.isRated ?? false,
+    secondPlayerUsername: user2.username,
     ...(options.shortTimeoutMs !== undefined && { shortTimeoutMs: options.shortTimeoutMs }),
     ...(options.shortWarningBeforeMs !== undefined && {
       shortWarningBeforeMs: options.shortWarningBeforeMs,
@@ -423,7 +424,7 @@ export async function coordinatePlayerTurn(
   await waitingPlayer.page.waitForTimeout(waitAfterMove);
 
   // Verify waiting player sees the update
-  await expect(waitingPlayer.gamePage.recentMovesSection).toBeVisible({ timeout: 10_000 });
+  await waitingPlayer.gamePage.assertRecentMovesVisible(10_000);
 }
 
 /**
@@ -537,16 +538,16 @@ export async function getGameOutcome(
   playerContext: PlayerContext
 ): Promise<'victory' | 'defeat' | 'draw' | null> {
   const page = playerContext.page;
+  const modal = page.locator('[data-testid="victory-modal"], .victory-modal').first();
+  if (!(await modal.isVisible().catch(() => false))) return null;
 
-  const victoryText = await page.locator('text=/victory|you.*win|winner/i').count();
-  if (victoryText > 0) return 'victory';
+  const title = modal.getByRole('heading', { level: 1 });
+  const titleText = (await title.textContent()) ?? '';
+  if (/draw|tie/i.test(titleText)) return 'draw';
 
-  const defeatText = await page.locator('text=/defeat|you.*lost|loser/i').count();
-  if (defeatText > 0) return 'defeat';
-
-  const drawText = await page.locator('text=/draw|tie/i').count();
-  if (drawText > 0) return 'draw';
-
+  const titleClasses = (await title.getAttribute('class')) ?? '';
+  if (titleClasses.includes('text-green-400')) return 'victory';
+  if (titleClasses.includes('text-red-400')) return 'defeat';
   return null;
 }
 

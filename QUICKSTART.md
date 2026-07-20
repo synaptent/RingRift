@@ -11,7 +11,7 @@ For the current research evidence, see [docs/RESULTS.md](/docs/RESULTS.md).
 
 ## Prerequisites
 
-- Node.js `18+`
+- Node.js `^20.19`, `^22.12`, or `24+`
 - npm `9+`
 - Python `3.10+` (`3.11` recommended)
 - Docker and Docker Compose for local Postgres and Redis

@@ -17,7 +17,7 @@ import { createNetworkAwareCoordinator } from '../helpers/NetworkSimulator';
  * account deletion for one player via DELETE /api/users/me. The backend
  * uses WebSocketServer.terminateUserSessions for that user, and we assert:
  *
- * - The opponent receives a terminal game_over event for the fixture game.
+ * - The terminated user's socket closes while the opponent stays connected.
  * - The terminated user does not receive any new game_state or
  *   player_choice_required events after terminateUserSessions, even under
  *   packet loss.
@@ -80,8 +80,9 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
       const { gameId } = await createFixtureGame(page1, {
         scenario: 'line_processing',
         isRated: false,
-        shortTimeoutMs: 4_000,
-        shortWarningBeforeMs: 2_000,
+        secondPlayerUsername: user2.username,
+        shortTimeoutMs: 8_000,
+        shortWarningBeforeMs: 6_000,
       });
 
       // Connect both players via WebSocket.
@@ -103,17 +104,19 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
       // Drive into the line_processing decision phase per P18.3‑1.
       await coordinator.waitForPhase('player1', 'line_processing', 15_000);
 
-      // Ensure a player_choice_required has been emitted for the active player.
-      const choicePayload = await coordinator.waitFor('player1', {
+      // The fixture schedules a timeout for the canonical line decision. Wait
+      // for its warning event, leaving six seconds to delete the account
+      // before auto-resolution fires.
+      const warningPayload = await coordinator.waitFor('player1', {
         type: 'event',
-        eventName: 'player_choice_required',
+        eventName: 'decision_phase_timeout_warning',
         predicate: (payload) => {
-          const choice = payload as any;
-          return choice?.gameId === gameId;
+          const warning = payload as { data?: { gameId?: string; phase?: string } };
+          return warning?.data?.gameId === gameId && warning?.data?.phase === 'line_processing';
         },
         timeout: 30_000,
       });
-      expect(choicePayload).toBeDefined();
+      expect(warningPayload).toBeDefined();
 
       // Apply degraded network conditions (packet loss + latency) to player1
       // before terminating their sessions.
@@ -137,10 +140,10 @@ test.describe('Decision-phase cancellation under terminateUserSessions (P18.3-1)
       });
       expect(deleteResponse.ok()).toBeTruthy();
 
-      // The opponent should eventually receive a terminal game_over for this game.
-      const p2GameOver = (await coordinator.waitForGameOver('player2', 30_000)) as any;
-      expect(p2GameOver?.data?.gameResult).toBeDefined();
-      expect(p2GameOver.data.gameId).toBe(gameId);
+      // Account deletion terminates only the deleted user's transport and
+      // cancels session work; it does not fabricate a game_over outcome.
+      await expect.poll(() => coordinator.isConnected('player1'), { timeout: 10_000 }).toBe(false);
+      expect(coordinator.isConnected('player2')).toBe(true);
 
       // Allow a short grace period for any in-flight messages to be delivered.
       await page2.waitForTimeout(2_000);

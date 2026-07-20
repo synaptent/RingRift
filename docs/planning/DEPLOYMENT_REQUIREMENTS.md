@@ -40,7 +40,7 @@ This document outlines the requirements and configuration for deploying RingRift
 
 ### Prerequisites
 
-- **Node.js**: v18+ (tested primarily with v22.x; see `engines.node` in `package.json`)
+- **Node.js**: v20.19+, v22.12+, or v24+ (see `engines.node` in `package.json`)
 - **npm**: v9+
 - **Docker**: v20+ (for containerized services)
 - **Docker Compose**: v2+

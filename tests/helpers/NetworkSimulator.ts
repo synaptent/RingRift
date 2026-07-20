@@ -245,8 +245,10 @@ export class NetworkSimulator {
       await this.delay(delayMs);
     }
 
-    // Reconnect using stored config
-    await this.coordinator.connect(clientId, disconnectState.config);
+    // Reuse the original Socket.IO client so its auth and capture handlers
+    // remain intact. forceDisconnect intentionally keeps the coordinator
+    // registration in place.
+    await this.coordinator.reconnect(clientId);
 
     // If the client was in a game, rejoin it
     if (disconnectState.gameId) {

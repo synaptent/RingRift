@@ -245,6 +245,10 @@ module.exports = {
   
   // Module name mapper for path aliases
   moduleNameMapper: {
+    // AWS's CommonJS SES client imports this subpath. Resolve it once with
+    // Node conditions so Jest's global jsdom environment cannot select the
+    // untransformed browser ESM entry for otherwise server-only code.
+    '^@aws-sdk/core/client$': require.resolve('@aws-sdk/core/client'),
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@shared/(.*)$': '<rootDir>/src/shared/$1',
     '^@server/(.*)$': '<rootDir>/src/server/$1',

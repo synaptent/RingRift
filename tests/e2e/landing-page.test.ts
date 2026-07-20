@@ -32,17 +32,23 @@ test.describe('Landing Page', () => {
   test('shows feature cards', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByText('Board Geometries')).toBeVisible();
-    await expect(page.getByText('Neural Network AI')).toBeVisible();
-    await expect(page.getByText('Real-Time Multiplayer')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Board Geometries', exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Smart AI Opponents', exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '2-4 Player Multiplayer', exact: true })
+    ).toBeVisible();
   });
 
   test('shows how-to-play section', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByText('Place Rings')).toBeVisible();
-    await expect(page.getByText('Form Lines')).toBeVisible();
-    await expect(page.getByText('Claim Territory')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Place Rings', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Form Lines', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Claim Territory', exact: true })).toBeVisible();
   });
 
   test('footer CTA links work', async ({ page }) => {

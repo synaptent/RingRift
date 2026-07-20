@@ -17,6 +17,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Prerequisites:
  * - PostgreSQL + Redis running locally (see QUICKSTART.md)
  * - The Node backend and Vite client can be started via "npm run dev"
+ * - CI uses "npm run dev:e2e" so generated diagnostics cannot restart the backend watcher
  *
  * Usage:
  * - Local development: npm run test:e2e
@@ -118,7 +119,7 @@ export default defineConfig({
    * Starts the dev server before running tests
    * ============================================ */
   webServer: {
-    command: 'npm run dev',
+    command: CI ? 'npm run dev:e2e' : 'npm run dev',
     url: BASE_URL,
     timeout: 120_000, // 2 minutes to start (includes build time)
     reuseExistingServer: !CI, // Reuse running dev server locally

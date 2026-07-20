@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { goToSandbox, assertNoErrors } from './helpers/test-utils';
+import { goToSandbox, assertNoErrors, waitForMoveLog } from './helpers/test-utils';
 
 /**
  * E2E Test Suite: Sandbox Host UX (@host-ux)
@@ -35,7 +35,7 @@ test.describe('sandbox host @host-ux', () => {
 
     await goToSandbox(page);
 
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // We should remain on /sandbox and see a local sandbox game view.
     await expect(page).toHaveURL(/\/sandbox/);
@@ -87,7 +87,7 @@ test.describe('sandbox host @host-ux', () => {
     const player2Card = page.getByText('Player 2').locator('..').locator('..');
     await player2Card.getByRole('button', { name: /Computer/i }).click();
 
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     // Local sandbox game should start on /sandbox with board + touch controls.
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
@@ -109,8 +109,7 @@ test.describe('sandbox host @host-ux', () => {
     await firstTarget.click();
 
     // After the human move, the sandbox event log should show activity.
-    await expect(page.locator('text=/Game log/i')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout: 30_000 });
+    await waitForMoveLog(page, 30_000);
 
     // Allow time for the local AI (Player 2) to respond, then look for a P2
     // entry in the log, mirroring the backend AI E2E tests.
@@ -138,7 +137,7 @@ test.describe('sandbox host @host-ux', () => {
     });
 
     await goToSandbox(page);
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     const board = page.getByTestId('board-view');
 
@@ -191,10 +190,13 @@ test.describe('sandbox host @host-ux', () => {
     });
 
     await goToSandbox(page);
-    await page.getByRole('button', { name: /Launch Game/i }).click();
+    await page.getByRole('button', { name: /Launch(?: Local)? Game/i }).click();
 
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('sandbox-touch-controls')).toBeVisible({ timeout: 15_000 });
+
+    // AI trace controls are an explicit developer diagnostic surface.
+    await page.getByRole('button', { name: /Debug/i }).click();
 
     // Use the test-only helper exposed by SandboxContext in non-production
     // builds to seed a stall warning and AI trace payload.

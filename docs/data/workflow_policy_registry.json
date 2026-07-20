@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "purpose": "Classify every GitHub Actions workflow by its review and operating role. This registry documents policy; branch protection remains the source of truth for required checks.",
+  "policy_classes": {
+    "required": "Intended to gate pull requests or protected pushes when its branch and path filters match.",
+    "scheduled": "Runs on a schedule for health, regression, or service-level monitoring; failures remain visible and tracked.",
+    "informational": "Runs manually or for deployment reporting and is not intended to be a merge gate."
+  },
+  "workflows": [
+    {
+      "path": ".github/workflows/ai-healthcheck-nightly.yml",
+      "classification": "scheduled",
+      "rationale": "Nightly AI service health signal with a manual diagnostic trigger."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "classification": "required",
+      "rationale": "Primary pull-request and protected-branch quality gate."
+    },
+    {
+      "path": ".github/workflows/deploy-production.yml",
+      "classification": "informational",
+      "rationale": "Manual production deployment workflow, not a code-review gate."
+    },
+    {
+      "path": ".github/workflows/gpu-regression-nightly.yml",
+      "classification": "scheduled",
+      "rationale": "Nightly GPU regression monitoring with manual rerun support."
+    },
+    {
+      "path": ".github/workflows/orchestrator-soak-nightly.yml",
+      "classification": "scheduled",
+      "rationale": "Nightly orchestrator soak monitoring with manual rerun support."
+    },
+    {
+      "path": ".github/workflows/parity-ci.yml",
+      "classification": "required",
+      "rationale": "Pull-request gate for canonical TypeScript and Python parity contracts."
+    },
+    {
+      "path": ".github/workflows/parity-healthcheck-nightly.yml",
+      "classification": "scheduled",
+      "rationale": "Nightly parity health monitoring with manual rerun support."
+    },
+    {
+      "path": ".github/workflows/slo-gate.yml",
+      "classification": "scheduled",
+      "rationale": "Scheduled service-level objective evaluation that can also be called or run manually."
+    },
+    {
+      "path": ".github/workflows/supported-path.yml",
+      "classification": "required",
+      "rationale": "Pull-request gate for the supported reviewer, rules, and minimal-training surface."
+    },
+    {
+      "path": ".github/workflows/validate-config.yml",
+      "classification": "required",
+      "rationale": "Pull-request and protected-branch configuration validation gate."
+    }
+  ]
+}

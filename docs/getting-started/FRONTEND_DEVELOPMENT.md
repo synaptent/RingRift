@@ -4,7 +4,7 @@ This guide covers setting up and developing the RingRift frontend (React/TypeScr
 
 ## Prerequisites
 
-- **Node.js**: v18.0.0 or higher (v20+ recommended)
+- **Node.js**: v20.19+, v22.12+, or v24+ (matching `engines.node` in `package.json`)
 - **npm**: v9.0.0 or higher
 - **PostgreSQL**: For backend database (optional for frontend-only work)
 - **Redis**: For session caching (optional for frontend-only work)
