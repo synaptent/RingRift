@@ -10,6 +10,7 @@ import type {
   ChatHistoryPayload,
   JoinGamePayload,
   PlayerMovePayload,
+  PlayerMoveByIdPayload,
   PlayerChoiceResponsePayload,
   ChatMessagePayload,
   WebSocketErrorPayload,
@@ -281,6 +282,20 @@ export class SocketGameConnection implements GameConnection {
     };
 
     this.socket.emit('player_move', payload);
+  }
+
+  submitMoveById(moveId: string): void {
+    if (!this.socket || !this._gameId) {
+      console.warn('submitMoveById called without active socket/game');
+      return;
+    }
+
+    const payload: PlayerMoveByIdPayload = {
+      gameId: this._gameId,
+      moveId,
+    };
+
+    this.socket.emit('player_move_by_id', payload);
   }
 
   respondToChoice(choice: PlayerChoice, selectedOption: unknown): void {

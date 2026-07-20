@@ -488,6 +488,22 @@ describe('GameConnection - Message Submission', () => {
     });
   });
 
+  describe('submitMoveById', () => {
+    it('should emit player_move_by_id when connected', async () => {
+      await connection.connect('game-1');
+
+      eventListeners.get('connect')?.(undefined);
+      mockEmit.mockClear();
+
+      connection.submitMoveById('territory-move-1');
+
+      expect(mockEmit).toHaveBeenCalledWith('player_move_by_id', {
+        gameId: 'game-1',
+        moveId: 'territory-move-1',
+      });
+    });
+  });
+
   describe('respondToChoice', () => {
     it('should emit player_choice_response for line_order choice with moveId', async () => {
       // RR-FIX-2026-01-15: respondToChoice now always uses player_choice_response

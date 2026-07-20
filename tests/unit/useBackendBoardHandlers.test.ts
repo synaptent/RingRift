@@ -117,6 +117,7 @@ const createDeps = (
   setSelected: jest.fn(),
   setValidTargets: jest.fn(),
   submitMove: jest.fn(),
+  submitMoveById: jest.fn(),
   isPlayer: true,
   isConnectionActive: true,
   isMyTurn: true,
@@ -364,7 +365,7 @@ describe('useBackendBoardHandlers', () => {
 
   describe('Territory processing phase handling', () => {
     it('submits the canonical territory option containing the clicked cell', () => {
-      const submitMove = jest.fn();
+      const submitMoveById = jest.fn();
       const target: Position = { x: 4, y: 4 };
       const territoryMove = createMove('choose_territory_option', 1, target, undefined, {
         disconnectedRegions: [
@@ -376,21 +377,31 @@ describe('useBackendBoardHandlers', () => {
         ],
       });
       const gameState = createGameState({ currentPhase: 'territory_processing' });
-      const deps = createDeps({ gameState, validMoves: [territoryMove], submitMove });
+      const deps = createDeps({ gameState, validMoves: [territoryMove], submitMoveById });
       const { result } = renderHook(() => useBackendBoardHandlers(deps));
 
       act(() => {
         result.current.handleCellClick(target, gameState.board);
       });
 
-      expect(submitMove).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'choose_territory_option',
-          player: 1,
-          to: target,
-          disconnectedRegions: territoryMove.disconnectedRegions,
-        })
-      );
+      expect(submitMoveById).toHaveBeenCalledWith(territoryMove.id);
+    });
+
+    it('submits the canonical elimination option containing the clicked stack', () => {
+      const submitMoveById = jest.fn();
+      const target: Position = { x: 7, y: 7 };
+      const eliminationMove = createMove('eliminate_rings_from_stack', 1, target, undefined, {
+        eliminationContext: 'territory',
+      });
+      const gameState = createGameState({ currentPhase: 'territory_processing' });
+      const deps = createDeps({ gameState, validMoves: [eliminationMove], submitMoveById });
+      const { result } = renderHook(() => useBackendBoardHandlers(deps));
+
+      act(() => {
+        result.current.handleCellClick(target, gameState.board);
+      });
+
+      expect(submitMoveById).toHaveBeenCalledWith(eliminationMove.id);
     });
   });
 

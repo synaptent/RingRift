@@ -151,6 +151,7 @@ export function useGameActions() {
     gameId,
     gameState,
     submitMove: contextSubmitMove,
+    submitMoveById: contextSubmitMoveById,
     respondToChoice: contextRespondToChoice,
     sendChatMessage,
     pendingChoice,
@@ -180,6 +181,26 @@ export function useGameActions() {
       contextSubmitMove(partialMove);
     },
     [contextSubmitMove, gameId, gameState, user]
+  );
+
+  // Canonical decision moves supplied in game_state should be submitted by
+  // their server-issued id. This keeps decision-only move types out of the
+  // generic player_move transport and avoids re-serializing their payloads.
+  const submitMoveById = useCallback(
+    (moveId: string) => {
+      if (!gameId || !gameState) {
+        console.warn('submitMoveById called without active game');
+        return;
+      }
+
+      if (!isUserPlayer(gameState, user?.id)) {
+        console.warn('submitMoveById called by spectator – ignoring');
+        return;
+      }
+
+      contextSubmitMoveById(moveId);
+    },
+    [contextSubmitMoveById, gameId, gameState, user]
   );
 
   // Convenience method for placement
@@ -276,6 +297,7 @@ export function useGameActions() {
   return {
     // Core actions
     submitMove,
+    submitMoveById,
     submitPlacement,
     submitMovement,
     respondToChoice,

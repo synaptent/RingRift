@@ -127,6 +127,7 @@ let mockConnectionError: string | null = null;
 let mockLastHeartbeatAt: number | null = Date.now();
 
 let mockSubmitMove: jest.Mock = jest.fn();
+let mockSubmitMoveById: jest.Mock = jest.fn();
 let mockSendChatMessage: jest.Mock = jest.fn();
 let mockChatMessages: { sender: string; text: string }[] = [];
 
@@ -177,6 +178,7 @@ jest.mock('@/client/hooks/useGameActions', () => ({
   __esModule: true,
   useGameActions: () => ({
     submitMove: (...args: unknown[]) => mockSubmitMove(...args),
+    submitMoveById: (...args: unknown[]) => mockSubmitMoveById(...args),
     submitPlacement: jest.fn(),
     submitMovement: jest.fn(),
     respondToChoice: jest.fn(),
@@ -363,6 +365,7 @@ describe('BackendGameHost (React host behaviour)', () => {
     mockLastHeartbeatAt = Date.now();
 
     mockSubmitMove = jest.fn();
+    mockSubmitMoveById = jest.fn();
     mockSendChatMessage = jest.fn();
     mockChatMessages = [];
 
@@ -1255,13 +1258,7 @@ describe('BackendGameHost (React host behaviour)', () => {
     expect(screen.getAllByText(/SELF-ELIMINATION REQUIRED/i).length).toBeGreaterThan(0);
 
     fireEvent.click(highlightedCell);
-    expect(mockSubmitMove).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'eliminate_rings_from_stack',
-        to: { x: 0, y: 0 },
-        eliminationContext: 'territory',
-      })
-    );
+    expect(mockSubmitMoveById).toHaveBeenCalledWith('territory-elimination-1');
   });
 
   it('applies pulsing territory highlights for region_order decisions', () => {

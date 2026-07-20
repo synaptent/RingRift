@@ -111,7 +111,7 @@ test.describe('WebSocket move latency E2E', () => {
  *
  * The implementation uses a DOM-based detector that:
  * - Selects an empty placement target before timing begins
- * - Confirms the selected placement with Enter (human move)
+ * - Confirms the selected placement with the board's double-click interaction
  * - Waits (in the browser context) until the move signature changes
  *   and returns the elapsed performance.now() delta in milliseconds
  */
@@ -124,10 +124,6 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   await expect(placementTarget).toBeVisible({ timeout: 25_000 });
   await placementTarget.click();
   await expect(gamePage.boardView.locator('button[aria-pressed="true"]')).toBeVisible();
-
-  // Board cells consume Enter as a cell activation. Move focus away after
-  // selection so the host-level Enter shortcut confirms the pending placement.
-  await placementTarget.evaluate((element) => (element as HTMLElement).blur());
 
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.
@@ -151,8 +147,10 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // Capture start time as close as possible to confirmation that submits the move.
   const startTime = await page.evaluate(() => performance.now());
 
-  // Submit the selected placement through the same keyboard path a player uses.
-  await page.keyboard.press('Enter');
+  // The first click established pending placement state. Dispatch only the
+  // follow-up double-click event so the board's confirmation handler submits
+  // that exact selection without cycling it through additional click events.
+  await placementTarget.dispatchEvent('dblclick');
 
   // Wait in the browser context until the move signature changes, then return
   // the elapsed time since startTime.

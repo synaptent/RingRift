@@ -138,6 +138,7 @@ jest.mock('../../src/client/hooks/useGameState', () => ({
 jest.mock('../../src/client/hooks/useGameActions', () => ({
   useGameActions: jest.fn(() => ({
     submitMove: jest.fn(),
+    submitMoveById: jest.fn(),
   })),
   usePendingChoice: jest.fn(() => ({
     choice: null,

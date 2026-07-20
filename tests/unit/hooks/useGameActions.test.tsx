@@ -19,6 +19,7 @@ import type { PlayerChoice, Move, Position } from '@/shared/types/game';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const mockSubmitMove = jest.fn();
+const mockSubmitMoveById = jest.fn();
 const mockRespondToChoice = jest.fn();
 const mockSendChatMessage = jest.fn();
 
@@ -36,6 +37,7 @@ const createMockGameContext = (overrides: Record<string, unknown> = {}) => ({
     moveHistory: [],
   },
   submitMove: mockSubmitMove,
+  submitMoveById: mockSubmitMoveById,
   respondToChoice: mockRespondToChoice,
   sendChatMessage: mockSendChatMessage,
   pendingChoice: null,
@@ -79,12 +81,23 @@ describe('useGameActions', () => {
     const { result } = renderHook(() => useGameActions());
 
     expect(result.current.submitMove).toBeDefined();
+    expect(result.current.submitMoveById).toBeDefined();
     expect(result.current.submitPlacement).toBeDefined();
     expect(result.current.submitMovement).toBeDefined();
     expect(result.current.respondToChoice).toBeDefined();
     expect(result.current.sendChat).toBeDefined();
     expect(result.current.pendingChoice).toBeDefined();
     expect(result.current.capabilities).toBeDefined();
+  });
+
+  it('submitMoveById calls context submitMoveById with an authoritative move id', () => {
+    const { result } = renderHook(() => useGameActions());
+
+    act(() => {
+      result.current.submitMoveById('territory-move-1');
+    });
+
+    expect(mockSubmitMoveById).toHaveBeenCalledWith('territory-move-1');
   });
 
   it('submitMove calls context submitMove with partial move', () => {

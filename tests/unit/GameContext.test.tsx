@@ -25,6 +25,7 @@ import { getConfiguredTotalRingsInPlay, inferTotalRingsInPlay } from '../utils/f
 const mockConnect = jest.fn();
 const mockDisconnect = jest.fn();
 const mockSubmitMove = jest.fn();
+const mockSubmitMoveById = jest.fn();
 const mockRespondToChoice = jest.fn();
 const mockSendChatMessage = jest.fn();
 const mockRequestRematch = jest.fn();
@@ -40,6 +41,7 @@ jest.mock('../../src/client/services/GameConnection', () => ({
       connect: mockConnect,
       disconnect: mockDisconnect,
       submitMove: mockSubmitMove,
+      submitMoveById: mockSubmitMoveById,
       respondToChoice: mockRespondToChoice,
       sendChatMessage: mockSendChatMessage,
       requestRematch: mockRequestRematch,
@@ -192,6 +194,7 @@ describe('GameContext', () => {
       expect(result.current.connectToGame).toBeDefined();
       expect(result.current.disconnect).toBeDefined();
       expect(result.current.submitMove).toBeDefined();
+      expect(result.current.submitMoveById).toBeDefined();
     });
 
     it('should throw error when used outside provider', () => {
@@ -228,6 +231,7 @@ describe('GameContext', () => {
       expect(result.current.disconnect).toBeInstanceOf(Function);
       expect(result.current.respondToChoice).toBeInstanceOf(Function);
       expect(result.current.submitMove).toBeInstanceOf(Function);
+      expect(result.current.submitMoveById).toBeInstanceOf(Function);
       expect(result.current.sendChatMessage).toBeInstanceOf(Function);
     });
   });
@@ -1207,6 +1211,36 @@ describe('GameContext - Submit moves', () => {
           to: { x: 3, y: 4 },
         })
       );
+    });
+
+    it('should submit authoritative moves by id through connection', async () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <GameProvider>{children}</GameProvider>
+      );
+
+      const { result } = renderHook(() => useGame(), { wrapper });
+
+      await act(async () => {
+        await result.current.connectToGame('game-123');
+      });
+
+      act(() => {
+        capturedHandlers?.onGameState({
+          type: 'game_update',
+          data: {
+            gameId: 'game-123',
+            gameState: { id: 'game-123', moveHistory: [] } as any,
+            validMoves: [],
+          },
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      act(() => {
+        result.current.submitMoveById('territory-move-1');
+      });
+
+      expect(mockSubmitMoveById).toHaveBeenCalledWith('territory-move-1');
     });
   });
 });

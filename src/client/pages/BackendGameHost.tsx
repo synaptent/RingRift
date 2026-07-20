@@ -179,7 +179,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     decisionPhaseTimeoutWarning,
     evaluationHistory,
   } = useGameState();
-  const { submitMove } = useGameActions();
+  const { submitMove, submitMoveById } = useGameActions();
   const { messages: backendChatMessages, sendMessage: sendChatMessage } = useChatMessages();
 
   // Move animations - auto-detects moves from game state changes
@@ -852,6 +852,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     setSelected,
     setValidTargets,
     submitMove,
+    submitMoveById,
     isPlayer,
     isConnectionActive,
     isMyTurn,

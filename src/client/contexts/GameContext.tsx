@@ -80,6 +80,7 @@ interface GameContextType {
 
   // Move submission (backend game mode)
   submitMove: (partialMove: Omit<Move, 'id' | 'timestamp' | 'thinkTime' | 'moveNumber'>) => void;
+  submitMoveById: (moveId: string) => void;
 
   // Chat
   sendChatMessage: (text: string) => void;
@@ -584,6 +585,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [gameId, gameState]
   );
 
+  const submitMoveById = useCallback(
+    (moveId: string) => {
+      const connection = connectionRef.current;
+      if (!connection || !gameId) {
+        console.warn('submitMoveById called without active connection/game');
+        return;
+      }
+
+      connection.submitMoveById(moveId);
+    },
+    [gameId]
+  );
+
   const sendChatMessage = useCallback(
     (text: string) => {
       const connection = connectionRef.current;
@@ -639,6 +653,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     choiceDeadline,
     respondToChoice,
     submitMove,
+    submitMoveById,
     validMoves,
     sendChatMessage,
     chatMessages,

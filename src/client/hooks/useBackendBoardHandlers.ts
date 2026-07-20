@@ -298,6 +298,8 @@ export interface UseBackendBoardHandlersDeps {
   setValidTargets: (targets: Position[]) => void;
   /** Function to submit a move to the backend */
   submitMove: (move: PartialMove) => void;
+  /** Function to submit an authoritative move from validMoves by id */
+  submitMoveById: (moveId: string) => void;
   /** Whether the current user is a player (not spectator) */
   isPlayer: boolean;
   /** Whether the WebSocket connection is active */
@@ -380,6 +382,7 @@ export function useBackendBoardHandlers(
     setSelected,
     setValidTargets,
     submitMove,
+    submitMoveById,
     isPlayer,
     isConnectionActive,
     isMyTurn,
@@ -1074,12 +1077,7 @@ export function useBackendBoardHandlers(
         });
 
         if (territoryMove) {
-          submitMove({
-            type: territoryMove.type,
-            player: territoryMove.player,
-            to: territoryMove.to,
-            disconnectedRegions: territoryMove.disconnectedRegions,
-          } as PartialMove);
+          submitMoveById(territoryMove.id);
           setSelected(undefined);
           setValidTargets([]);
           return;
@@ -1118,14 +1116,7 @@ export function useBackendBoardHandlers(
 
         if (elimMoves.length > 0) {
           const elimMove = elimMoves[0];
-          submitMove({
-            type: elimMove.type,
-            player: elimMove.player,
-            to: elimMove.to,
-            eliminationContext: elimMove.eliminationContext,
-            eliminatedRings: elimMove.eliminatedRings,
-            eliminationFromStack: elimMove.eliminationFromStack,
-          } as PartialMove);
+          submitMoveById(elimMove.id);
           setSelected(undefined);
           setValidTargets([]);
           return;
@@ -1302,6 +1293,7 @@ export function useBackendBoardHandlers(
       setSelected,
       setValidTargets,
       submitMove,
+      submitMoveById,
       isPlayer,
       isConnectionActive,
       isMyTurn,
