@@ -771,7 +771,11 @@ function GameProgress({ gameState }: { gameState: GameState }) {
     <div className="text-center py-2 bg-slate-800/60 border border-slate-700 rounded">
       <div className="text-2xl font-bold text-slate-100">{turnNumber}</div>
       <div className="text-xs text-slate-400">Turn</div>
-      {moveNumber > 0 && <div className="text-xs text-slate-500">Move #{moveNumber}</div>}
+      {moveNumber > 0 && (
+        <div className="text-xs text-slate-500" data-testid="game-move-number">
+          Move #{moveNumber}
+        </div>
+      )}
     </div>
   );
 }
@@ -2198,7 +2202,12 @@ function GameHUDFromViewModel({
             </span>
           </Tooltip>
           {moveNumber > 0 && (
-            <div className="text-[11px] text-slate-500 mt-0.5 font-mono">Move #{moveNumber}</div>
+            <div
+              className="text-[11px] text-slate-500 mt-0.5 font-mono"
+              data-testid="game-move-number"
+            >
+              Move #{moveNumber}
+            </div>
           )}
         </div>
       </div>

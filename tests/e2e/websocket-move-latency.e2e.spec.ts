@@ -12,10 +12,10 @@ import { GamePage } from './pages';
  *
  * The test:
  * - Logs in a fresh test user
- * - Creates a backend human-vs-AI game (square8) via the normal lobby flow
- * - Waits for the game board and WebSocket connection to be ready
- * - Plays a series of simple human moves via the UI
- * - For each move, measures confirmation-to-GameEventLog update latency
+ * - Creates a fresh backend human-vs-AI game for each sample
+ * - Waits for each game board and WebSocket connection to be ready
+ * - Plays the first one-ring placement via the UI
+ * - Measures confirmation-to-authoritative-move-counter latency
  * - Asserts p95 and p99 RTTs are within the staging-level SLOs from
  *   STRATEGIC_ROADMAP.md §2.2
  */
@@ -27,37 +27,32 @@ const P95_SLO_MS = 300;
 const P99_SLO_MS = 600;
 
 test.describe('WebSocket move latency E2E', () => {
-  // AI games involve backend + AI service, so give the test some headroom.
-  test.setTimeout(120_000);
+  // Each sample creates a fresh game so setup time needs headroom. Setup is
+  // intentionally outside the per-move SLO measurement.
+  test.setTimeout(180_000);
 
   test('websocket move latency stays within SLOs', async ({ page }) => {
     // 1. Login as a fresh test user using existing helpers.
     await registerAndLogin(page);
 
-    // 2. Create a human-vs-AI backend game via the lobby UI.
-    //
-    // createGame() navigates to /lobby, opens "Create Backend Game",
-    // submits the form, and waits for redirect to /game/:gameId with the
-    // board rendered. The default configuration is a square8 backend game
-    // with an AI opponent when vsAI is true.
-    const gameId = await createGame(page, { boardType: 'square8', vsAI: true, isRated: false });
-    expect(gameId).toBeTruthy();
-
-    // 3. Wait for the WebSocket game view to be fully ready.
-    const gamePage = new GamePage(page);
-    await gamePage.waitForReady(30_000);
-    // Ensure the GameEventLog is present so we can detect move updates.
-    await expect(page.getByTestId('game-event-log')).toBeVisible({ timeout: 30_000 });
-
-    // 4. Play a sequence of human moves and record RTT samples.
+    // 2. Create a fresh game for each first-placement sample. A single game
+    // enters movement/capture after placement and would require measuring a
+    // different interaction contract on later iterations.
     const moveRtts: number[] = [];
     const targetSamples = 12; // aim for 12 samples; enforce a minimum of 10 later
 
     for (let i = 0; i < targetSamples; i++) {
+      const gameId = await createGame(page, {
+        boardType: 'square8',
+        vsAI: true,
+        isRated: false,
+      });
+      expect(gameId).toBeTruthy();
+
+      const gamePage = new GamePage(page);
+      await gamePage.waitForReady(30_000);
       const rtt = await measureMoveRtt(page, gamePage);
       moveRtts.push(rtt);
-      // Small pause between moves to allow AI responses and UI to settle.
-      await page.waitForTimeout(250);
     }
 
     // Require at least 10 successful RTT samples; otherwise treat as failure
@@ -71,7 +66,7 @@ test.describe('WebSocket move latency E2E', () => {
       );
     }
 
-    // 5. Compute distribution (p50, p95, p99) and assert against SLOs.
+    // 3. Compute distribution (p50, p95, p99) and assert against SLOs.
     const sorted = [...moveRtts].sort((a, b) => a - b);
     const p = (q: number) => {
       if (sorted.length === 0) return NaN;
@@ -106,14 +101,14 @@ test.describe('WebSocket move latency E2E', () => {
  *
  * The RTT is defined as:
  *
- *   performance.now() at placement confirmation → first "Recent moves"
- *   signature change corresponding to that move's game_state update.
+ *   performance.now() at placement confirmation → first higher Move # value
+ *   corresponding to that move's game_state update.
  *
  * The implementation uses a DOM-based detector that:
  * - Resolves a visible empty placement target before timing begins
  * - Pins that target by board coordinates before selection changes its styling
  * - Confirms the pending one-ring placement on that exact cell
- * - Waits (in the browser context) until the move signature changes
+ * - Waits (in the browser context) until the authoritative move number advances
  *   and returns the elapsed performance.now() delta in milliseconds
  */
 async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
@@ -139,23 +134,12 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // commit before beginning the measured interval.
   await page.waitForTimeout(50);
 
-  // Snapshot the visible move list. The event log is intentionally capped, so
-  // its text changes after later moves even when its item count stays constant.
-  const previousMoveSignature = await page.evaluate(() => {
-    const log = document.querySelector('[data-testid="game-event-log"]');
-    if (!log) return '';
-
-    // Find the "Recent moves" header within the event log.
-    const headings = Array.from(log.querySelectorAll('div')).filter((el) =>
-      /Recent moves/i.test(el.textContent || '')
-    );
-    const container = (headings[0]?.parentElement ?? log) as HTMLElement;
-    const list = container.querySelector('ul');
-    if (!list) return '';
-
-    return Array.from(list.querySelectorAll('li'))
-      .map((item) => item.textContent?.trim() ?? '')
-      .join('|');
+  // Snapshot the canonical move counter. Human-readable event strings can be
+  // identical for repeated placements even though the underlying move changed.
+  const previousMoveNumber = await page.evaluate(() => {
+    const counter = document.querySelector('[data-testid="game-move-number"]');
+    const match = counter?.textContent?.match(/Move #(\d+)/);
+    return match ? Number.parseInt(match[1] ?? '0', 10) : 0;
   });
 
   // Capture start time as close as possible to confirmation that submits the move.
@@ -165,33 +149,22 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   // original class-based locator here could re-resolve to a different target.
   await exactPlacementTarget.dispatchEvent('dblclick');
 
-  // Wait in the browser context until the move signature changes, then return
+  // Wait in the browser context until the move number advances, then return
   // the elapsed time since startTime.
   const timeoutMs = 10_000;
   const rttHandle = await page.waitForFunction(
-    (state: { previousSignature: string; startedAt: number }) => {
-      const log = document.querySelector('[data-testid="game-event-log"]');
-      if (!log) return false;
-
-      const headings = Array.from(log.querySelectorAll('div')).filter((el) =>
-        /Recent moves/i.test(el.textContent || '')
-      );
-      const container = (headings[0]?.parentElement ?? log) as HTMLElement;
-      const list = container.querySelector('ul');
-      if (!list) return false;
-
-      const signature = Array.from(list.querySelectorAll('li'))
-        .map((item) => item.textContent?.trim() ?? '')
-        .join('|');
-      if (!signature || signature === state.previousSignature) {
+    (state: { previousMoveNumber: number; startedAt: number }) => {
+      const counter = document.querySelector('[data-testid="game-move-number"]');
+      const match = counter?.textContent?.match(/Move #(\d+)/);
+      const currentMoveNumber = match ? Number.parseInt(match[1] ?? '0', 10) : 0;
+      if (currentMoveNumber <= state.previousMoveNumber) {
         return false;
       }
 
-      // First observed change in the "Recent moves" list is treated as the
-      // authoritative game_state update for this move.
+      // The move counter is derived from the latest authoritative game state.
       return performance.now() - state.startedAt;
     },
-    { previousSignature: previousMoveSignature, startedAt: startTime },
+    { previousMoveNumber, startedAt: startTime },
     { timeout: timeoutMs }
   );
 
