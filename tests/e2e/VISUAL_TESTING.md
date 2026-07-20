@@ -9,14 +9,11 @@ Visual regression testing uses Playwright's screenshot comparison features to de
 ### Running Visual Tests
 
 ```bash
-# Run all visual regression tests
-npm run test:e2e -- visual-regression
-
-# Run with specific browser
-npm run test:e2e -- visual-regression --project=chromium
+# Run the canonical Chromium visual regression suite
+npm run test:e2e:visual
 
 # Run in headed mode (see browsers)
-npm run test:e2e -- visual-regression --headed
+npm run test:e2e:visual -- --headed
 ```
 
 ### Updating Baselines
@@ -24,11 +21,11 @@ npm run test:e2e -- visual-regression --headed
 When you intentionally change the UI:
 
 ```bash
-# Update all screenshots
-npx playwright test visual-regression --update-snapshots
+# Update all canonical Chromium screenshots
+npm run test:e2e:visual:update
 
 # Update specific test screenshots
-npx playwright test visual-regression -g "game board" --update-snapshots
+npx playwright test visual-regression --project=chromium -g "game board" --update-snapshots
 ```
 
 ## Test Coverage
@@ -38,12 +35,12 @@ Game-board screenshots are captured from the **local sandbox** to keep the suite
 
 ### Page Screenshots
 
-| Test                | Description            | Screenshot                  |
-| ------------------- | ---------------------- | --------------------------- |
-| Entry route (guest) | `/` redirects to login | `entry-guest.png`           |
-| Login page          | Authentication form    | `login-page.png`            |
-| Register page       | Registration form      | `register-page.png`         |
-| Sandbox setup       | Local sandbox pregame  | `sandbox-pregame-setup.png` |
+| Test                | Description           | Screenshot                  |
+| ------------------- | --------------------- | --------------------------- |
+| Entry route (guest) | Public landing page   | `entry-guest.png`           |
+| Login page          | Authentication form   | `login-page.png`            |
+| Register page       | Registration form     | `register-page.png`         |
+| Sandbox setup       | Local sandbox pregame | `sandbox-pregame-setup.png` |
 
 ### Game Board Screenshots
 
@@ -84,7 +81,7 @@ tests/e2e/
 ├── __snapshots__/
 │   └── visual-regression.e2e.spec.ts-snapshots/
 │       ├── entry-guest-chromium.png
-│       ├── mobile-entry-guest-Mobile-Chrome.png
+│       ├── mobile-entry-guest-chromium.png
 │       ├── login-page-chromium.png
 │       └── ... (other baselines)
 ├── visual-regression.e2e.spec.ts
@@ -197,8 +194,8 @@ If your local baselines don't match CI:
 # 2. Or generate baselines using Docker for consistent rendering
 
 # Using Docker to match CI environment:
-docker run -it --rm -v $(pwd):/work -w /work mcr.microsoft.com/playwright:v1.40.0 \
-  npx playwright test visual-regression --update-snapshots
+docker run -it --rm -v $(pwd):/work -w /work mcr.microsoft.com/playwright:v1.58.2-noble \
+  npx playwright test visual-regression --project=chromium --update-snapshots
 ```
 
 ## Troubleshooting
@@ -216,13 +213,13 @@ docker run -it --rm -v $(pwd):/work -w /work mcr.microsoft.com/playwright:v1.40.
 
 ```bash
 # Run with debug mode
-DEBUG=pw:api npx playwright test visual-regression
+DEBUG=pw:api npm run test:e2e:visual
 
 # Run in headed mode to watch
-npx playwright test visual-regression --headed
+npm run test:e2e:visual -- --headed
 
 # Run specific test
-npx playwright test visual-regression -g "game board"
+npm run test:e2e:visual -- -g "game board"
 ```
 
 ## Adding New Visual Tests
@@ -230,7 +227,7 @@ npx playwright test visual-regression -g "game board"
 1. Add test to `visual-regression.e2e.spec.ts`
 2. Run tests to generate initial baselines:
    ```bash
-   npx playwright test visual-regression -g "your test name" --update-snapshots
+   npx playwright test visual-regression --project=chromium -g "your test name" --update-snapshots
    ```
 3. Review generated screenshots in `__snapshots__/`
 4. Commit the test and baselines together

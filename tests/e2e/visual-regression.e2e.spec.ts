@@ -2,6 +2,33 @@ import { test, expect, type Page } from '@playwright/test';
 import { goToSandbox } from './helpers/test-utils';
 import { LoginPage, RegisterPage } from './pages';
 
+async function mockSiteStats(page: Page): Promise<void> {
+  await page.route('**/api/stats', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ playersOnline: 8, activeGames: 3, gamesPlayed: 1_248 }),
+    });
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  // React Query devtools are development-only chrome, not part of the product
+  // surface. Hide their asynchronously mounted launcher before every document
+  // loads so snapshots cannot race its appearance.
+  await page.addInitScript(() => {
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        const style = document.createElement('style');
+        style.textContent = '.tsqd-parent-container { display: none !important; }';
+        document.head.append(style);
+      },
+      { once: true }
+    );
+  });
+});
+
 async function startSquare8Tutorial(page: Page): Promise<void> {
   await page
     .getByRole('button', { name: /Learn the Basics/i })
@@ -28,13 +55,26 @@ async function placeRingOnFirstEmptyCell(page: Page): Promise<void> {
   ).toBeVisible({ timeout: 10_000 });
 }
 
+async function expectBoardToFitScalingWrapper(page: Page): Promise<void> {
+  const board = page.getByTestId('board-view');
+  const wrapper = board.locator('..');
+  const [boardBox, wrapperBox] = await Promise.all([board.boundingBox(), wrapper.boundingBox()]);
+
+  if (!boardBox || !wrapperBox) {
+    throw new Error('Board or scaling wrapper did not produce a measurable bounding box');
+  }
+
+  expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(wrapperBox.x + wrapperBox.width + 1);
+  expect(boardBox.y + boardBox.height).toBeLessThanOrEqual(wrapperBox.y + wrapperBox.height + 1);
+}
+
 /**
  * Visual Regression Test Suite
  * ============================================================================
  *
- * This suite combines a small set of checked-in visual baselines with
- * responsive appearance smoke tests. A test uses toHaveScreenshot only when
- * its exact Chromium baseline is committed and intentionally reviewed.
+ * This suite captures checked-in visual baselines for the public entry pages,
+ * core game surfaces, supported board shapes, and responsive layouts. Every
+ * appearance contract below uses an intentionally reviewed Chromium baseline.
  *
  * RUNNING TESTS:
  *   npm run test:e2e:visual          - Run visual regression tests
@@ -61,6 +101,7 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('Page Screenshots', () => {
     test('entry route presents the public landing page to guests', async ({ page }) => {
+      await mockSiteStats(page);
       await page.goto('/');
 
       // The public entry route is intentionally useful without authentication.
@@ -68,6 +109,10 @@ test.describe('Visual Regression Tests', () => {
         timeout: 10_000,
       });
       await expect(page.getByRole('link', { name: /Play Now/i }).first()).toBeVisible();
+
+      await expect(page).toHaveScreenshot('entry-guest.png', {
+        fullPage: true,
+      });
     });
 
     test('login page visual appearance', async ({ page }) => {
@@ -127,7 +172,7 @@ test.describe('Visual Regression Tests', () => {
       await page.waitForTimeout(500);
 
       const boardView = page.getByTestId('board-view');
-      await expect(boardView).toBeVisible();
+      await expect(boardView).toHaveScreenshot('board-with-valid-targets.png');
     });
 
     test('game board after placing a ring', async ({ page }) => {
@@ -137,13 +182,14 @@ test.describe('Visual Regression Tests', () => {
       await placeRingOnFirstEmptyCell(page);
 
       const boardView = page.getByTestId('board-view');
-      await expect(boardView).toBeVisible();
       await expect(boardView.getByRole('button', { name: /Stack height/i }).first()).toBeVisible();
+      await expect(boardView).toHaveScreenshot('board-after-placement.png');
     });
   });
 
   test.describe('Component Screenshots', () => {
     test('game HUD appearance', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-01-01T12:00:00.000Z'));
       await goToSandbox(page);
       await startSquare8Tutorial(page);
 
@@ -152,7 +198,7 @@ test.describe('Visual Regression Tests', () => {
       // Wait for HUD to be fully rendered
       await page.waitForTimeout(500);
 
-      await expect(hudArea).toBeVisible();
+      await expect(hudArea).toHaveScreenshot('game-hud.png');
     });
 
     test('game event log appearance', async ({ page }) => {
@@ -173,7 +219,7 @@ test.describe('Visual Regression Tests', () => {
       await expect(advancedPanels).toHaveAttribute('open', '', { timeout: 10_000 });
 
       const gameLogSection = page.locator('text=/Game log/i').locator('..').locator('..');
-      await expect(gameLogSection).toBeVisible();
+      await expect(gameLogSection).toHaveScreenshot('game-event-log.png');
     });
 
     // Note: authenticated lobby/home visuals are covered by dedicated E2E suites and
@@ -191,6 +237,9 @@ test.describe('Visual Regression Tests', () => {
       });
 
       await expect(page.getByRole('button', { name: /Launch(?: Local)? Game/i })).toBeVisible();
+      await expect(page).toHaveScreenshot('sandbox-pregame-setup.png', {
+        fullPage: true,
+      });
     });
 
     test('sandbox game board after launch', async ({ page }) => {
@@ -203,7 +252,7 @@ test.describe('Visual Regression Tests', () => {
       await page.waitForTimeout(1000);
 
       const boardView = page.getByTestId('board-view');
-      await expect(boardView).toBeVisible();
+      await expect(boardView).toHaveScreenshot('sandbox-local-board.png');
     });
 
     test('sandbox touch controls panel', async ({ page }) => {
@@ -214,16 +263,9 @@ test.describe('Visual Regression Tests', () => {
       // Wait for board to be ready
       await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
 
-      // Check if sandbox touch controls exist (local sandbox mode)
       const touchControls = page.getByTestId('sandbox-touch-controls');
-      const hasTouchControls = await touchControls.isVisible().catch(() => false);
-
-      if (hasTouchControls) {
-        await expect(touchControls).toBeVisible();
-      } else {
-        // SKIP-REASON: environment-dependent - requires local sandbox mode with touch controls
-        test.skip();
-      }
+      await expect(touchControls).toBeVisible({ timeout: 10_000 });
+      await expect(touchControls).toHaveScreenshot('sandbox-touch-controls.png');
     });
   });
 
@@ -235,7 +277,7 @@ test.describe('Visual Regression Tests', () => {
       await page.waitForTimeout(1000);
 
       const boardView = page.getByTestId('board-view');
-      await expect(boardView).toBeVisible();
+      await expect(boardView).toHaveScreenshot('hex-board-initial.png');
     });
 
     test('hex board with valid targets', async ({ page }) => {
@@ -249,7 +291,7 @@ test.describe('Visual Regression Tests', () => {
       await page.waitForTimeout(500);
 
       const boardView = page.getByTestId('board-view');
-      await expect(boardView).toBeVisible();
+      await expect(boardView).toHaveScreenshot('hex-board-with-targets.png');
     });
   });
 
@@ -261,7 +303,7 @@ test.describe('Visual Regression Tests', () => {
       await page.waitForTimeout(1500);
 
       const boardView = page.getByTestId('board-view');
-      await expect(boardView).toBeVisible();
+      await expect(boardView).toHaveScreenshot('board-19x19-initial.png');
     });
   });
 
@@ -280,12 +322,16 @@ test.describe('Mobile Viewport Visual Tests', () => {
   test.setTimeout(120_000);
 
   test('entry route (guest) on mobile', async ({ page }) => {
+    await mockSiteStats(page);
     await page.goto('/');
 
     await expect(page.getByRole('heading', { name: /RingRift/i }).first()).toBeVisible({
       timeout: 10_000,
     });
     await expect(page.getByRole('link', { name: /Play Now/i }).first()).toBeVisible();
+    await expect(page).toHaveScreenshot('mobile-entry-guest.png', {
+      fullPage: true,
+    });
   });
 
   test('login page on mobile', async ({ page }) => {
@@ -295,6 +341,9 @@ test.describe('Mobile Viewport Visual Tests', () => {
     await page.waitForTimeout(500);
 
     await expect(page.getByLabel('Email')).toBeVisible();
+    await expect(page).toHaveScreenshot('mobile-login-page.png', {
+      fullPage: true,
+    });
   });
 
   test('game board on mobile', async ({ page }) => {
@@ -304,6 +353,9 @@ test.describe('Mobile Viewport Visual Tests', () => {
 
     await expect(page.getByTestId('board-view')).toBeVisible();
     await expect(page.getByTestId('sandbox-touch-controls')).toBeVisible();
+    await expect(page).toHaveScreenshot('mobile-game-board.png', {
+      fullPage: true,
+    });
   });
 
   test('sandbox page on mobile', async ({ page }) => {
@@ -315,6 +367,9 @@ test.describe('Mobile Viewport Visual Tests', () => {
     await page.waitForTimeout(500);
 
     await expect(page.getByRole('button', { name: /Launch(?: Local)? Game/i })).toBeVisible();
+    await expect(page).toHaveScreenshot('mobile-sandbox-setup.png', {
+      fullPage: true,
+    });
   });
 });
 
@@ -328,17 +383,23 @@ test.describe('Tablet Viewport Visual Tests', () => {
     await goToSandbox(page);
     await startSquare8Tutorial(page);
     await page.waitForTimeout(1000);
+    await page.mouse.move(767, 1023);
+    await page.waitForTimeout(250);
 
     const boardView = page.getByTestId('board-view');
-    await expect(boardView).toBeVisible();
+    await expectBoardToFitScalingWrapper(page);
+    await expect(boardView).toHaveScreenshot('tablet-game-board.png');
   });
 
   test('hex board on tablet', async ({ page }) => {
     await goToSandbox(page, '/sandbox?preset=learn-basics-hex8');
     await page.waitForTimeout(1000);
+    await page.mouse.move(767, 1023);
+    await page.waitForTimeout(250);
 
     const boardView = page.getByTestId('board-view');
-    await expect(boardView).toBeVisible();
+    await expectBoardToFitScalingWrapper(page);
+    await expect(boardView).toHaveScreenshot('tablet-hex-board.png');
   });
 });
 
@@ -372,7 +433,7 @@ test.describe('Tablet Viewport Visual Tests', () => {
  *
  *   npm run test:e2e:visual           # Run visual regression tests
  *   npm run test:e2e:visual:update    # Update baseline screenshots
- *   npx playwright test visual-regression --update-snapshots  # Same as above
+ *   npx playwright test visual-regression --project=chromium --update-snapshots
  *
  * BEST PRACTICES:
  *

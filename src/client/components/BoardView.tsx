@@ -1052,6 +1052,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
       const isDesktop = viewportWidth >= 1024;
+      const usesMediumCellSize = viewportWidth >= 768;
 
       // Calculate board natural dimensions based on board type and cell sizes
       let naturalWidth: number;
@@ -1062,8 +1063,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
       // Calibrated using diagnostics: target ~15px extra space (like sq19)
       // Diagnostics showed: sq8 had 81px extra, hex8 had 115px extra, hexagonal had 62px extra
       if (effectiveBoardType === 'square8') {
-        // Cell size matches CSS: md:w-[65px] md:h-[65px] for desktop, w-10 (40px) for mobile
-        const cellSize = isDesktop ? 65 : 40;
+        // Match the Tailwind cell breakpoints exactly: w-10, sm:w-[50px], md:w-[65px].
+        // Using the lg/sidebar breakpoint here underestimates the board at tablet widths,
+        // letting the transformed board overlap the panels that follow it.
+        const cellSize = usesMediumCellSize ? 65 : viewportWidth >= 640 ? 50 : 40;
         // Buffer for coordinate labels + padding + panel gaps.
         // Split into X (right) and Y (top+bottom) for independent control.
         // Reduced buffers to minimize gap between board and status panel.
@@ -1072,7 +1075,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         naturalWidth = 8 * cellSize + 7 * gap + labelBufferX;
         naturalHeight = 8 * cellSize + 7 * gap + labelBufferY;
       } else if (effectiveBoardType === 'square19') {
-        const cellSize = isDesktop ? 56 : 44;
+        const cellSize = usesMediumCellSize ? 56 : 44;
         // Board is full-size (internal scale-75 was removed), so calculate actual dimensions:
         // 19 cells + 18 gaps (space-y-0.5 = 2px) + padding (p-2 = 8px each side) + coord labels
         const gridSize = 19 * cellSize + 18 * gap; // 1064 + 36 = 1100
@@ -1088,14 +1091,14 @@ export const BoardView: React.FC<BoardViewProps> = ({
         // Diagnostics 2026-01-11: board 585x538, wrapper 562x534 (23px width overflow)
         // Board pre-scale is 450x414, scaled 1.3x = 585x538
         // naturalWidth should yield wrapper >= 585 after scaling
-        const cellSize = isDesktop ? 48 : 44;
+        const cellSize = usesMediumCellSize ? 48 : 44;
         naturalWidth = 9 * cellSize * 1.0 + 50; // ~482 → 482*1.3 = 627 > 585 ✓
         naturalHeight = 9 * cellSize * 0.93 + 30; // ~432 → 432*1.3 = 562 > 538 ✓
       } else {
         // Hexagonal board (radius 12)
         // Diagnostics 2026-01-11: board 662x608, wrapper 653x620 (9px width overflow)
         // Add buffer to prevent overflow
-        const cellSize = isDesktop ? 48 : 44;
+        const cellSize = usesMediumCellSize ? 48 : 44;
         naturalWidth = 25 * cellSize * 1.0 + 30; // ~1230, extra buffer for width
         naturalHeight = 25 * cellSize * 0.92 + 15; // ~1115 for full hex (height OK)
       }

@@ -63,8 +63,12 @@ jest-results.json
 test-results/
 playwright-report/
 playwright/.cache/
-# E2E test snapshots (platform-specific, not committed)
-tests/e2e/__snapshots__/
+# Keep the canonical Chromium visual-regression baselines in git while
+# ignoring snapshots created by optional browser projects.
+tests/e2e/__snapshots__/*
+!tests/e2e/__snapshots__/visual-regression.e2e.spec.ts-snapshots/
+tests/e2e/__snapshots__/visual-regression.e2e.spec.ts-snapshots/*
+!tests/e2e/__snapshots__/visual-regression.e2e.spec.ts-snapshots/*-chromium.png
 .playwright-mcp/
 
 # Temporary files
