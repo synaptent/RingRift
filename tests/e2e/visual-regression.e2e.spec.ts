@@ -164,7 +164,12 @@ test.describe('Visual Regression Tests', () => {
 
       // Open advanced panels to reveal the event log in sandbox mode.
       const advancedPanels = page.getByTestId('sandbox-advanced-sidebar-panels');
-      await advancedPanels.locator('summary').click();
+      const advancedPanelsOpen = await advancedPanels.evaluate(
+        (element) => (element as HTMLDetailsElement).open
+      );
+      if (!advancedPanelsOpen) {
+        await advancedPanels.locator('summary').click();
+      }
       await expect(advancedPanels).toHaveAttribute('open', '', { timeout: 10_000 });
 
       const gameLogSection = page.locator('text=/Game log/i').locator('..').locator('..');
@@ -250,8 +255,7 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('19x19 Board Screenshots', () => {
     test('19x19 board initial state', async ({ page }) => {
-      await goToSandbox(page);
-      await page.getByRole('button', { name: /Full Board vs AI/i }).click();
+      await goToSandbox(page, '/sandbox?preset=sq19-1h-1ai');
 
       // Wait for large board to fully render
       await page.waitForTimeout(1500);

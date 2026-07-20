@@ -125,6 +125,10 @@ async function measureMoveRtt(page: Page, gamePage: GamePage): Promise<number> {
   await placementTarget.click();
   await expect(gamePage.boardView.locator('button[aria-pressed="true"]')).toBeVisible();
 
+  // Board cells consume Enter as a cell activation. Move focus away after
+  // selection so the host-level Enter shortcut confirms the pending placement.
+  await placementTarget.evaluate((element) => (element as HTMLElement).blur());
+
   // Snapshot the visible move list. The event log is intentionally capped, so
   // its text changes after later moves even when its item count stays constant.
   const previousMoveSignature = await page.evaluate(() => {

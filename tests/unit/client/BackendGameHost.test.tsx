@@ -1228,6 +1228,42 @@ describe('BackendGameHost (React host behaviour)', () => {
     expect(highlightedCell).toHaveAttribute('data-decision-highlight', 'primary');
   });
 
+  it('keeps canonical elimination moves visible while the transient choice event is absent', () => {
+    const state = createGameState('territory_processing');
+    mockGameState = state;
+    mockPlayers = state.players;
+    mockCurrentPlayer = mockPlayers[0];
+    mockPendingChoice = null;
+    mockValidMoves = [
+      {
+        id: 'territory-elimination-1',
+        type: 'eliminate_rings_from_stack',
+        player: 1,
+        to: { x: 0, y: 0 },
+        eliminationContext: 'territory',
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      } as Move,
+    ];
+
+    render(<BackendGameHost gameId="game-123" />);
+
+    const highlightedCell = getSquareCell(0, 0);
+    expect(highlightedCell).toHaveAttribute('data-decision-highlight', 'primary');
+    expect(highlightedCell.className).toContain('decision-pulse-elimination');
+    expect(screen.getAllByText(/SELF-ELIMINATION REQUIRED/i).length).toBeGreaterThan(0);
+
+    fireEvent.click(highlightedCell);
+    expect(mockSubmitMove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'eliminate_rings_from_stack',
+        to: { x: 0, y: 0 },
+        eliminationContext: 'territory',
+      })
+    );
+  });
+
   it('applies pulsing territory highlights for region_order decisions', () => {
     // Backend territory decisions should highlight the full disconnected
     // region with stronger green pulses so territory geometry is obvious.
