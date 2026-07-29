@@ -167,10 +167,34 @@ def subscribe_to_feedback_signals(orchestrator: Any) -> bool:
             and other master_loop subscribers can see evaluation results.
             Previously this only logged — events never crossed the P2P/master_loop
             process boundary.
+
+            Jul 28, 2026: This handler is subscribed to EVALUATION_COMPLETED and
+            also re-emits EVALUATION_COMPLETED, so its own bridged events came
+            back to it and it forwarded them again — a self-sustaining loop
+            running at ~308 iterations/sec. It filled p2p.log at ~4.3 GB/day
+            until the disk was 100% full, which broke every CI job on this host.
+            The `source: "p2p_bridge"` marker below was already being set for
+            exactly this purpose, but only model_lifecycle_coordinator honoured
+            it; the emitter did not check it. Both guards below are load-bearing:
+            drop our own re-entry, and drop payloads carrying no config_key at
+            all rather than inventing "unknown" and forwarding a phantom
+            (same bug class as the tournament phantoms noted in
+            p2p_event_bridge.py).
             """
             try:
                 payload = event.payload if hasattr(event, "payload") else event
-                config_key = payload.get("config_key", "unknown")
+
+                if payload.get("source") == "p2p_bridge":
+                    return
+
+                config_key = payload.get("config_key")
+                if not config_key:
+                    logger.debug(
+                        "Dropping EVALUATION_COMPLETED with no config_key "
+                        "(phantom evaluation, nothing to promote)"
+                    )
+                    return
+
                 elo = payload.get("elo") or payload.get("estimated_elo") or payload.get("best_elo")
                 games = payload.get("games_played", 0)
 
